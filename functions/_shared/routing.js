@@ -32,14 +32,19 @@ export const BRANDS = {
   betjili: {
     name: "Betjili",
     sheetId: "1jEIomHdq9BBiwI8AcpWCB0IJolcHYWw1tlT3DR8WzeQ",
+    // No hardcoded defaults on purpose — PHP market's own Telegram group
+    // hasn't been set up yet. Every row shows empty in the "TG Group /
+    // Channel" admin panel until a real chatId/topicId is saved there
+    // (KV override). Submissions will fail to reach Telegram until then —
+    // deliberate, so nothing silently goes to the old INR group.
     telegram: {
-      default: { chatId: "-1004488354399", topicId: null },
-      qa: { chatId: "-1004488354399", topicId: 3 },
-      account_issue: { chatId: "-1004488354399", topicId: 10 },
-      risk_issue: { chatId: "-1004488354399", topicId: 17 },
-      promotion_request: { chatId: "-1003844665813", topicId: 30 },
-      daily_report: { chatId: "-1004488354399", topicId: 22 },
-      genie_issue: { chatId: "-1004488354399", topicId: 24 },
+      default: { chatId: "", topicId: null },
+      qa: { chatId: "", topicId: null },
+      account_issue: { chatId: "", topicId: null },
+      risk_issue: { chatId: "", topicId: null },
+      promotion_request: { chatId: "", topicId: null },
+      daily_report: { chatId: "", topicId: null },
+      genie_issue: { chatId: "", topicId: null },
     },
   },
   betvisa: {
@@ -47,15 +52,16 @@ export const BRANDS = {
     // The long ID in the sheet's URL: https://docs.google.com/spreadsheets/d/<THIS PART>/edit
     // Leave "" to disable sheet logging entirely for this brand.
     sheetId: "17wXVfUS8QywtiT8AiHxBr3iycKnWCR5vAJbCcboLJUs",
+    // Same as Betjili above — no hardcoded defaults, fill in via the
+    // "TG Group / Channel" admin panel once the PHP group exists.
     telegram: {
-      // Used when a module has no specific entry below.
-      default: { chatId: "-1004488354399", topicId: null },
-      qa: { chatId: "-1004488354399", topicId: 3 },
-      account_issue: { chatId: "-1004488354399", topicId: 10 },
-      risk_issue: { chatId: "-1004488354399", topicId: 17 },
-      promotion_request: { chatId: "-1003844665813", topicId: 30 },
-      daily_report: { chatId: "-1004488354399", topicId: 22 },
-      genie_issue: { chatId: "-1004488354399", topicId: 24 },
+      default: { chatId: "", topicId: null },
+      qa: { chatId: "", topicId: null },
+      account_issue: { chatId: "", topicId: null },
+      risk_issue: { chatId: "", topicId: null },
+      promotion_request: { chatId: "", topicId: null },
+      daily_report: { chatId: "", topicId: null },
+      genie_issue: { chatId: "", topicId: null },
     },
   },
 };
