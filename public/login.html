@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Log In — INR CS Team</title>
+<link rel="stylesheet" href="/assets/style.css" />
+<script src="/assets/theme.js"></script>
+<script src="/assets/starfield.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-left">
+      <img src="/assets/img/logo.webp" alt="HeyVIP" class="logo-img" />
+      <span class="wordmark">INR CS TEAM - TBC</span>
+    </div>
+    <div class="topbar-right">
+      <span class="clock" id="liveClock"></span>
+      <button class="theme-pill" id="themeToggle"></button>
+    </div>
+  </header>
+
+  <div class="login-page-wrap">
+    <div class="form-card" style="max-width:380px;">
+      <div class="form-header"><span class="icon">🔒</span><span>Agent Login</span></div>
+      <p class="form-hint">Log in to access the INR CS Team hub.</p>
+      <hr class="form-divider" />
+      <div class="field">
+        <label>Username</label>
+        <input type="text" id="loginUsername" autocomplete="username" />
+      </div>
+      <div class="field">
+        <label>Password</label>
+        <input type="password" id="loginPassword" autocomplete="current-password" />
+      </div>
+      <div id="loginError" class="field-note err" style="display:none;"></div>
+      <div class="form-actions">
+        <button class="btn-submit" id="loginBtn"><span>🔓</span><span>Log In</span></button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    window.initThemeToggle();
+    window.initClock();
+
+    const params = new URLSearchParams(location.search);
+    const redirectTo = params.get("redirect") || "/";
+
+    // If already logged in (e.g. someone bookmarked /login.html), just go
+    // straight through instead of showing the form again.
+    (function skipIfAlreadyLoggedIn() {
+      try {
+        const auth = JSON.parse(localStorage.getItem("agentAuth") || "null");
+        if (auth) location.href = redirectTo;
+      } catch { /* ignore malformed localStorage, just show the form */ }
+    })();
+
+    async function attemptLogin() {
+      const username = document.getElementById("loginUsername").value.trim();
+      const password = document.getElementById("loginPassword").value;
+      const btn = document.getElementById("loginBtn");
+      const err = document.getElementById("loginError");
+      if (!username || !password) {
+        err.textContent = "Enter both a username and password.";
+        err.style.display = "block";
+        return;
+      }
+      btn.disabled = true;
+      err.style.display = "none";
+      try {
+        const res = await fetch("/api/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username, password }),
+        });
+        const data = await res.json();
+        if (!data.ok) {
+          err.textContent = data.error || "Login failed.";
+          err.style.display = "block";
+          return;
+        }
+        localStorage.setItem("agentAuth", JSON.stringify({
+          username: data.account.username, token: data.token, role: data.account.role, allowedBrands: data.account.allowedBrands,
+        }));
+        localStorage.setItem("agentLastActivity", String(Date.now()));
+        location.href = redirectTo;
+      } catch {
+        err.textContent = "Network error — try again.";
+        err.style.display = "block";
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    document.getElementById("loginBtn").addEventListener("click", attemptLogin);
+    document.getElementById("loginPassword").addEventListener("keydown", (e) => { if (e.key === "Enter") attemptLogin(); });
+  </script>
+</body>
+</html>

@@ -1,0 +1,899 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>TG Reply Threads</title>
+<link rel="stylesheet" href="/assets/style.css" />
+<script src="/assets/theme.js"></script>
+<script src="/assets/starfield.js" defer></script>
+<script src="/assets/authguard.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/twemoji.min.js"></script>
+</head>
+<body class="threads-page">
+  <!-- Attachment lightbox — populated live by viewAttachment() below.
+       Fetches bytes on demand from /api/attachment/<fileId>, never a
+       stored copy — see that endpoint's own comment for why. -->
+  <div class="attach-lightbox" id="attachLightbox">
+    <button type="button" class="attach-lightbox-close" id="attachLightboxClose" title="Close">✕</button>
+    <div class="attach-lightbox-body" id="attachLightboxBody"></div>
+  </div>
+  <header class="topbar">
+    <div class="topbar-left">
+      <img src="/assets/img/logo.webp" alt="HeyVIP" class="logo-img" />
+      <span class="wordmark">INR CS TEAM - TBC</span>
+    </div>
+    <div class="topbar-right">
+      <span class="clock" id="liveClock"></span>
+      <button class="theme-pill" id="themeToggle"></button>
+    </div>
+  </header>
+
+  <div class="threads-topline">
+    <a href="/" class="back-pill">&larr; Back to Home</a>
+  </div>
+
+  <div class="threads-shell" id="threadsShell">
+    <aside class="threads-sidebar">
+      <div class="threads-search">
+        <span>🔍</span>
+        <input type="text" id="threadSearch" placeholder="Search username, TID, UID..." autocomplete="off" />
+      </div>
+
+      <div class="threads-section" id="activeSection">
+        <div class="threads-section-title" data-target="activeList"><span><span class="chev">▾</span> Active Threads</span><span class="count" id="activeCount">0</span></div>
+        <div class="thread-list" id="activeList"></div>
+      </div>
+
+      <div class="threads-section collapsed" id="solvedSection">
+        <div class="threads-section-title collapsed" data-target="solvedList"><span><span class="chev">▾</span> Solved Chat History</span><span class="count" id="solvedCount">0</span></div>
+        <div class="thread-list" id="solvedList"></div>
+      </div>
+
+      <div class="threads-section recall collapsed" id="recallSection" style="display:none;">
+        <div class="threads-section-title collapsed" data-target="recallList"><span><span class="chev">▾</span> Recall Chat History</span><span class="count" id="recallCount">0</span></div>
+        <div class="thread-list" id="recallList"></div>
+      </div>
+    </aside>
+
+    <main class="threads-main" id="threadsMain">
+      <div class="threads-placeholder">Pick a thread on the left, or submit a form to start one.</div>
+    </main>
+  </div>
+
+  <script>
+    window.initThemeToggle();
+
+    window.initClock();
+
+    // ---- Auth ----------------------------------------------------------
+    // No session/token — see functions/_shared/accounts.js for why. We
+    // just keep the username+password the agent logged in with in
+    // localStorage and re-send them as headers on every request; the
+    // server re-verifies (password + office IP) every single time.
+    // Login itself, idle-timeout, and the actual auth headers are all
+    // handled by /assets/authguard.js (window.AgentAuth) before this page
+    // even renders — by the time this script runs, we're guaranteed to be
+    // logged in. authFetch here is just a short alias.
+    const authFetch = window.AgentAuth.authFetch;
+    const getAuth = window.AgentAuth.getAuth;
+
+    function bootDashboard() {
+      const auth = getAuth();
+      // Recall Chat History (the old hidden deletion-log dot) is a normal
+      // section now, but still admin-or-above only — the server 401s it
+      // for anyone else regardless, this just avoids showing a dead-end
+      // section to an agent/senior who'd get nothing useful out of it.
+      // Rank-based (not a literal "admin" string match) so SuperAdmin
+      // sees it too — matches functions/_shared/accounts.js ROLE_RANK.
+      const ROLE_RANK = { agent: 0, senior: 1, admin: 2, superadmin: 3 };
+      const isAdmin = (ROLE_RANK[auth.role] ?? 0) >= ROLE_RANK.admin;
+      document.getElementById("recallSection").style.display = isAdmin ? "" : "none";
+      loadList();
+      if (isAdmin) loadRecallLog();
+      polishEmoji();
+      // Two different rhythms on purpose: refreshOpenThread() reads a
+      // single thread directly by ID (cheap, not affected by KV's
+      // separate/stricter list() quota — see loadList() below), so it
+      // stays fast/responsive since that's what actually matters when
+      // someone's actively viewing a conversation. loadList() (the
+      // sidebar) is what calls the server's listThreads(), which is
+      // itself now cached for 3 minutes server-side — polling it every
+      // 6s was just re-fetching the exact same cached data 30 times
+      // over for no benefit, while still adding needless request volume.
+      // 30s keeps the sidebar feeling reasonably live without that waste.
+      pollTimer = setInterval(() => {
+        refreshOpenThread();
+      }, 6000);
+      listPollTimer = setInterval(() => {
+        loadList(document.getElementById("threadSearch").value);
+        if (isAdmin) loadRecallLog();
+      }, 30000);
+    }
+
+    // ---------------------------------------------------------------------
+
+    let activeThreads = [];
+    let solvedThreads = [];
+    let recallEntries = [];
+    let selectedId = null;
+    let selectedThread = null;
+    let pollTimer = null;
+    let listPollTimer = null;
+    let searchTimer = null;
+
+    // ---- Local "optimistic" sidebar patches --------------------------
+    // The sidebar list comes from THREADS_KV.list() (see threads.js),
+    // which Cloudflare documents as *eventually* consistent across their
+    // edge — writing a thread's new metadata (e.g. solved:true) doesn't
+    // guarantee list() reflects it on the very next call. But any action
+    // WE just took (solve/unsolve/delete/reply) already hands us that
+    // thread's true fresh state straight from the POST response — no
+    // reason to wait for list() to catch up just to show it. So: patch
+    // it into the local sidebar arrays immediately, and keep protecting
+    // that entry from being clobbered by a stale server response for a
+    // short window, long enough for KV to actually propagate.
+    const localPatches = new Map(); // id -> { summary: {...}|null, expiresAt }
+    const PATCH_TTL_MS = 20000;
+
+    function summaryFromThread(t) {
+      return {
+        id: t.id, module: t.module, moduleName: t.moduleName, icon: t.icon, accent: t.accent,
+        brand: t.brand, title: t.title, submitter: t.submitter, submittedAt: t.submittedAt,
+        lastActivity: t.lastActivity, solved: t.solved, solvedAt: t.solvedAt,
+        replyCount: t.messages.length,
+      };
+    }
+
+    // Call right after a solve/unsolve/reply/edit/recall action succeeds —
+    // `t` is the fresh thread record the server just handed back.
+    function patchLocalThread(t) {
+      localPatches.set(t.id, { summary: summaryFromThread(t), expiresAt: Date.now() + PATCH_TTL_MS });
+      applyLocalPatches();
+      renderLists();
+    }
+
+    // Call right after a delete succeeds.
+    function removeLocalThread(id) {
+      localPatches.set(id, { summary: null, expiresAt: Date.now() + PATCH_TTL_MS });
+      applyLocalPatches();
+      renderLists();
+    }
+
+    // Re-applies every still-valid local patch on top of whatever
+    // activeThreads/solvedThreads currently hold (freshly fetched from the
+    // server, or just patched) — expired patches (KV has had plenty of
+    // time to catch up by then) are dropped so the server becomes the
+    // source of truth again.
+    function applyLocalPatches() {
+      const now = Date.now();
+      for (const [id, patch] of Array.from(localPatches.entries())) {
+        if (patch.expiresAt < now) { localPatches.delete(id); continue; }
+        activeThreads = activeThreads.filter((t) => t.id !== id);
+        solvedThreads = solvedThreads.filter((t) => t.id !== id);
+        if (patch.summary) (patch.summary.solved ? solvedThreads : activeThreads).unshift(patch.summary);
+      }
+    }
+
+    const activeList = document.getElementById("activeList");
+    const solvedList = document.getElementById("solvedList");
+    const activeCount = document.getElementById("activeCount");
+    const solvedCount = document.getElementById("solvedCount");
+    const main = document.getElementById("threadsMain");
+
+    document.querySelectorAll(".threads-section-title").forEach((el) => {
+      el.addEventListener("click", () => {
+        el.classList.toggle("collapsed");
+        document.getElementById(el.dataset.target).closest(".threads-section").classList.toggle("collapsed");
+      });
+    });
+
+    const RECALL_TYPE_META = {
+      "delete-thread": { icon: "🗑", badge: "Deleted" },
+      "recall-root": { icon: "↩️", badge: "Recalled" },
+      "recall-reply": { icon: "↩️", badge: "Recalled reply" },
+    };
+
+    // Admin-only — the whole #recallSection is display:none for non-admins
+    // (set in bootDashboard), and the server 401s this endpoint for them
+    // too, so this never actually runs for a non-admin account.
+    async function loadRecallLog() {
+      try {
+        const res = await authFetch("/api/deletion-log", { cache: "no-store" });
+        if (res.status === 401) return; // not admin (or logged out — authFetch already handled that)
+        const data = await res.json();
+        if (!data.ok) return;
+        recallEntries = data.entries || [];
+        renderRecallList();
+      } catch {
+        // Network hiccup — leave the list as-is, try again next poll.
+      }
+    }
+
+    function renderRecallList() {
+      document.getElementById("recallCount").textContent = recallEntries.length;
+      const list = document.getElementById("recallList");
+      if (!recallEntries.length) {
+        list.innerHTML = '<div class="threads-empty">No deletions logged yet.</div>';
+        return;
+      }
+      list.innerHTML = recallEntries.map((e) => {
+        const meta = RECALL_TYPE_META[e.type] || { icon: "🗑", badge: e.type };
+        return `
+          <div class="thread-item recall-item">
+            <div class="icon">${meta.icon}</div>
+            <div class="meta">
+              <div class="t-title"><span class="badge">${escapeHtml(meta.badge)}</span>${escapeHtml(e.threadTitle || "")}</div>
+              <div class="t-sub">${escapeHtml(e.by || "unknown")} · ${timeAgo(e.ts)}${e.brand ? " · " + escapeHtml(e.brand) : ""}</div>
+              <div class="t-content">${escapeHtml((e.content || "").slice(0, 120))}</div>
+            </div>
+          </div>`;
+      }).join("");
+      polishEmoji();
+    }
+
+    document.getElementById("threadSearch").addEventListener("input", (e) => {
+      clearTimeout(searchTimer);
+      const q = e.target.value;
+      searchTimer = setTimeout(() => loadList(q), 250);
+    });
+
+    let pendingAttachment = null;
+    let replyTarget = null; // { messageId, from, text } | null
+
+    function setReplyTarget(messageId, from, text) {
+      replyTarget = { messageId: Number(messageId), from, text };
+      renderReplyTargetBanner();
+      document.getElementById("replyInput")?.focus();
+    }
+    function clearReplyTarget() {
+      replyTarget = null;
+      renderReplyTargetBanner();
+    }
+    function renderReplyTargetBanner() {
+      const el = document.getElementById("replyTargetBanner");
+      if (!el) return;
+      if (!replyTarget) { el.innerHTML = ""; return; }
+      el.innerHTML = `
+        <span class="reply-target-chip">
+          ↳ Replying to <b>${escapeHtml(replyTarget.from)}</b>: ${escapeHtml((replyTarget.text || "").slice(0, 60))}
+          <button type="button" id="cancelReplyTarget">✕</button>
+        </span>`;
+      document.getElementById("cancelReplyTarget").addEventListener("click", clearReplyTarget);
+      polishEmoji();
+    }
+
+    function fileToDataUrl(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+    }
+
+    function renderAttachPreview() {
+      const el = document.getElementById("replyAttachPreview");
+      if (!el) return;
+      if (!pendingAttachment) { el.innerHTML = ""; return; }
+      el.innerHTML = `
+        <span class="attach-chip">📎 ${escapeHtml(pendingAttachment.name)} (${Math.round(pendingAttachment.size / 1024)} KB)
+          <button type="button" id="clearAttachBtn">✕</button>
+        </span>`;
+      document.getElementById("clearAttachBtn").addEventListener("click", () => {
+        pendingAttachment = null;
+        document.getElementById("replyFileInput").value = "";
+        renderAttachPreview();
+      });
+      polishEmoji();
+    }
+
+    function timeAgo(iso) {
+      const d = new Date(iso);
+      return d.toLocaleDateString(undefined, { day: "2-digit", month: "2-digit" }) + " " + d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+    }
+
+    // Unread tracking — per-browser (each agent's "have I seen this" state
+    // is naturally their own, not shared team-wide, same as Telegram's own
+    // unread counts). Stored as "how many messages had I seen last time".
+    function getSeenCount(id) {
+      return parseInt(localStorage.getItem(`lastseen:${id}`) || "0", 10);
+    }
+    function markSeen(id, count) {
+      localStorage.setItem(`lastseen:${id}`, String(count));
+    }
+
+    function renderItem(t) {
+      const el = document.createElement("div");
+      el.className = "thread-item" + (t.id === selectedId ? " selected" : "");
+      el.style.setProperty("--thread-accent", t.accent || "#7c6cf0");
+      const unread = Math.max(0, (t.replyCount || 0) - getSeenCount(t.id));
+      el.innerHTML = `
+        <div class="icon" style="background:${(t.accent || "#7c6cf0")}33;">${t.icon || "🔔"}</div>
+        <div class="meta">
+          <div class="t-title">${escapeHtml(t.title)}</div>
+          <div class="t-sub">${escapeHtml(t.submitter)} · ${timeAgo(t.lastActivity)}${t.replyCount ? " · " + t.replyCount + " reply" : ""}</div>
+        </div>
+        ${unread > 0 ? `<span class="unread-badge">${unread > 99 ? "99+" : unread}</span>` : ""}
+        ${t.solved ? '<span class="t-done">✓</span>' : ""}
+      `;
+      el.addEventListener("click", () => {
+        if (t.id !== selectedId) { pendingAttachment = null; replyTarget = null; }
+        openThread(t.id);
+      });
+      return el;
+    }
+
+    function polishEmoji() {
+      if (window.twemoji) window.twemoji.parse(document.body, { folder: "svg", ext: ".svg" });
+    }
+
+    function renderLists() {
+      activeCount.textContent = activeThreads.length;
+      solvedCount.textContent = solvedThreads.length;
+      activeList.innerHTML = "";
+      if (!activeThreads.length) {
+        activeList.innerHTML = '<div class="threads-empty">No active threads.<br/>Submit a form to start one.</div>';
+      } else {
+        activeThreads.forEach((t) => activeList.appendChild(renderItem(t)));
+      }
+      solvedList.innerHTML = "";
+      solvedThreads.forEach((t) => solvedList.appendChild(renderItem(t)));
+      polishEmoji();
+    }
+
+    async function loadList(q) {
+      try {
+        const res = await authFetch(`/api/threads${q ? "?q=" + encodeURIComponent(q) : ""}`, { cache: "no-store" });
+        const data = await res.json();
+        if (!data.ok) return;
+        activeThreads = data.active || [];
+        solvedThreads = data.solved || [];
+        applyLocalPatches();
+        renderLists();
+      } catch {
+        // Network hiccup — keep showing the last known list, try again next poll.
+      }
+    }
+
+    async function openThread(id) {
+      selectedId = id;
+      renderLists();
+      try {
+        const res = await authFetch(`/api/threads/${id}`, { cache: "no-store" });
+        const data = await res.json();
+        if (!data.ok) {
+          main.innerHTML = `<div class="threads-placeholder">Couldn't load this thread.</div>`;
+          return;
+        }
+        selectedThread = data.thread;
+        renderDetail();
+        markSeen(id, selectedThread.messages.length);
+        renderLists();
+      } catch {
+        main.innerHTML = `<div class="threads-placeholder">Couldn't load this thread — check your connection.</div>`;
+      }
+    }
+
+    // Called by the poll (and only the poll) — fetches fresh data for the
+    // open thread but updates it in place via updateThreadContent, so a
+    // reply the agent is mid-typing is never interrupted.
+    async function refreshOpenThread() {
+      if (!selectedId) return;
+      try {
+        const res = await authFetch(`/api/threads/${selectedId}`, { cache: "no-store" });
+        const data = await res.json();
+        if (!data.ok) return;
+        selectedThread = data.thread;
+        updateThreadContent(selectedThread);
+        markSeen(selectedId, selectedThread.messages.length);
+        renderLists();
+      } catch {
+        // Network hiccup — leave the panel as-is, try again next poll.
+      }
+    }
+
+    function buildHeaderHTML(t) {
+      return `
+        <div class="thread-detail-header">
+          <div>
+            <div class="thread-detail-title"><span>${t.icon || "🔔"}</span> ${escapeHtml(t.title)}</div>
+            <div class="thread-detail-sub">👤 ${escapeHtml(t.submitter)} &nbsp;·&nbsp; 📅 ${timeAgo(t.submittedAt)} &nbsp;·&nbsp; ${escapeHtml(t.brand)}</div>
+          </div>
+          <div class="thread-detail-actions">
+            <button class="status-chip ${t.solved ? "solved" : "unsolved"}" id="solveBtn">${t.solved ? "✅ Solved" : "❌ Not Solved"}</button>
+            ${!t.rootRecalled ? '<button class="icon-btn" id="editRootBtn" title="Edit the original Telegram message">✏️</button>' : ""}
+            ${!t.rootRecalled ? '<button class="icon-btn" id="recallRootBtn" title="Recall (delete) the original Telegram message">↩️</button>' : ""}
+            <button class="icon-btn" id="deleteBtn" title="Delete this tracking record (Telegram + Sheet are untouched)">🗑</button>
+            <button class="icon-btn" id="refreshBtn" title="Refresh this thread">🔄</button>
+          </div>
+        </div>
+        <hr class="thread-divider" />
+      `;
+    }
+
+    // Everything that USED to be fixed at the top along with the header
+    // (rootRecalled notice, the summary/attachments card) now scrolls
+    // together with the conversation instead — only the header itself
+    // (icon/title/Solved/✏️↩️🗑🔄) stays pinned. See renderDetail() and
+    // updateThreadContent(), which prepend this to the scroll area's
+    // innerHTML rather than the fixed one.
+    function buildSummaryHTML(t) {
+      return `
+        ${t.rootRecalled ? `
+          <div class="edit-modal-note err" style="font-size:12.5px; margin-bottom:14px;">
+            ⚠️ The original message was recalled from Telegram — this ticket no longer exists in the group.
+          </div>` : ""}
+
+        ${(() => {
+          // Clickable "View attachment" buttons for the ORIGINAL ticket's
+          // own photo(s)/document(s) — reuses the exact same lightbox
+          // (viewAttachment(), see the script below) and the same
+          // /api/attachment/<fileId> live-proxy endpoint that reply
+          // attachments use. Only present for tickets submitted after
+          // this feature shipped — attachmentFileIds is simply empty/
+          // undefined for older ones, so this cleanly renders nothing
+          // rather than a broken button.
+          const fileIds = t.attachmentFileIds || [];
+          const attachmentButtons = fileIds.length ? `
+            <div class="thread-summary-attachments">
+              ${fileIds.map((fid, i) => `
+                <div class="inline-attach-slot" data-attachment-file="${escapeAttr(fid)}" data-attachment-name="ticket-attachment-${i + 1}">
+                  <div class="inline-attach-loading">Loading attachment…</div>
+                </div>
+              `).join("")}
+            </div>` : "";
+
+          if (t.rootEdited) {
+            return `
+              <div class="thread-summary-card">
+                <div class="row" style="margin-bottom:6px;"><b style="color:var(--accent-gold);">✏️ Edited — current message text:</b></div>
+                <div style="white-space:pre-wrap; font-size:13px;">${escapeHtml(stripHtmlTags(t.rootText || ""))}</div>
+                ${attachmentButtons}
+              </div>`;
+          }
+          // The exact text originally sent to Telegram — same emoji,
+          // same line breaks, same wording an agent would see in the
+          // Telegram group itself (just with the <b> HTML tags stripped,
+          // since this renders as plain text, not HTML). Falls back to
+          // the old simplified field-list (t.summary) only in the
+          // unlikely case rootText itself is empty for some reason.
+          if (t.rootText) {
+            return `
+              <div class="thread-summary-card">
+                <div style="white-space:pre-wrap; font-size:13px; line-height:1.6;">${escapeHtml(stripHtmlTags(t.rootText))}</div>
+                ${attachmentButtons}
+              </div>`;
+          }
+          if (t.summary && t.summary.length) {
+            return `
+              <div class="thread-summary-card">
+                ${t.summary.map((s) => `<div class="row"><b>${escapeHtml(s.label)}:</b> <span>${escapeHtml(s.value)}</span></div>`).join("")}
+                ${attachmentButtons}
+              </div>`;
+          }
+          return "";
+        })()}
+      `;
+    }
+
+    function stripHtmlTags(str) {
+      return String(str).replace(/<[^>]*>/g, "");
+    }
+
+    function buildConversationHTML(t) {
+      const msgById = {};
+      if (t.rootMessageId) {
+        msgById[t.rootMessageId] = { from: "Original ticket", text: stripHtmlTags(t.rootText || t.title || "") };
+      }
+      t.messages.forEach((m) => {
+        if (m.messageId) msgById[m.messageId] = { from: m.from, text: m.text };
+      });
+      return `
+        <div class="conversation-title">Conversation (${t.messages.length})</div>
+        <div class="conversation">
+          ${t.messages.length ? t.messages.map((m) => renderMsg(m, msgById)).join("") : '<div class="threads-empty">No replies yet — they\'ll show up here as soon as someone replies in Telegram.</div>'}
+        </div>
+      `;
+    }
+
+    function wireTopButtons() {
+      document.getElementById("solveBtn")?.addEventListener("click", () => toggleSolved());
+      document.getElementById("deleteBtn")?.addEventListener("click", () => deleteThread());
+      document.getElementById("editRootBtn")?.addEventListener("click", () => editRoot());
+      document.getElementById("recallRootBtn")?.addEventListener("click", () => recallRoot());
+      document.getElementById("refreshBtn")?.addEventListener("click", async (e) => {
+        const btn = e.currentTarget;
+        btn.classList.add("spinning");
+        btn.disabled = true;
+        const startedAt = Date.now();
+        const MIN_VISIBLE_MS = 2000;
+        try {
+          await loadList(document.getElementById("threadSearch").value);
+          await refreshOpenThread();
+        } finally {
+          const elapsed = Date.now() - startedAt;
+          if (elapsed < MIN_VISIBLE_MS) await new Promise((r) => setTimeout(r, MIN_VISIBLE_MS - elapsed));
+          document.getElementById("refreshBtn")?.classList.remove("spinning");
+          if (document.getElementById("refreshBtn")) document.getElementById("refreshBtn").disabled = false;
+        }
+      });
+    }
+
+    function wireConversationButtons() {
+      document.querySelectorAll("[data-edit-reply]").forEach((btn) => {
+        btn.addEventListener("click", () => editReply(btn.dataset.editReply, btn.dataset.currentText));
+      });
+      document.querySelectorAll("[data-recall-reply]").forEach((btn) => {
+        btn.addEventListener("click", () => recallReply(btn.dataset.recallReply));
+      });
+      document.querySelectorAll("[data-reply-target]").forEach((btn) => {
+        btn.addEventListener("click", () => setReplyTarget(btn.dataset.replyTarget, btn.dataset.replyFrom, btn.dataset.replyText));
+      });
+    }
+
+    function isNearBottom(el) {
+      return el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    }
+
+    function scrollConversation(force) {
+      const area = document.getElementById("threadScrollArea");
+      if (!area) return;
+      if (force || isNearBottom(area)) area.scrollTop = area.scrollHeight;
+    }
+
+    // Full render — used when opening/switching threads. Builds the reply
+    // box fresh (it's fine to lose focus here since the panel just opened).
+    function renderDetail() {
+      const t = selectedThread;
+      if (!t) return;
+      main.innerHTML = `
+        <div class="thread-top-fixed" id="threadTopFixed">${buildHeaderHTML(t)}</div>
+        <div class="thread-scroll-area" id="threadScrollArea">${buildSummaryHTML(t)}${buildConversationHTML(t)}</div>
+        <div class="thread-reply-fixed">
+          <div id="replyTargetBanner"></div>
+          <div class="reply-attach-preview" id="replyAttachPreview"></div>
+          <div class="reply-box">
+            <div class="reply-input-wrap">
+              <button class="attach-btn" id="attachBtn" title="Attach screenshot or PDF">🔗</button>
+              <input type="file" id="replyFileInput" accept="image/png,image/jpeg,application/pdf" hidden />
+              <input type="text" id="replyInput" placeholder="Reply into the Telegram thread..." autocomplete="off" />
+            </div>
+            <button id="replySend">Send</button>
+          </div>
+        </div>
+      `;
+      wireTopButtons();
+      wireConversationButtons();
+      document.getElementById("replySend").addEventListener("click", sendReply);
+      document.getElementById("replyInput").addEventListener("keydown", (e) => {
+        if (e.key === "Enter") sendReply();
+      });
+      document.getElementById("attachBtn").addEventListener("click", () => document.getElementById("replyFileInput").click());
+      document.getElementById("replyFileInput").addEventListener("change", (e) => {
+        pendingAttachment = e.target.files[0] || null;
+        renderAttachPreview();
+      });
+      renderAttachPreview();
+      scrollConversation(true);
+      polishEmoji();
+      loadInlineAttachments();
+    }
+
+    // Light refresh — used by polling and after in-place actions (solve,
+    // send, edit, recall). Only touches the top info block and the
+    // conversation; the reply box (and whatever the agent is mid-typing)
+    // is never rebuilt, so focus/cursor/draft text all survive.
+    function updateThreadContent(t, forceScroll) {
+      const topFixed = document.getElementById("threadTopFixed");
+      const scrollArea = document.getElementById("threadScrollArea");
+      if (!topFixed || !scrollArea) { renderDetail(); return; }
+      const wasNearBottom = isNearBottom(scrollArea);
+      topFixed.innerHTML = buildHeaderHTML(t);
+      wireTopButtons();
+      scrollArea.innerHTML = buildSummaryHTML(t) + buildConversationHTML(t);
+      wireConversationButtons();
+      if (forceScroll || wasNearBottom) scrollConversation(true);
+      polishEmoji();
+      loadInlineAttachments();
+    }
+
+    const AVATAR_COLORS = ["#60A5FA", "#FBBF24", "#F87171", "#F472B6", "#34D399", "#A78BFA", "#38bdf8", "#fb923c"];
+    function colorFor(name) {
+      let hash = 0;
+      for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
+      return AVATAR_COLORS[hash % AVATAR_COLORS.length];
+    }
+
+    function renderMsg(m, msgById) {
+      const selfControls = m.self && m.messageId ? `
+        <span class="msg-actions">
+          <button data-edit-reply="${m.messageId}" data-current-text="${escapeAttr(m.text)}" title="Edit">✏️</button>
+          <button data-recall-reply="${m.messageId}" title="Recall">↩️</button>
+        </span>` : "";
+      const replyTargetBtn = m.messageId
+        ? `<button class="reply-target-btn" data-reply-target="${m.messageId}" data-reply-from="${escapeAttr(m.from)}" data-reply-text="${escapeAttr(m.text)}" title="Reply to this message">↳</button>`
+        : "";
+      const quoted = m.replyToMessageId && msgById && msgById[m.replyToMessageId];
+      const replyQuote = quoted
+        ? `<div class="reply-quote-preview"><b>${escapeHtml(quoted.from)}</b>${escapeHtml((quoted.text || "").slice(0, 80))}</div>`
+        : "";
+      const initials = (m.from || "?").trim().slice(0, 2).toUpperCase();
+      const color = m.self ? "var(--accent-gold)" : colorFor(m.from || "?");
+      const deliveredTick = m.self ? '<span class="msg-tick" title="Delivered">✓</span>' : "";
+      const attachTag = m.hasAttachment
+        ? (m.attachmentFileId
+            ? `<div class="inline-attach-slot msg-inline-attach" data-attachment-file="${escapeAttr(m.attachmentFileId)}" data-attachment-name="${escapeAttr(m.attachmentName || "attachment")}"><div class="inline-attach-loading">Loading attachment…</div></div>`
+            : '<span class="msg-attach-tag" title="Sent before this dashboard could look attachments back up — check the Telegram group for it.">📎 attachment</span>')
+        : "";
+      return `
+        <div class="msg-row ${m.self ? "self" : ""}">
+          <div class="msg-avatar" style="background:${color};">${initials}</div>
+          <div class="msg-body">
+            <div class="msg-who">${escapeHtml(m.from)}${m.handle ? ` <span class="msg-handle">${escapeHtml(m.handle)}</span>` : ""}${m.editedAt ? ' <span class="msg-edited">(edited)</span>' : ""}</div>
+            <div class="msg-bubble">${replyTargetBtn}${replyQuote}${escapeHtml(m.text)}${attachTag}</div>
+            <div class="msg-time">${timeAgo(m.ts)} ${deliveredTick} ${selfControls}</div>
+          </div>
+        </div>
+      `;
+    }
+
+    async function toggleSolved() {
+      const action = selectedThread.solved ? "unsolve" : "solve";
+      const res = await authFetch(`/api/threads/${selectedThread.id}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        selectedThread = data.thread;
+        updateThreadContent(selectedThread, true);
+        patchLocalThread(selectedThread);
+        loadList();
+      }
+    }
+
+    async function deleteThread() {
+      if (!confirm("Delete this tracking record? Telegram and the Sheet are untouched — this only removes it from the dashboard.")) return;
+      const deletedId = selectedThread.id;
+      const res = await authFetch(`/api/threads/${deletedId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "delete" }),
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        alert(data.error || "Delete failed.");
+        return;
+      }
+      selectedId = null;
+      selectedThread = null;
+      main.innerHTML = `<div class="threads-placeholder">Pick a thread on the left, or submit a form to start one.</div>`;
+      removeLocalThread(deletedId);
+      loadList();
+    }
+
+    async function sendReply() {
+      const input = document.getElementById("replyInput");
+      const text = input.value.trim();
+      if (!text && !pendingAttachment) return;
+      const btn = document.getElementById("replySend");
+      btn.disabled = true;
+      btn.textContent = "Sending…";
+      try {
+        const payload = { action: "reply", text };
+        if (replyTarget) payload.replyToMessageId = replyTarget.messageId;
+        if (pendingAttachment) {
+          payload.attachment = {
+            name: pendingAttachment.name,
+            type: pendingAttachment.type,
+            dataUrl: await fileToDataUrl(pendingAttachment),
+          };
+        }
+        const res = await authFetch(`/api/threads/${selectedThread.id}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (!data.ok) {
+          alert("❌ Send failed: " + (data.error || "unknown error") + "\n\nYour message wasn't sent — try again.");
+          return; // keep input + attachment so the agent can retry without retyping
+        }
+        selectedThread = data.thread;
+        input.value = "";
+        pendingAttachment = null;
+        replyTarget = null;
+        renderReplyTargetBanner();
+        document.getElementById("replyFileInput").value = "";
+        updateThreadContent(selectedThread, true);
+        patchLocalThread(selectedThread);
+        loadList();
+      } catch {
+        alert("❌ Send failed: network error.\n\nYour message wasn't sent — try again.");
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "Send";
+      }
+    }
+
+    async function editRoot() {
+      const newText = prompt("Edit the original Telegram message text:\n(This edits the exact message, including any formatting tags.)", selectedThread.rootText || "");
+      if (newText === null) return; // cancelled
+      if (!newText.trim()) return alert("Text can't be empty.");
+      const res = await postAction({ action: "editRoot", text: newText });
+      if (!res.ok) return alert(res.error || "Edit failed.");
+      selectedThread = res.thread;
+      updateThreadContent(selectedThread);
+    }
+
+    async function recallRoot() {
+      if (!confirm("Recall the original ticket message from Telegram? This removes it from the group. Your tracking record, the Sheet row, and this conversation stay.")) return;
+      const res = await postAction({ action: "recallRoot" });
+      if (!res.ok) return alert(res.error || "Recall failed.");
+      selectedThread = res.thread;
+      updateThreadContent(selectedThread);
+      patchLocalThread(selectedThread);
+      loadList();
+    }
+
+    async function editReply(messageId, currentText) {
+      const newText = prompt("Edit this reply:", currentText || "");
+      if (newText === null) return;
+      if (!newText.trim()) return alert("Text can't be empty.");
+      const res = await postAction({ action: "editReply", messageId: Number(messageId), text: newText });
+      if (!res.ok) return alert(res.error || "Edit failed.");
+      selectedThread = res.thread;
+      updateThreadContent(selectedThread);
+    }
+
+    async function recallReply(messageId) {
+      if (!confirm("Recall this reply from Telegram?")) return;
+      const res = await postAction({ action: "recallReply", messageId: Number(messageId) });
+      if (!res.ok) return alert(res.error || "Recall failed.");
+      selectedThread = res.thread;
+      updateThreadContent(selectedThread);
+    }
+
+    async function postAction(payload) {
+      const res = await authFetch(`/api/threads/${selectedThread.id}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      return res.json();
+    }
+
+
+    function escapeAttr(str) {
+      return escapeHtml(str).replace(/"/g, "&quot;");
+    }
+
+    function escapeHtml(str) {
+      return String(str == null ? "" : str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+    }
+
+    // ---- Attachment lightbox ----
+    const attachLightbox = document.getElementById("attachLightbox");
+    const attachLightboxBody = document.getElementById("attachLightboxBody");
+
+    // ---- Shared attachment cache ----
+    //
+    // Images/videos now load AUTOMATICALLY the moment a thread opens
+    // (inline in the summary card + each reply bubble) rather than
+    // needing a click first. But the thread view re-renders from
+    // scratch on every 6-second poll (see updateThreadContent()) — no
+    // caching would mean re-fetching every visible attachment from
+    // Telegram every single poll, which is slow and pointless (nothing
+    // about an already-loaded attachment ever changes). This Map caches
+    // by fileId, storing the in-flight/completed Promise itself (not
+    // just the result) so two nearly-simultaneous requests for the same
+    // fileId (e.g. the inline slot AND a lightbox click both wanting it
+    // at once) share one fetch instead of firing two.
+    const attachmentCache = new Map(); // fileId -> Promise<{url, type}>
+
+    function getAttachmentUrl(fileId, name) {
+      if (!attachmentCache.has(fileId)) {
+        attachmentCache.set(fileId, (async () => {
+          const qs = name ? `?name=${encodeURIComponent(name)}` : "";
+          const res = await authFetch(`/api/attachment/${encodeURIComponent(fileId)}${qs}`);
+          if (!res.ok) {
+            const msg = await res.text().catch(() => "");
+            throw new Error(msg || "Couldn't load this attachment.");
+          }
+          const blob = await res.blob();
+          return { url: URL.createObjectURL(blob), type: blob.type || "" };
+        })());
+      }
+      return attachmentCache.get(fileId);
+    }
+
+    // Fills every not-yet-loaded ".inline-attach-slot" on the page (the
+    // summary card's ticket attachments + each reply's inline
+    // attachment) with the real image/video, using the cache above so
+    // repeat calls (every poll) skip anything already loaded. Called at
+    // the end of updateThreadContent() — see that function.
+    function loadInlineAttachments() {
+      document.querySelectorAll(".inline-attach-slot[data-attachment-file]:not([data-filled])").forEach((slot) => {
+        const fileId = slot.dataset.attachmentFile;
+        const name = slot.dataset.attachmentName || "attachment";
+        slot.setAttribute("data-filled", "1"); // mark now so a poll landing mid-fetch doesn't double-trigger
+        getAttachmentUrl(fileId, name).then(({ url, type }) => {
+          if (!document.body.contains(slot)) return; // a newer poll already replaced this DOM before we resolved
+          if (type.startsWith("image/")) {
+            slot.innerHTML = `<img src="${url}" alt="${escapeAttr(name)}" class="inline-attach-media" />`;
+          } else if (type.startsWith("video/")) {
+            slot.innerHTML = `<video src="${url}" controls class="inline-attach-media"></video>`;
+          } else {
+            slot.innerHTML = `<a href="${url}" download="${escapeAttr(name)}" class="inline-attach-file">📎 ${escapeHtml(name)} — click to download</a>`;
+          }
+          // Clicking an inline image/video also opens the fullscreen
+          // lightbox, for a closer look — small bonus on top of what
+          // was actually asked for, reuses the cache so it's instant.
+          const media = slot.querySelector("img.inline-attach-media, video.inline-attach-media");
+          if (media) media.addEventListener("click", () => viewAttachment(fileId, name));
+        }).catch((err) => {
+          if (!document.body.contains(slot)) return;
+          slot.innerHTML = `<div class="inline-attach-error">⚠️ Couldn't load this attachment.</div>`;
+        });
+      });
+    }
+
+    async function viewAttachment(fileId, name) {
+      attachLightbox.classList.add("is-open");
+      attachLightboxBody.innerHTML = `<div class="attach-lightbox-status">Loading…</div>`;
+      try {
+        const { url, type } = await getAttachmentUrl(fileId, name);
+        if (type.startsWith("image/")) {
+          attachLightboxBody.innerHTML = `<img src="${url}" alt="${escapeAttr(name || "attachment")}" />`;
+        } else if (type.startsWith("video/")) {
+          attachLightboxBody.innerHTML = `<video src="${url}" controls autoplay playsinline></video>`;
+        } else {
+          // Not an image or video (PDF/doc/etc.) — hand it off as a
+          // normal download instead of pretending we can preview it
+          // inline.
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = name || "attachment";
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          attachLightboxBody.innerHTML = `<div class="attach-lightbox-status">Downloaded — this file type can't be previewed here.</div>`;
+        }
+      } catch (e) {
+        attachLightboxBody.innerHTML = `<div class="attach-lightbox-status attach-lightbox-error">${escapeHtml(String((e && e.message) || "Couldn't load this attachment."))}</div>`;
+      }
+    }
+
+    function closeAttachLightbox() {
+      attachLightbox.classList.remove("is-open");
+      attachLightboxBody.innerHTML = "";
+      // NOTE: deliberately NOT revoking the object URL here anymore —
+      // it's now a shared cache entry (see attachmentCache above) that
+      // an inline thumbnail elsewhere on the page may still be using,
+      // not something exclusively owned by the lightbox. Object URLs
+      // get cleaned up by the browser when the page/tab itself closes.
+    }
+    document.getElementById("attachLightboxClose").addEventListener("click", closeAttachLightbox);
+    attachLightbox.addEventListener("click", (e) => { if (e.target === attachLightbox) closeAttachLightbox(); });
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape" && attachLightbox.classList.contains("is-open")) closeAttachLightbox(); });
+
+    bootDashboard();
+
+    // Browsers throttle background-tab timers, so a poll can lag while the
+    // tab is hidden (e.g. agent switches to the Telegram app/tab). Catch up
+    // immediately the moment this tab becomes visible again. (Idle-timeout
+    // checking itself is authguard.js's job, not this page's.)
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") {
+        loadList(document.getElementById("threadSearch").value);
+        refreshOpenThread();
+      }
+    });
+  </script>
+</body>
+</html>

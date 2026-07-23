@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Promo Code Search</title>
+<link rel="stylesheet" href="/assets/style.css" />
+<script src="/assets/theme.js"></script>
+<script src="/assets/starfield.js" defer></script>
+<script src="/assets/authguard.js"></script>
+<style>
+  .promo-shell { max-width: 1500px; margin: 0 auto; padding: 0 24px 80px; }
+
+  .promo-header-card {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 16px; background: var(--card-bg); border: 1px solid var(--border);
+    border-radius: var(--radius); box-shadow: var(--shadow);
+    padding: 18px 22px; margin-bottom: 16px;
+  }
+  .promo-header-left { display: flex; align-items: flex-start; gap: 10px; }
+  .promo-header-left .dot { width: 10px; height: 10px; border-radius: 50%; background: #f43f6e; margin-top: 7px; flex-shrink: 0; }
+  .promo-header-title { font-family: var(--font-display); font-weight: 700; font-size: 17px; color: var(--ink); }
+  .promo-header-sub { font-size: 12.5px; color: var(--ink-soft); margin-top: 2px; }
+  .promo-open-sheet {
+    display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+    background: linear-gradient(135deg, #2f6fed, #1e56c9); color: #fff;
+    font-weight: 600; font-size: 12.5px; padding: 9px 14px; border-radius: 12px;
+    text-decoration: none; box-shadow: 0 8px 18px -8px rgba(30, 86, 201, 0.6);
+    transition: transform 0.15s ease;
+  }
+  .promo-open-sheet:hover { transform: translateY(-1px); }
+  .promo-open-sheet.is-hidden { display: none; }
+
+  .promo-search-card {
+    background: var(--card-bg); border: 1px solid var(--border);
+    border-radius: var(--radius); box-shadow: var(--shadow);
+    padding: 18px 22px; margin-bottom: 18px;
+  }
+  .promo-search-row { display: flex; gap: 10px; }
+  .promo-search-row input {
+    flex: 1; background: var(--field-bg); border: 1px solid var(--border);
+    border-radius: 12px; padding: 11px 14px; font-size: 14px; color: var(--ink);
+    font-family: var(--font-mono);
+  }
+  .promo-search-row input:focus { outline: none; border-color: var(--accent-gold); }
+  .promo-search-btn {
+    display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+    background: linear-gradient(135deg, #2f6fed, #1e56c9); color: #fff;
+    font-weight: 600; font-size: 13.5px; padding: 0 18px; border: none;
+    border-radius: 12px; cursor: pointer; transition: transform 0.15s ease;
+  }
+  .promo-search-btn:hover { transform: translateY(-1px); }
+  .promo-search-btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+
+  .promo-hint { font-size: 11.5px; color: var(--ink-soft); margin-top: 8px; }
+  .promo-hint .kw { background: var(--field-bg); border: 1px solid var(--border); border-radius: 6px; padding: 1px 6px; font-family: var(--font-mono); color: var(--label-blue); }
+
+  .promo-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .promo-chip {
+    background: var(--field-bg); border: 1px solid var(--pill-border);
+    color: var(--label-blue); font-size: 12px; font-weight: 600;
+    font-family: var(--font-mono); padding: 4px 10px; border-radius: 20px;
+  }
+
+  .promo-results-label { font-size: 12px; font-weight: 700; letter-spacing: 0.04em; color: var(--ink-soft); margin: 4px 2px 10px; text-transform: uppercase; }
+
+  .promo-group-card {
+    background: var(--card-bg); border: 1px solid var(--border);
+    border-radius: 16px; box-shadow: var(--shadow); margin-bottom: 14px;
+    overflow: hidden;
+  }
+  .promo-group-header {
+    display: flex; align-items: center; gap: 10px; padding: 14px 18px;
+    cursor: pointer; user-select: none;
+  }
+  .promo-group-header .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #22c55e; flex-shrink: 0; }
+  .promo-group-header .tab-icon { font-size: 15px; }
+  .promo-group-header .tab-name { font-weight: 700; font-size: 14px; color: var(--ink); flex: 1; }
+  .promo-group-header .found-pill {
+    background: rgba(34, 197, 94, 0.14); color: #16a34a; font-size: 11.5px;
+    font-weight: 700; padding: 3px 10px; border-radius: 20px;
+  }
+  .promo-group-header .chev { color: var(--ink-soft); font-size: 12px; transition: transform 0.15s ease; }
+  .promo-group-card.collapsed .chev { transform: rotate(-90deg); }
+  .promo-group-card.collapsed .promo-table-wrap { display: none; }
+
+  .promo-table-wrap { overflow-x: auto; border-top: 1px solid var(--border); }
+  .promo-table { width: 100%; border-collapse: collapse; font-size: 12.5px; table-layout: auto; }
+  .promo-table th {
+    text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.03em;
+    color: var(--ink-soft); font-weight: 700; padding: 10px 10px; white-space: nowrap;
+    background: var(--field-bg); position: sticky; top: 0;
+  }
+  .promo-table td { padding: 12px 10px; vertical-align: top; color: var(--ink); border-top: 1px solid var(--border); word-break: break-word; }
+  .promo-table tr:first-child td { border-top: none; }
+  .promo-brand-pill {
+    display: inline-block; background: var(--field-bg); border: 1px solid var(--pill-border);
+    color: var(--label-blue); font-weight: 700; font-size: 11.5px; padding: 3px 9px; border-radius: 20px;
+    white-space: nowrap;
+  }
+  .promo-code-cell { font-family: var(--font-mono); font-weight: 700; color: #2f6fed; }
+  .promo-excluded { color: #e0577a; font-weight: 600; }
+  .promo-expired { color: #c8912f; font-weight: 600; white-space: nowrap; }
+  .promo-dash { color: var(--ink-soft); }
+
+  .promo-tab-warning {
+    background: rgba(234, 179, 8, 0.12); border: 1px solid rgba(234, 179, 8, 0.35);
+    color: #b45309; font-size: 12px; border-radius: 12px; padding: 10px 14px; margin-bottom: 14px;
+  }
+  [data-theme="dark"] .promo-tab-warning { color: #fbbf24; }
+
+  .promo-state { text-align: center; padding: 30px 10px; color: var(--ink-soft); font-size: 13.5px; }
+  .promo-state.err { color: #e0577a; }
+
+  @media (max-width: 640px) {
+    .promo-header-card { flex-direction: column; }
+    .promo-search-row { flex-direction: column; }
+  }
+</style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-left">
+      <img src="/assets/img/logo.webp" alt="HeyVIP" class="logo-img" />
+      <span class="wordmark">INR CS TEAM - TBC</span>
+    </div>
+    <div class="topbar-right">
+      <span class="clock" id="liveClock"></span>
+      <button class="theme-pill" id="themeToggle"></button>
+      <span class="agent-whoami" id="agentWhoami"></span>
+    </div>
+  </header>
+
+  <div class="threads-topline">
+    <a href="/" class="back-pill">&larr; Back to Home</a>
+  </div>
+
+  <div class="promo-shell">
+    <div class="promo-header-card">
+      <div class="promo-header-left">
+        <span class="dot"></span>
+        <div>
+          <div class="promo-header-title">Promo Code Search</div>
+          <div class="promo-header-sub">Search for promo/bonus code</div>
+        </div>
+      </div>
+      <a href="#" id="openSheetBtn" class="promo-open-sheet is-hidden" target="_blank" rel="noopener">📄 Open Sheet</a>
+    </div>
+
+    <div class="promo-search-card">
+      <div class="promo-search-row">
+        <input type="text" id="codesInput" placeholder="e.g. CX50, BJ50" autocomplete="off" />
+        <button class="promo-search-btn" id="searchBtn"><span>🔍</span><span>Search</span></button>
+      </div>
+      <div class="promo-hint">Separate with <span class="kw">comma</span> — e.g. CX50, BJ50</div>
+      <div class="promo-chips" id="chipsRow"></div>
+    </div>
+
+    <div id="resultsArea"></div>
+  </div>
+
+  <script>
+    window.initThemeToggle();
+    window.initClock();
+    window.AgentAuth.renderWhoami("agentWhoami");
+
+    const input = document.getElementById("codesInput");
+    const btn = document.getElementById("searchBtn");
+    const chipsRow = document.getElementById("chipsRow");
+    const results = document.getElementById("resultsArea");
+    const openSheetBtn = document.getElementById("openSheetBtn");
+
+    function escapeHtml(str) {
+      return String(str ?? "")
+        .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+    function cell(value) {
+      const v = (value ?? "").toString().trim();
+      return v ? escapeHtml(v) : '<span class="promo-dash">—</span>';
+    }
+
+    // Fetch once on load just to populate the "Open Sheet" link, without
+    // running a search.
+    window.AgentAuth.authFetch("/api/promo-search").then((r) => r.json()).then((data) => {
+      if (data.sheetUrl) {
+        openSheetBtn.href = data.sheetUrl;
+        openSheetBtn.classList.remove("is-hidden");
+      }
+    }).catch(() => {});
+
+    function renderChips(codes) {
+      chipsRow.innerHTML = codes.map((c) => `<span class="promo-chip">${escapeHtml(c)}</span>`).join("");
+    }
+
+    function renderGroup(group) {
+      const rows = group.matches.map((m) => `
+        <tr>
+          <td><span class="promo-brand-pill">${escapeHtml(m.brand)}</span></td>
+          <td class="promo-code-cell">${escapeHtml(m.promoCode)}</td>
+          <td>${cell(m.bonusCode)}</td>
+          <td>${cell(m.depositRange)}</td>
+          <td>${cell(m.maxBonus)}</td>
+          <td>${cell(m.wager)}</td>
+          <td>${cell(m.maxWithdraw)}</td>
+          <td>${cell(m.expiredDay)}</td>
+          <td>${cell(m.products)}</td>
+          <td class="${m.excluded ? "promo-excluded" : ""}">${cell(m.excluded)}</td>
+          <td>${cell(m.groupVip)}</td>
+          <td>${cell(m.startOn)}</td>
+          <td class="${m.expiredOn ? "promo-expired" : ""}">${cell(m.expiredOn)}</td>
+        </tr>`).join("");
+
+      return `
+        <div class="promo-group-card">
+          <div class="promo-group-header">
+            <span class="status-dot"></span>
+            <span class="tab-icon">📋</span>
+            <span class="tab-name">${escapeHtml(group.tab)}</span>
+            <span class="found-pill">${group.count} found</span>
+            <span class="chev">▾</span>
+          </div>
+          <div class="promo-table-wrap">
+            <table class="promo-table">
+              <thead>
+                <tr>
+                  <th>Brand</th><th>Promo Code</th><th>Bonus Code</th><th>Deposit Range</th>
+                  <th>Max Bonus</th><th>Wager</th><th>Max Withdraw</th><th>Expired Day</th>
+                  <th>Products</th><th>Excluded</th><th>Group/VIP</th><th>Start On</th><th>Expired On</th>
+                </tr>
+              </thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </div>
+        </div>`;
+    }
+
+    function bindCollapse() {
+      document.querySelectorAll(".promo-group-header").forEach((el) => {
+        el.addEventListener("click", () => el.closest(".promo-group-card").classList.toggle("collapsed"));
+      });
+    }
+
+    async function runSearch() {
+      const raw = input.value.trim();
+      const codes = raw.split(",").map((c) => c.trim()).filter(Boolean);
+      renderChips(codes);
+      if (!codes.length) { results.innerHTML = ""; return; }
+
+      results.innerHTML = '<div class="promo-state">Searching…</div>';
+      btn.disabled = true;
+      try {
+        const res = await window.AgentAuth.authFetch(`/api/promo-search?codes=${encodeURIComponent(codes.join(","))}`, { cache: "no-store" });
+        const data = await res.json();
+        if (!data.ok) {
+          results.innerHTML = `<div class="promo-state err">${escapeHtml(data.error || "Search failed.")}</div>`;
+          return;
+        }
+        if (data.sheetUrl) {
+          openSheetBtn.href = data.sheetUrl;
+          openSheetBtn.classList.remove("is-hidden");
+        }
+        const groups = data.groups || [];
+        const warningHtml = (data.missingTabs && data.missingTabs.length)
+          ? `<div class="promo-tab-warning">⚠️ Skipped ${data.missingTabs.length} tab(s) not found on the sheet (name mismatch?): ${data.missingTabs.map(escapeHtml).join(", ")}` +
+            (data.actualSheetTabs ? `<br/><br/>Sheet's actual tabs: ${data.actualSheetTabs.map(escapeHtml).join(", ")}` : "") +
+            `</div>`
+          : "";
+        if (!groups.length) {
+          results.innerHTML = warningHtml + '<div class="promo-state">No matches found.</div>';
+          return;
+        }
+        const total = groups.reduce((sum, g) => sum + g.count, 0);
+        results.innerHTML =
+          warningHtml +
+          `<div class="promo-results-label">Results (${total})</div>` +
+          groups.map(renderGroup).join("");
+        bindCollapse();
+      } catch {
+        results.innerHTML = '<div class="promo-state err">Search failed — check your connection.</div>';
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    btn.addEventListener("click", runSearch);
+    input.addEventListener("keydown", (e) => { if (e.key === "Enter") runSearch(); });
+  </script>
+</body>
+</html>

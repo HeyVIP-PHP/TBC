@@ -1,0 +1,887 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>INR CS Team - TBC</title>
+<link rel="stylesheet" href="/assets/style.css" />
+<script src="/assets/theme.js"></script>
+<script src="/assets/starfield.js" defer></script>
+<script src="/assets/authguard.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-left">
+      <img src="/assets/img/logo.webp" alt="HeyVIP" class="logo-img" />
+      <span class="wordmark">INR CS TEAM - TBC</span>
+    </div>
+    <div class="topbar-right">
+      <span class="clock" id="liveClock"></span>
+      <button class="theme-pill" id="themeToggle"></button>
+      <span class="agent-whoami" id="agentWhoami"></span>
+    </div>
+  </header>
+
+  <nav class="brand-row" id="brandRow"><div class="brand-row-track" id="brandRowTrack"></div></nav>
+
+  <div class="edit-modal-backdrop" id="editModalBackdrop">
+    <div class="edit-modal">
+      <button type="button" class="modal-close-btn" id="editModalClose" title="Close" aria-label="Close">✕</button>
+      <p class="edit-modal-title" id="editModalTitle">Edit brand</p>
+      <div class="field">
+        <label>Link (opens when the pill is clicked)</label>
+        <input type="text" id="editLink" placeholder="https://..." autocomplete="off" />
+      </div>
+      <p class="edit-modal-note" id="editModalNote"></p>
+      <div class="edit-modal-actions">
+        <button type="button" class="btn-submit" id="editSave">Save</button>
+      </div>
+    </div>
+  </div>
+  <!-- Logo image editing removed for now (file upload wasn't working) — being
+       revisited later; brand pills just show colored initials until then. -->
+
+  <div class="edit-modal-backdrop" id="acctModalBackdrop">
+    <div class="edit-modal">
+      <button type="button" class="modal-close-btn" id="acctModalClose" title="Close" aria-label="Close">✕</button>
+      <div class="edit-modal-header-row">
+        <p class="edit-modal-title" id="acctModalTitle">Account Management</p>
+        <select id="acctProfileRoleFilter" class="acct-role-filter" style="display:none;">
+          <option value="all">All roles</option>
+          <option value="agent">Agent</option>
+          <option value="senior">Senior</option>
+          <option value="admin">Admin</option>
+          <option value="superadmin">SuperAdmin</option>
+        </select>
+      </div>
+      <div id="acctModalBody"></div>
+      <p class="edit-modal-note" id="acctModalNote"></p>
+      <div class="edit-modal-actions" id="acctModalActions">
+        <button type="button" class="btn-submit" id="acctModalSave">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="hub-layout">
+    <aside class="sidebar">
+      <div class="sidebar-header"><span class="dot"></span> ISSUE SUBMISSION</div>
+      <a href="/" class="sidebar-item active" style="--item-accent:#7c6cf0;">
+        <div class="icon" style="background:#7c6cf033;">🏠</div>
+        <div class="text">
+          <div class="name">Home</div>
+          <div class="desc">Hub overview</div>
+        </div>
+        <span class="arrow">&rarr;</span>
+      </a>
+      <div id="sidebarList"></div>
+
+      <div class="sidebar-item expandable" id="acctMgmtToggle">
+        <div class="icon" style="background:#a78bfa33;">🛡️</div>
+        <div class="text">
+          <div class="name">Account Management</div>
+          <div class="desc">Accounts, offices & passwords</div>
+        </div>
+        <span class="arrow">&rarr;</span>
+      </div>
+      <div class="sidebar-subitems" id="acctMgmtSubitems">
+        <div class="sidebar-subitem" id="subCreateAccount" style="display:none;"><span class="sub-icon">➕</span> Create Account</div>
+        <div class="sidebar-subitem" id="subWhitelistIp" style="display:none;"><span class="sub-icon">🌐</span> Whitelist IP</div>
+        <div class="sidebar-subitem" id="subTgRoutes" style="display:none;"><span class="sub-icon">📡</span> TG Group / Channel</div>
+        <div class="sidebar-subitem" id="subResetPassword"><span class="sub-icon">🔑</span> Reset Password</div>
+        <div class="sidebar-subitem" id="subAgentProfile" style="display:none;"><span class="sub-icon">🪪</span> Agent Profile</div>
+      </div>
+    </aside>
+    <main class="hub-main">
+      <div class="inner">
+        <div class="tool-cards">
+          <a href="/threads.html" class="tool-card" id="threadsCard" style="--tool-accent:#38bdf8;">
+            <div class="t-icon" style="background:#38bdf833;">💬<span class="t-badge" id="threadsUnreadBadge"></span></div>
+            <div class="t-name">TG Reply Threads</div>
+            <div class="t-desc">Track Telegram replies to your form submissions in real-time</div>
+            <div class="t-sub-stat" id="threadsUnsolvedStat"></div>
+          </a>
+          <a href="/promo.html" class="tool-card" style="--tool-accent:#f472b6;">
+            <div class="t-icon" style="background:#f472b633;">🎟️</div>
+            <div class="t-name">Promo Code Search</div>
+            <div class="t-desc">Search multiple promo codes at once</div>
+          </a>
+        </div>
+
+        <div class="hub-stats" id="hubStats"></div>
+      </div>
+
+      <span class="status-badge status-badge-corner"><span class="pulse"></span> Connected · Telegram + Sheets</span>
+    </main>
+  </div>
+
+  <script src="/assets/schemas.js"></script>
+  <script>
+    window.initThemeToggle();
+    window.initClock();
+
+    // authguard.js (loaded in <head>) already confirmed we're logged in
+    // before this page rendered at all — just fill in the pill.
+    window.AgentAuth.renderWhoami("agentWhoami");
+
+    const BRAND_COLORS = ["#4fc3f7", "#f6ad55", "#f4718a", "#8b5cf6", "#34d399"];
+    const brandRowTrack = document.getElementById("brandRowTrack");
+    const brandRowEl = document.getElementById("brandRow");
+    let brandConfig = {};
+    let editingBrand = null;
+
+    function buildBrandPill(b, i) {
+      const entry = brandConfig[b.id] || {};
+      const el = document.createElement("div");
+      el.className = "brand-pill";
+      const initials = b.name.slice(0, 2).toUpperCase();
+      const avatar = entry.logoUrl
+        ? `<img class="avatar" src="${entry.logoUrl}" alt="${b.name}" />`
+        : `<span class="avatar" style="background:${BRAND_COLORS[i % BRAND_COLORS.length]};">${initials}</span>`;
+      el.innerHTML = `${avatar}<span class="pill-name">${b.name}</span><button type="button" class="pill-edit" title="Edit ${b.name}" data-brand="${b.id}">✏️</button>`;
+      el.querySelector(".pill-name").addEventListener("click", () => {
+        if (entry.link) window.open(entry.link, "_blank", "noopener");
+      });
+      el.querySelector(".pill-edit").addEventListener("click", (e) => {
+        e.stopPropagation();
+        openEditModal(b);
+      });
+      return el;
+    }
+
+    function renderBrandRow() {
+      brandRowTrack.innerHTML = "";
+      // Only the brands this logged-in agent is actually allowed to see —
+      // an agent scoped to one brand shouldn't see the other brands'
+      // pills at all, not just get blocked after clicking one.
+      const visibleBrands = window.AgentAuth ? window.AgentAuth.filterAllowedBrands(window.BRANDS) : window.BRANDS;
+      if (!visibleBrands.length) return;
+
+      // The marquee loops by scrolling exactly one HALF of the track's
+      // total width (translateX(-50%), see the CSS) — so each half needs
+      // to independently be at least as wide as the visible row, or the
+      // loop runs out of content partway through and leaves a visible
+      // gap (this showed up in practice on a wide monitor with an agent
+      // scoped to just 1-2 brands — a fixed "render twice" wasn't always
+      // wide enough). Render one copy first purely to MEASURE how wide
+      // the brand set actually renders at this screen size (pill width
+      // depends on each brand's name/logo, can't be computed without a
+      // real layout pass), then figure out how many copies make up one
+      // full-width "half", and build the real (measure copy discarded)
+      // two-halves track from that.
+      visibleBrands.forEach((b, i) => brandRowTrack.appendChild(buildBrandPill(b, i)));
+      const oneCopyWidth = brandRowTrack.scrollWidth || 1;
+      const containerWidth = (brandRowEl && brandRowEl.clientWidth) || window.innerWidth;
+      const copiesPerHalf = Math.max(1, Math.ceil(containerWidth / oneCopyWidth) + 1);
+
+      brandRowTrack.innerHTML = "";
+      for (let half = 0; half < 2; half++) {
+        for (let copy = 0; copy < copiesPerHalf; copy++) {
+          visibleBrands.forEach((b, i) => brandRowTrack.appendChild(buildBrandPill(b, i)));
+        }
+      }
+    }
+
+    // Re-measure and rebuild on resize (debounced) — a copy count picked
+    // for one window width can fall short after the window (or a
+    // maximized browser moved to a bigger monitor) gets wider.
+    let brandRowResizeTimer = null;
+    window.addEventListener("resize", () => {
+      clearTimeout(brandRowResizeTimer);
+      brandRowResizeTimer = setTimeout(renderBrandRow, 200);
+    });
+
+    async function loadBrandConfig() {
+      try {
+        const res = await fetch("/api/brand-config");
+        const data = await res.json();
+        if (data.ok) brandConfig = data.config || {};
+      } catch {
+        // Non-fatal — pills just fall back to colored initials.
+      }
+      renderBrandRow();
+    }
+    loadBrandConfig();
+
+    // ---- TG Reply Threads card: unsolved count + total unread badge ----
+    function getSeenCount(id) {
+      return parseInt(localStorage.getItem(`lastseen:${id}`) || "0", 10);
+    }
+    async function loadThreadsSummary() {
+      try {
+        const res = await window.AgentAuth.authFetch("/api/threads", { cache: "no-store" });
+        const data = await res.json();
+        if (!data.ok) return;
+        const all = [...(data.active || []), ...(data.solved || [])];
+        const unread = all.reduce((sum, t) => sum + Math.max(0, (t.replyCount || 0) - getSeenCount(t.id)), 0);
+        const unsolvedCount = (data.active || []).length;
+
+        const badge = document.getElementById("threadsUnreadBadge");
+        if (badge) badge.textContent = unread > 0 ? (unread > 99 ? "99+" : unread) : "";
+        const stat = document.getElementById("threadsUnsolvedStat");
+        if (stat) {
+          stat.textContent = unsolvedCount > 0 ? `${unsolvedCount} unsolved` : "All caught up ✓";
+          stat.classList.toggle("has-unsolved", unsolvedCount > 0);
+        }
+      } catch {
+        // Non-fatal — card just shows without the live counts.
+      }
+    }
+    loadThreadsSummary();
+    setInterval(loadThreadsSummary, 15000);
+
+    // ---- Edit modal ----
+    const backdrop = document.getElementById("editModalBackdrop");
+    const modalTitle = document.getElementById("editModalTitle");
+    const modalNote = document.getElementById("editModalNote");
+    const linkInput = document.getElementById("editLink");
+
+    function openEditModal(brand) {
+      editingBrand = brand;
+      modalTitle.textContent = `Edit ${brand.name}`;
+      modalNote.textContent = "";
+      modalNote.className = "edit-modal-note";
+      linkInput.value = (brandConfig[brand.id] && brandConfig[brand.id].link) || "";
+      backdrop.classList.add("is-open");
+    }
+    function closeEditModal() {
+      backdrop.classList.remove("is-open");
+      editingBrand = null;
+    }
+    document.getElementById("editModalClose").addEventListener("click", closeEditModal);
+    backdrop.addEventListener("click", (e) => { if (e.target === backdrop) closeEditModal(); });
+
+    document.getElementById("editSave").addEventListener("click", async () => {
+      if (!editingBrand) return;
+      modalNote.textContent = "Saving…";
+      modalNote.className = "edit-modal-note";
+
+      try {
+        // Logged-in-agent + this account's own credentials IS the
+        // authorization now — no separate shared edit password anymore
+        // (see functions/api/brand-config.js).
+        const res = await window.AgentAuth.authFetch("/api/brand-config", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ brand: editingBrand.id, link: linkInput.value || "" }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.error || "Save failed.");
+        brandConfig = data.config;
+        renderBrandRow();
+        modalNote.textContent = "Saved.";
+        modalNote.className = "edit-modal-note ok";
+        setTimeout(closeEditModal, 600);
+      } catch (err) {
+        modalNote.textContent = err.message || "Save failed.";
+        modalNote.className = "edit-modal-note err";
+      }
+    });
+
+    const hubStats = document.getElementById("hubStats");
+    const visibleBrandCount = (window.AgentAuth ? window.AgentAuth.filterAllowedBrands(window.BRANDS) : window.BRANDS).length;
+    hubStats.innerHTML = `
+      <div class="stat"><b>${visibleBrandCount}</b><span>Brands</span></div>
+      <div class="stat"><b>${window.MODULES.length}</b><span>Modules</span></div>
+      <div class="stat"><b>24/7</b><span>Live routing</span></div>
+    `;
+
+    const list = document.getElementById("sidebarList");
+    window.MODULES.forEach((m) => {
+      const a = document.createElement("a");
+      a.href = `/form.html?module=${m.id}`;
+      a.className = "sidebar-item";
+      a.style.setProperty("--item-accent", m.accent);
+      a.innerHTML = `
+        <div class="icon" style="background:${m.accent}33;">${m.icon}</div>
+        <div class="text">
+          <div class="name">${m.name}</div>
+          <div class="desc">${m.description}</div>
+        </div>
+        <span class="arrow">&rarr;</span>
+      `;
+      list.appendChild(a);
+    });
+
+    // ---- Account Management (sidebar dropdown + 4 focused modals) ----
+    // Rank matches functions/_shared/accounts.js ROLE_RANK exactly — keep
+    // these in sync if that ever changes.
+    const ROLE_RANK = { agent: 0, senior: 1, admin: 2, superadmin: 3 };
+    const authInfo = window.AgentAuth.getAuth();
+    const myRank = ROLE_RANK[authInfo?.role] ?? ROLE_RANK.agent;
+    const isSenior = myRank >= ROLE_RANK.senior;   // sees Create Account, and Reset Password gains an account-picker
+    const isAdmin = myRank >= ROLE_RANK.admin;     // sees Whitelist IP (view-only) and Agent Profile (view-only)
+    const isSuperAdmin = myRank >= ROLE_RANK.superadmin; // can actually change Whitelist IP / edit Agent Profile / assign any role
+    document.getElementById("subCreateAccount").style.display = isSenior ? "flex" : "none";
+    document.getElementById("subWhitelistIp").style.display = isAdmin ? "flex" : "none";
+    // TG Group/Channel controls where every ticket actually gets
+    // delivered — SuperAdmin-only, no Admin view tier (unlike Whitelist
+    // IP, which Admin can at least see read-only).
+    document.getElementById("subTgRoutes").style.display = isSuperAdmin ? "flex" : "none";
+    document.getElementById("subAgentProfile").style.display = isAdmin ? "flex" : "none";
+
+    const acctToggle = document.getElementById("acctMgmtToggle");
+    const acctSubitems = document.getElementById("acctMgmtSubitems");
+    acctToggle.addEventListener("click", () => {
+      acctToggle.classList.toggle("open");
+      acctSubitems.classList.toggle("open");
+    });
+
+    document.getElementById("subCreateAccount").addEventListener("click", () => openAcctModal("create"));
+    document.getElementById("subWhitelistIp").addEventListener("click", () => openAcctModal("whitelist"));
+    document.getElementById("subTgRoutes").addEventListener("click", () => openAcctModal("tgroutes"));
+    document.getElementById("subResetPassword").addEventListener("click", () => openAcctModal("reset"));
+    document.getElementById("subAgentProfile").addEventListener("click", () => openAcctModal("profile"));
+    document.getElementById("acctProfileRoleFilter").addEventListener("change", () => renderAgentProfileTable());
+
+
+    const acctBackdrop = document.getElementById("acctModalBackdrop");
+    const acctTitle = document.getElementById("acctModalTitle");
+    const acctBody = document.getElementById("acctModalBody");
+    const acctNote = document.getElementById("acctModalNote");
+    let acctMode = null;
+    let acctOffices = [];
+    let acctAccounts = [];
+
+    function acctEsc(str) {
+      return String(str == null ? "" : str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+    function setAcctNote(msg, cls) {
+      acctNote.textContent = msg || "";
+      acctNote.className = "edit-modal-note" + (cls ? " " + cls : "");
+    }
+
+    function timeAgoLocal(iso) {
+      if (!iso) return "—";
+      const diffMs = Date.now() - new Date(iso).getTime();
+      const mins = Math.floor(diffMs / 60000);
+      if (mins < 1) return "just now";
+      if (mins < 60) return `${mins}m ago`;
+      const hrs = Math.floor(mins / 60);
+      if (hrs < 24) return `${hrs}h ago`;
+      const days = Math.floor(hrs / 24);
+      return `${days}d ago`;
+    }
+
+    async function openAcctModal(mode) {
+      acctMode = mode;
+      setAcctNote("");
+      acctBody.innerHTML = '<p class="edit-modal-note">Loading…</p>';
+      acctBackdrop.classList.add("is-open");
+      const modalEl = acctBackdrop.querySelector(".edit-modal");
+      modalEl.classList.toggle("wide", mode === "profile" || mode === "tgroutes");
+      // Both "profile" and "tgroutes" use per-row inline save buttons
+      // instead of one global footer Save (too many independently-
+      // editable rows for a single "Save" to mean anything useful).
+      // With Cancel removed (closing is via the X button now), the whole
+      // actions row would otherwise just be dead space when Save is
+      // hidden — hide the row itself, not just the button inside it.
+      const showFooterSave = mode !== "profile" && mode !== "tgroutes";
+      document.getElementById("acctModalSave").style.display = showFooterSave ? "" : "none";
+      document.getElementById("acctModalActions").style.display = showFooterSave ? "" : "none";
+      const roleFilterEl = document.getElementById("acctProfileRoleFilter");
+      roleFilterEl.style.display = mode === "profile" ? "" : "none";
+      if (mode === "profile") roleFilterEl.value = "all";
+
+      if (mode === "create") {
+        acctTitle.textContent = "Create Account";
+        const res = await window.AgentAuth.authFetch("/api/admin/offices");
+        const data = await res.json();
+        acctOffices = data.ok ? data.offices : [];
+        const officeOptions = acctOffices.map((o) => `<option value="${o.id}">${acctEsc(o.name)}</option>`).join("");
+        const brandPills = (window.BRANDS || []).map((b) => `<div class="brand-toggle-pill" data-brand="${acctEsc(b.name)}">${acctEsc(b.name).toUpperCase()}</div>`).join("");
+        // Manage scope is a literal allow-list per tier, not "below my
+        // rank" — Senior: agent only. Admin: agent + senior. SuperAdmin:
+        // anything. Server enforces this too; this just keeps the
+        // dropdown from offering a choice that would get rejected.
+        const manageScope = isSuperAdmin ? ["agent", "senior", "admin", "superadmin"] : (myRank === ROLE_RANK.admin ? ["agent", "senior"] : ["agent"]);
+        const roleOptions = manageScope.map((r) => `<option value="${r}">${r}</option>`).join("");
+        acctBody.innerHTML = `
+          <div class="field"><label>Username</label><input type="text" id="am_username" autocomplete="off" /></div>
+          <div class="field"><label>Password</label><input type="password" id="am_password" autocomplete="new-password" /></div>
+          <div class="field"><label>Full Name</label><input type="text" id="am_fullname" autocomplete="off" placeholder="e.g. Daniel Tan" /></div>
+          <div class="field"><label>PSD</label><input type="text" id="am_pid" autocomplete="off" placeholder="e.g. PSD-014" /></div>
+          <div class="field"><label>Role</label><select id="am_role">${roleOptions}</select></div>
+          <div class="field"><label>Office</label><select id="am_office"><option value="">— none —</option>${officeOptions}</select></div>
+          <div class="field">
+            <div class="brand-toggle-label"><span>Can See Brands</span><span class="select-all-btn" id="am_selectAllBtn">Select All</span></div>
+            <div class="brand-toggle-grid" id="am_brandGrid">${brandPills}</div>
+          </div>`;
+        wireBrandTogglePicker();
+      }
+
+      if (mode === "whitelist") {
+        acctTitle.textContent = "Whitelist IP";
+        const res = await window.AgentAuth.authFetch("/api/admin/offices");
+        const data = await res.json();
+        acctOffices = data.ok ? data.offices : [];
+        const officeOptions = acctOffices.map((o) => `<option value="${o.id}">${acctEsc(o.name)}</option>`).join("");
+        const ro = isSuperAdmin ? "" : "disabled";
+        acctBody.innerHTML = `
+          <div class="field"><label>Office</label><select id="am_office_picker" ${ro}><option value="">+ New Office</option>${officeOptions}</select></div>
+          <div class="field"><label>Office name</label><input type="text" id="am_office_name" ${ro} autocomplete="off" /></div>
+          <div class="field"><label>Allowed IPs (one per line)</label><textarea id="am_office_ips" rows="4" placeholder="203.0.113.10" ${ro} autocomplete="off"></textarea></div>
+          ${isSuperAdmin ? "" : '<p class="edit-modal-note">View only — SuperAdmin can edit.</p>'}`;
+        document.getElementById("am_office_picker").addEventListener("change", (e) => {
+          const office = acctOffices.find((o) => o.id === e.target.value);
+          document.getElementById("am_office_name").value = office ? office.name : "";
+          document.getElementById("am_office_ips").value = office ? (office.allowedIPs || []).join("\n") : "";
+        });
+        document.getElementById("acctModalSave").style.display = isSuperAdmin ? "" : "none";
+        document.getElementById("acctModalActions").style.display = isSuperAdmin ? "" : "none";
+      }
+
+      if (mode === "reset" && isSenior) {
+        acctTitle.textContent = "Reset Password";
+        const res = await window.AgentAuth.authFetch("/api/admin/accounts");
+        const data = await res.json();
+        // Manage scope allow-list: Senior -> agent only. Admin -> agent +
+        // senior. SuperAdmin -> everyone.
+        const manageScope = isSuperAdmin ? null : (myRank === ROLE_RANK.admin ? ["agent", "senior"] : ["agent"]);
+        acctAccounts = data.ok ? data.accounts.filter((a) => !manageScope || manageScope.includes(a.role)) : [];
+        const accountOptions = acctAccounts.map((a) => `<option value="${acctEsc(a.username)}">${acctEsc(a.username)} (${acctEsc(a.role)})</option>`).join("");
+        acctBody.innerHTML = `
+          <div class="field"><label>Account</label><select id="am_reset_account">${accountOptions || '<option value="">— no eligible accounts —</option>'}</select></div>
+          <div class="field"><label>New Password</label><input type="password" id="am_reset_newpass" autocomplete="new-password" /></div>
+          <div class="field"><label>Confirm New Password</label><input type="password" id="am_reset_confirm" autocomplete="new-password" /></div>
+          <p class="edit-modal-note">${isSuperAdmin ? "SuperAdmin reset" : `You can only reset a password for: ${manageScope.join(" or ")}`} — the old password isn't needed.</p>`;
+      }
+
+      if (mode === "reset" && !isSenior) {
+        acctTitle.textContent = "Reset Password";
+        acctBody.innerHTML = `
+          <div class="field"><label>Current Password</label><input type="password" id="am_reset_current" autocomplete="current-password" /></div>
+          <div class="field"><label>New Password</label><input type="password" id="am_reset_newpass" autocomplete="new-password" /></div>
+          <div class="field"><label>Confirm New Password</label><input type="password" id="am_reset_confirm" autocomplete="new-password" /></div>
+          <p class="edit-modal-note">You can only change your own password here.</p>`;
+      }
+
+      if (mode === "profile") {
+        acctTitle.textContent = "Agent Profile";
+        await loadAgentProfileTable();
+      }
+
+      if (mode === "tgroutes") {
+        acctTitle.textContent = "TG Group / Channel";
+        await loadTgRoutes();
+      }
+    }
+
+    // ---- TG Group / Channel (live-editable Telegram routing) ----
+    // Left column: the 5 brands. Right column: that brand's 6 modules,
+    // each with an editable Chat ID + Topic ID. Backed by
+    // /api/admin/routes, which merges hardcoded defaults
+    // (_shared/routing.js) with any live KV overrides — see
+    // _shared/routes.js for the fallback logic actually used at
+    // submission time.
+    let acctRoutesData = null;
+    let acctRoutesSelectedBrand = null;
+    // Reserved pseudo ids — NOT a real brand/module, must match the
+    // backend's SECURITY_BRAND_ID/SECURITY_MODULE_ID in
+    // functions/api/admin/routes.js exactly.
+    const SECURITY_ROW_ID = "_security";
+    const SECURITY_MODULE_ID = "alerts";
+
+    async function loadTgRoutes() {
+      const res = await window.AgentAuth.authFetch("/api/admin/routes");
+      const data = await res.json();
+      if (!data.ok) {
+        acctBody.innerHTML = `<p class="edit-modal-note err">${acctEsc(data.error || "Failed to load.")}</p>`;
+        return;
+      }
+      acctRoutesData = data;
+      if (!acctRoutesSelectedBrand || (acctRoutesSelectedBrand !== SECURITY_ROW_ID && !data.brands.some((b) => b.id === acctRoutesSelectedBrand))) {
+        acctRoutesSelectedBrand = data.brands[0]?.id || null;
+      }
+      renderTgRoutes();
+    }
+
+    function renderTgRoutes() {
+      if (!acctRoutesData) return;
+      const { brands, modules, routes, securityAlerts } = acctRoutesData;
+      const isSecuritySelected = acctRoutesSelectedBrand === SECURITY_ROW_ID;
+
+      const brandListHtml = brands.map((b) => `
+        <div class="tgroute-brand${b.id === acctRoutesSelectedBrand ? " selected" : ""}" data-brand="${acctEsc(b.id)}">${acctEsc(b.name)}</div>
+      `).join("") + `
+        <div class="tgroute-brand tgroute-security${isSecuritySelected ? " selected" : ""}" data-brand="${SECURITY_ROW_ID}">🔒 Security Alerts</div>
+      `;
+
+      if (isSecuritySelected) {
+        const r = securityAlerts || { chatId: "", topicId: null, isOverride: false };
+        acctBody.innerHTML = `
+          <div class="tgroute-layout">
+            <div class="tgroute-brands">${brandListHtml}</div>
+            <div class="tgroute-modules">
+              <div class="tgroute-row" data-module="${SECURITY_MODULE_ID}">
+                <div class="tgroute-mod-name">🔒 Unrecognized-IP / Account-Lock Alerts
+                  <span class="route-tag${r.isOverride ? " custom" : ""}">${r.isOverride ? "custom" : "default"}</span>
+                </div>
+                <div class="tgroute-fields">
+                  <input type="text" class="tgroute-chatid" placeholder="Chat ID e.g. -1001234567890" value="${acctEsc(r.chatId)}" autocomplete="off" />
+                  <input type="text" class="tgroute-topicid" placeholder="Topic ID (optional)" value="${r.topicId ?? ""}" autocomplete="off" />
+                  <div class="tgroute-row-actions">
+                    <button type="button" class="tgroute-action-btn tgroute-save">Save</button>
+                    ${r.isOverride ? '<button type="button" class="tgroute-action-btn tgroute-action-secondary tgroute-reset">Reset</button>' : ""}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <hr class="tgroute-divider" />
+          <p class="edit-modal-note tgroute-footnote">This isn't a brand — it's where login sends a Telegram alert on every failed login attempt (wrong password, unrecognized IP, or no office assigned), or when an account gets auto-locked (5 combined failures within an hour). Login stays blocked exactly the same either way; this only controls where the heads-up message goes. "default" is whatever's set in the SECURITY_ALERTS_CHAT_ID Cloudflare secret (empty = no alerts sent yet).</p>`;
+        acctBody.querySelectorAll(".tgroute-brand").forEach((el) => {
+          el.addEventListener("click", () => {
+            acctRoutesSelectedBrand = el.dataset.brand;
+            setAcctNote("");
+            renderTgRoutes();
+          });
+        });
+        acctBody.querySelectorAll(".tgroute-save").forEach((btn) => {
+          btn.addEventListener("click", () => saveTgRouteRow(btn.closest(".tgroute-row")));
+        });
+        acctBody.querySelectorAll(".tgroute-reset").forEach((btn) => {
+          btn.addEventListener("click", () => resetTgRouteRow(btn.closest(".tgroute-row")));
+        });
+        return;
+      }
+
+      const moduleRowsHtml = modules.map((m) => {
+        const key = `${acctRoutesSelectedBrand}|${m.id}`;
+        const r = routes[key] || { chatId: "", topicId: null, isOverride: false };
+        return `
+          <div class="tgroute-row" data-module="${acctEsc(m.id)}">
+            <div class="tgroute-mod-name">${m.emoji} ${acctEsc(m.name)}
+              <span class="route-tag${r.isOverride ? " custom" : ""}">${r.isOverride ? "custom" : "default"}</span>
+            </div>
+            <div class="tgroute-fields">
+              <input type="text" class="tgroute-chatid" placeholder="Chat ID e.g. -1001234567890" value="${acctEsc(r.chatId)}" autocomplete="off" />
+              <input type="text" class="tgroute-topicid" placeholder="Topic ID (optional)" value="${r.topicId ?? ""}" autocomplete="off" />
+              <div class="tgroute-row-actions">
+                <button type="button" class="tgroute-action-btn tgroute-save">Save</button>
+                ${r.isOverride ? '<button type="button" class="tgroute-action-btn tgroute-action-secondary tgroute-reset">Reset</button>' : ""}
+              </div>
+            </div>
+          </div>`;
+      }).join("");
+
+      acctBody.innerHTML = `
+        <div class="tgroute-layout">
+          <div class="tgroute-brands">${brandListHtml}</div>
+          <div class="tgroute-modules">${moduleRowsHtml}</div>
+        </div>
+        <hr class="tgroute-divider" />
+        <p class="edit-modal-note tgroute-footnote">Changes apply to the very next form submission — no redeploy needed. "default" rows are still using the value built into the code; "custom" rows have been overridden here.</p>`;
+
+      acctBody.querySelectorAll(".tgroute-brand").forEach((el) => {
+        el.addEventListener("click", () => {
+          acctRoutesSelectedBrand = el.dataset.brand;
+          setAcctNote("");
+          renderTgRoutes();
+        });
+      });
+      acctBody.querySelectorAll(".tgroute-save").forEach((btn) => {
+        btn.addEventListener("click", () => saveTgRouteRow(btn.closest(".tgroute-row")));
+      });
+      acctBody.querySelectorAll(".tgroute-reset").forEach((btn) => {
+        btn.addEventListener("click", () => resetTgRouteRow(btn.closest(".tgroute-row")));
+      });
+    }
+
+    async function saveTgRouteRow(row) {
+      const moduleId = row.dataset.module;
+      const chatId = row.querySelector(".tgroute-chatid").value.trim();
+      const topicId = row.querySelector(".tgroute-topicid").value.trim();
+      if (!chatId) return setAcctNote("Chat ID is required.", "err");
+      setAcctNote("Saving…");
+      const res = await window.AgentAuth.authFetch("/api/admin/routes", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "save", brandId: acctRoutesSelectedBrand, moduleId, chatId, topicId: topicId === "" ? null : topicId }),
+      });
+      const data = await res.json();
+      if (!data.ok) return setAcctNote(data.error || "Save failed.", "err");
+      if (acctRoutesSelectedBrand === SECURITY_ROW_ID) {
+        acctRoutesData.securityAlerts = data.route;
+      } else {
+        acctRoutesData.routes[`${acctRoutesSelectedBrand}|${moduleId}`] = data.route;
+      }
+      setAcctNote("Saved.", "ok");
+      renderTgRoutes();
+    }
+
+    async function resetTgRouteRow(row) {
+      const moduleId = row.dataset.module;
+      setAcctNote("Resetting…");
+      const res = await window.AgentAuth.authFetch("/api/admin/routes", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "reset", brandId: acctRoutesSelectedBrand, moduleId }),
+      });
+      const data = await res.json();
+      if (!data.ok) return setAcctNote(data.error || "Reset failed.", "err");
+      if (acctRoutesSelectedBrand === SECURITY_ROW_ID) {
+        acctRoutesData.securityAlerts = data.route;
+      } else {
+        acctRoutesData.routes[`${acctRoutesSelectedBrand}|${moduleId}`] = data.route;
+      }
+      setAcctNote("Reset to default.", "ok");
+      renderTgRoutes();
+    }
+
+    let acctOfficesById = {};
+
+    async function loadAgentProfileTable() {
+      const [accountsRes, officesRes] = await Promise.all([
+        window.AgentAuth.authFetch("/api/admin/accounts"),
+        window.AgentAuth.authFetch("/api/admin/offices"),
+      ]);
+      const accountsData = await accountsRes.json();
+      const officesData = await officesRes.json();
+      acctAccounts = accountsData.ok ? accountsData.accounts : [];
+      acctOfficesById = {};
+      if (officesData.ok) {
+        officesData.offices.forEach((o) => { acctOfficesById[o.id] = o; });
+      }
+      renderAgentProfileTable();
+    }
+
+    function renderAgentProfileTable() {
+      const roleFilter = document.getElementById("acctProfileRoleFilter").value || "all";
+      const visibleAccounts = roleFilter === "all" ? acctAccounts : acctAccounts.filter((a) => a.role === roleFilter);
+
+      const rows = visibleAccounts.map((a) => {
+        const pwBy = a.lastPasswordChange
+          ? `${timeAgoLocal(a.lastPasswordChange.at)}<span class="pw-by">by ${acctEsc(a.lastPasswordChange.by)}</span>`
+          : "—";
+        // Admin can edit fullName/PSD; only SuperAdmin can also change Role.
+        const editCell = isAdmin
+          ? `<button type="button" class="row-btn" data-edit="${acctEsc(a.username)}" title="Edit name/PSD${isSuperAdmin ? "/role" : ""}">✏️</button>`
+          : "";
+        // Office / IP — SuperAdmin can log in from anywhere with no office
+        // bound (intentional); every other role now REQUIRES one to log in
+        // at all (see _shared/accounts.js officeIpCheckPasses()), so a
+        // non-SuperAdmin account with no office is flagged as broken, not
+        // just "unrestricted".
+        const office = a.officeId ? acctOfficesById[a.officeId] : null;
+        let officeCell;
+        if (office) {
+          officeCell = acctEsc(office.name);
+        } else if (a.role === "superadmin") {
+          officeCell = `<span class="office-none">— no office (unrestricted, OK for SuperAdmin)</span>`;
+        } else {
+          officeCell = `<span class="office-missing">⚠️ No office — can't log in</span>`;
+        }
+        const statusCell = a.locked
+          ? `<span class="office-missing" title="${acctEsc(a.lockedReason || "Locked")}">🔒 Locked</span>`
+          : `<span style="color:var(--ink-soft);">Active</span>`;
+        const brandsCell = a.allowedBrands === "all" ? "All" : ((a.allowedBrands || []).join(", ") || "—");
+        const lockBtn = isSuperAdmin
+          ? (a.locked
+              ? `<button type="button" class="row-btn" data-unlock="${acctEsc(a.username)}" title="Unlock this account">🔓</button>`
+              : `<button type="button" class="row-btn" data-lock="${acctEsc(a.username)}" title="Lock this account">🔒</button>`)
+          : "";
+        return `
+          <tr data-username="${acctEsc(a.username)}">
+            <td>${acctEsc(a.username)}</td>
+            <td class="cell-role"><span class="role-tag">${acctEsc(a.role)}</span></td>
+            <td class="cell-office">${officeCell}</td>
+            <td class="cell-brands">${acctEsc(brandsCell)}</td>
+            <td>${statusCell}</td>
+            <td class="cell-fullname">${acctEsc(a.fullName || "—")}</td>
+            <td class="cell-pid">${acctEsc(a.pid || "—")}</td>
+            <td>${timeAgoLocal(a.lastActiveAt)}</td>
+            <td>${pwBy}</td>
+            <td>${editCell}${lockBtn}</td>
+          </tr>`;
+      }).join("");
+      acctBody.innerHTML = `
+        <div class="agent-profile-table-wrap">
+          <table class="agent-profile-table">
+            <thead><tr><th>Username</th><th>Role</th><th>Office</th><th>Brands</th><th>Status</th><th>Full Name</th><th>PSD</th><th>Last Log In Time</th><th>Password Changed</th><th></th></tr></thead>
+            <tbody>${rows || '<tr><td colspan="10" style="color:var(--ink-soft);">No accounts match this filter.</td></tr>'}</tbody>
+          </table>
+        </div>
+        ${isAdmin ? "" : '<p class="edit-modal-note">View only.</p>'}`;
+      acctBody.querySelectorAll("[data-edit]").forEach((btn) => {
+        btn.addEventListener("click", () => editAgentProfileRow(btn.dataset.edit));
+      });
+      acctBody.querySelectorAll("[data-lock]").forEach((btn) => {
+        btn.addEventListener("click", () => setAgentLock(btn.dataset.lock, true));
+      });
+      acctBody.querySelectorAll("[data-unlock]").forEach((btn) => {
+        btn.addEventListener("click", () => setAgentLock(btn.dataset.unlock, false));
+      });
+    }
+
+    async function setAgentLock(username, locked) {
+      const verb = locked ? "Lock" : "Unlock";
+      if (!confirm(`${verb} account "${username}"?${locked ? " They won't be able to log in (or keep using an already-open session) until unlocked." : ""}`)) return;
+      const res = await window.AgentAuth.authFetch("/api/admin/accounts", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: locked ? "lock" : "unlock", username }),
+      });
+      const data = await res.json();
+      if (!data.ok) { alert(data.error || `${verb} failed.`); return; }
+      await loadAgentProfileTable();
+    }
+
+    function editAgentProfileRow(username) {
+      const account = acctAccounts.find((a) => a.username === username);
+      if (!account) return;
+      const row = acctBody.querySelector(`tr[data-username="${CSS.escape(username)}"]`);
+      // Role is SuperAdmin-only — Admin sees it as read-only text, not a dropdown.
+      if (isSuperAdmin) {
+        const roleOptions = ["agent", "senior", "admin", "superadmin"]
+          .map((r) => `<option value="${r}" ${r === account.role ? "selected" : ""}>${r}</option>`).join("");
+        row.querySelector(".cell-role").innerHTML = `<select class="edit-role">${roleOptions}</select>`;
+      }
+      row.querySelector(".cell-fullname").innerHTML = `<input type="text" class="edit-fullname" value="${acctEsc(account.fullName || "")}" autocomplete="off" />`;
+      row.querySelector(".cell-pid").innerHTML = `<input type="text" class="edit-pid" value="${acctEsc(account.pid || "")}" autocomplete="off" />`;
+      const btnCell = row.lastElementChild;
+      btnCell.innerHTML = `<button type="button" class="row-btn" title="Save">✅</button><button type="button" class="row-btn" title="Cancel">✖️</button>`;
+      const [saveBtn, cancelBtn] = btnCell.querySelectorAll("button");
+      saveBtn.addEventListener("click", () => saveAgentProfileRow(username, row));
+      cancelBtn.addEventListener("click", renderAgentProfileTable);
+    }
+
+    async function saveAgentProfileRow(username, row) {
+      const fullName = row.querySelector(".edit-fullname").value.trim();
+      const pid = row.querySelector(".edit-pid").value.trim();
+      const roleEl = row.querySelector(".edit-role"); // only present for SuperAdmin
+      const payload = { action: "save", username, fullName, pid };
+      if (roleEl) payload.role = roleEl.value;
+      const res = await window.AgentAuth.authFetch("/api/admin/accounts", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!data.ok) { alert(data.error || "Save failed."); return; }
+      await loadAgentProfileTable();
+    }
+
+
+    function closeAcctModal() {
+      acctBackdrop.classList.remove("is-open");
+      acctMode = null;
+    }
+    document.getElementById("acctModalClose").addEventListener("click", closeAcctModal);
+    acctBackdrop.addEventListener("click", (e) => { if (e.target === acctBackdrop) closeAcctModal(); });
+
+    document.getElementById("acctModalSave").addEventListener("click", async () => {
+      if (acctMode === "create") return acctSaveCreate();
+      if (acctMode === "whitelist") return acctSaveWhitelist();
+      if (acctMode === "reset") return isSenior ? acctSaveResetAdmin() : acctSaveResetSelf();
+    });
+
+    function wireBrandTogglePicker() {
+      const grid = document.getElementById("am_brandGrid");
+      const selectAllBtn = document.getElementById("am_selectAllBtn");
+      const pills = Array.from(grid.querySelectorAll(".brand-toggle-pill"));
+
+      function syncSelectAllBtn() {
+        const allSelected = pills.length > 0 && pills.every((p) => p.classList.contains("selected"));
+        selectAllBtn.classList.toggle("active", allSelected);
+        selectAllBtn.textContent = allSelected ? "✓ All Selected" : "Select All";
+      }
+
+      pills.forEach((p) => {
+        p.addEventListener("click", () => {
+          p.classList.toggle("selected");
+          syncSelectAllBtn();
+        });
+      });
+
+      selectAllBtn.addEventListener("click", () => {
+        const allSelected = pills.every((p) => p.classList.contains("selected"));
+        pills.forEach((p) => p.classList.toggle("selected", !allSelected));
+        syncSelectAllBtn();
+      });
+    }
+
+    // Reads the current selection out of the brand-toggle-grid: "all" if
+    // every pill is selected (stored the same way "all" already works
+    // server-side), otherwise the specific list of selected brand names.
+    function readBrandToggleSelection() {
+      const pills = Array.from(document.querySelectorAll("#am_brandGrid .brand-toggle-pill"));
+      const selected = pills.filter((p) => p.classList.contains("selected")).map((p) => p.dataset.brand);
+      return pills.length > 0 && selected.length === pills.length ? "all" : selected;
+    }
+
+    async function acctSaveCreate() {
+      const username = document.getElementById("am_username").value.trim();
+      const password = document.getElementById("am_password").value;
+      if (!username || !password) return setAcctNote("Username and password are required.", "err");
+      const allowedBrands = readBrandToggleSelection();
+      setAcctNote("Saving…");
+      const res = await window.AgentAuth.authFetch("/api/admin/accounts", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "save", username, password,
+          role: document.getElementById("am_role").value,
+          officeId: document.getElementById("am_office").value || null,
+          allowedBrands,
+          fullName: document.getElementById("am_fullname").value.trim(),
+          pid: document.getElementById("am_pid").value.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (!data.ok) return setAcctNote(data.error || "Save failed.", "err");
+      setAcctNote("Account created.", "ok");
+      setTimeout(closeAcctModal, 700);
+    }
+
+    async function acctSaveWhitelist() {
+      const name = document.getElementById("am_office_name").value.trim();
+      if (!name) return setAcctNote("Office name is required.", "err");
+      const allowedIPs = document.getElementById("am_office_ips").value.split("\n").map((s) => s.trim()).filter(Boolean);
+      const id = document.getElementById("am_office_picker").value || undefined;
+      setAcctNote("Saving…");
+      const res = await window.AgentAuth.authFetch("/api/admin/offices", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "save", id, name, allowedIPs }),
+      });
+      const data = await res.json();
+      if (!data.ok) return setAcctNote(data.error || "Save failed.", "err");
+      setAcctNote("Office saved.", "ok");
+      setTimeout(closeAcctModal, 700);
+    }
+
+    async function acctSaveResetAdmin() {
+      const username = document.getElementById("am_reset_account").value;
+      const newPass = document.getElementById("am_reset_newpass").value;
+      const confirmPass = document.getElementById("am_reset_confirm").value;
+      if (!newPass || newPass !== confirmPass) return setAcctNote("New passwords don't match.", "err");
+      const target = acctAccounts.find((a) => a.username === username);
+      if (!target) return setAcctNote("Account not found.", "err");
+      setAcctNote("Saving…");
+      const res = await window.AgentAuth.authFetch("/api/admin/accounts", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "save", username, password: newPass,
+          role: target.role, officeId: target.officeId, allowedBrands: target.allowedBrands,
+        }),
+      });
+      const data = await res.json();
+      if (!data.ok) return setAcctNote(data.error || "Reset failed.", "err");
+      setAcctNote("Password reset.", "ok");
+      setTimeout(closeAcctModal, 700);
+    }
+
+    async function acctSaveResetSelf() {
+      const currentPassword = document.getElementById("am_reset_current").value;
+      const newPass = document.getElementById("am_reset_newpass").value;
+      const confirmPass = document.getElementById("am_reset_confirm").value;
+      if (!currentPassword) return setAcctNote("Enter your current password.", "err");
+      if (!newPass || newPass !== confirmPass) return setAcctNote("New passwords don't match.", "err");
+      setAcctNote("Saving…");
+      const res = await window.AgentAuth.authFetch("/api/account/change-password", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ currentPassword, newPassword: newPass }),
+      });
+      const data = await res.json();
+      if (!data.ok) return setAcctNote(data.error || "Password change failed.", "err");
+      window.AgentAuth.updateStoredToken(data.token);
+      setAcctNote("Password changed.", "ok");
+      setTimeout(closeAcctModal, 700);
+    }
+  </script>
+</body>
+</html>

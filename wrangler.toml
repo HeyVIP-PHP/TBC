@@ -1,0 +1,16 @@
+name = "telegram-issue-hub"
+pages_build_output_dir = "public"
+
+[[r2_buckets]]
+binding = "SCREENSHOTS_BUCKET"
+bucket_name = "inr-issuescreenshot"
+
+# TG Reply Threads feature — bound to the "inr-ticket-threads" KV namespace.
+[[kv_namespaces]]
+binding = "THREADS_KV"
+id = "4821238464004b8289e4ded5a467d582"
+
+[vars]
+# Non-secret local defaults for `wrangler pages dev`. Real deployments set
+# TELEGRAM_BOT_TOKEN as an encrypted secret in the Cloudflare dashboard —
+# do NOT put the real token here or commit it.
