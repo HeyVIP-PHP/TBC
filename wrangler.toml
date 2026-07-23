@@ -3,12 +3,12 @@ pages_build_output_dir = "public"
 
 [[r2_buckets]]
 binding = "SCREENSHOTS_BUCKET"
-bucket_name = "inr-issuescreenshot"
+bucket_name = "php-issuescreenshot"
 
-# TG Reply Threads feature — bound to the "inr-ticket-threads" KV namespace.
+# TG Reply Threads feature — bound to the "php-ticket-threads" KV namespace.
 [[kv_namespaces]]
 binding = "THREADS_KV"
-id = "4821238464004b8289e4ded5a467d582"
+id = "0e6719a9def74126ad2071feb919d625"
 
 [vars]
 # Non-secret local defaults for `wrangler pages dev`. Real deployments set
