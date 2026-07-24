@@ -1223,3 +1223,17 @@ h1 {
 .status-msg { display: block; margin-top: 10px; font-size: 13px; font-weight: 600; text-align: center; }
 .status-msg.ok { color: #1a9c6e; }
 .status-msg.err { color: #e0577a; }
+
+/* ---- Page transition ("morph": scale + fade), wired up by
+   assets/page-transition.js. Applied to whichever element on the page
+   carries [data-transition-root] — .hub-main on index.html, .form-card
+   on form.html. Entrance plays automatically (the *-in class is written
+   directly into the HTML so there's no flash before it kicks in); exit
+   is triggered by JS right before an internal link navigates away. */
+.page-morph-in { animation: pageMorphIn 0.3s cubic-bezier(.22, .9, .34, 1) both; }
+.page-morph-out { animation: pageMorphOut 0.22s ease forwards; }
+@keyframes pageMorphIn { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: scale(1); } }
+@keyframes pageMorphOut { to { opacity: 0; transform: scale(1.04); } }
+@media (prefers-reduced-motion: reduce) {
+  .page-morph-in, .page-morph-out { animation: none; }
+}
