@@ -1,4 +1,4 @@
-import { BRANDS, RECORD_TO_SHEET, MODULE_META, SHEET_LAYOUT, MESSAGE_TEMPLATE, SCREENSHOT_R2_ENABLED, RISK_ISSUE_AUTO_REMARKS, RISK_ISSUE_FIELD_EMOJI, ACCOUNT_ISSUE_FIELD_STYLE, BANK_ISSUE_FIELD_STYLE, PROMOTION_SHEET_CONFIG, PROMOTION_MESSAGE_TEMPLATE } from "../_shared/routing.js";
+import { BRANDS, RECORD_TO_SHEET, MODULE_META, SHEET_LAYOUT, MESSAGE_TEMPLATE, SCREENSHOT_R2_ENABLED, RISK_ISSUE_AUTO_REMARKS, RISK_ISSUE_FIELD_EMOJI, ACCOUNT_ISSUE_FIELD_STYLE, BANK_ISSUE_FIELD_STYLE, WITHDRAW_ISSUE_FIELD_STYLE, PROMOTION_SHEET_CONFIG, PROMOTION_MESSAGE_TEMPLATE } from "../_shared/routing.js";
 import { appendRowToSheet, appendRowByColumns, writeRowForDate } from "../_shared/googleSheets.js";
 import { uploadAttachmentToR2, screenshotUrl } from "../_shared/r2.js";
 import { createThread } from "../_shared/threads.js";
@@ -99,6 +99,8 @@ async function handleSubmit({ request, env }) {
     text = buildAccountIssueDynamicMessage({ brandName: brand.name, fields, fieldMap, reporter });
   } else if (moduleId === "bank_issue") {
     text = buildBankIssueDynamicMessage({ brandName: brand.name, fields, fieldMap, reporter });
+  } else if (moduleId === "withdraw_issue") {
+    text = buildWithdrawIssueDynamicMessage({ brandName: brand.name, fields, fieldMap, reporter });
   } else if (moduleId === "promotion_request" && PROMOTION_MESSAGE_TEMPLATE[`${brandId}|${fieldMap.promotion}`]) {
     text = buildPromotionRequestMessage(PROMOTION_MESSAGE_TEMPLATE[`${brandId}|${fieldMap.promotion}`], { brandName: brand.name, fieldMap, reporter });
   } else {
@@ -243,6 +245,10 @@ function resolveColumnValues(columns, { fieldMap, brand, reporter, screenshotLin
       if (col === "pic") return reporter || "-";
       if (col === "screenshotLink") return (screenshotLink || attachmentLinks.join(", ")) || "-";
       if (col === "dateFormatted") return formatDateDDMMYYYY(fieldMap.reportDate || fieldMap.date) || "-";
+      // Server-generated date, independent of any form field — used by
+      // modules (like Bank Issue) that don't ask the agent for a date at
+      // all, so the Sheet still gets one automatically at submit time.
+      if (col === "autoDate") return formatDateDDMMYYYY(new Date().toISOString().slice(0, 10));
       return fieldMap[col] || "-";
     }
     // { details: ["remark", "issueDetails"] } — first non-empty field wins
@@ -409,6 +415,27 @@ function buildBankIssueDynamicMessage({ brandName, fields, fieldMap, reporter })
     .forEach((f) => {
       if (f.key === "accountNumber") lines.push(""); // blank line groups mobile-number fields apart from account-info fields
       const style = BANK_ISSUE_FIELD_STYLE[f.key];
+      const emoji = style ? style.emoji : "🔸";
+      const label = style && style.label ? style.label : f.label;
+      lines.push(`${emoji} <b>${escapeHtml(label)}:</b> ${escapeHtml(f.value)}`);
+    });
+
+  lines.push("", `📝 <b>Remark:</b> ${escapeHtml(fieldMap.remark || "-")}`);
+  lines.push("", `👷 <b>PIC:</b> ${escapeHtml(reporter)}`);
+  return lines.join("\n");
+}
+
+// Same structure again, for Withdraw Issue — identifier field here is
+// "username" (not "uid" like the other two dynamic-message modules).
+function buildWithdrawIssueDynamicMessage({ brandName, fields, fieldMap, reporter }) {
+  const lines = [`💸 <b>Withdraw Issue — ${escapeHtml(fieldMap.issueType || "-")}</b>`, ""];
+  lines.push(`🎮 <b>Brand/Platform:</b> ${escapeHtml(brandCurrencyLabel(brandName))}`);
+  lines.push(`👤 <b>Username:</b> ${escapeHtml(fieldMap.username || "-")}`);
+
+  fields
+    .filter((f) => !["issueType", "username", "remark"].includes(f.key) && f.value)
+    .forEach((f) => {
+      const style = WITHDRAW_ISSUE_FIELD_STYLE[f.key];
       const emoji = style ? style.emoji : "🔸";
       const label = style && style.label ? style.label : f.label;
       lines.push(`${emoji} <b>${escapeHtml(label)}:</b> ${escapeHtml(f.value)}`);

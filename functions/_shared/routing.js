@@ -46,6 +46,7 @@ export const BRANDS = {
       qa: { chatId: "", topicId: null },
       account_issue: { chatId: "", topicId: null },
       bank_issue: { chatId: "", topicId: null },
+      withdraw_issue: { chatId: "", topicId: null },
       risk_issue: { chatId: "", topicId: null },
       promotion_request: { chatId: "", topicId: null },
       daily_report: { chatId: "", topicId: null },
@@ -66,6 +67,7 @@ export const BRANDS = {
       qa: { chatId: "", topicId: null },
       account_issue: { chatId: "", topicId: null },
       bank_issue: { chatId: "", topicId: null },
+      withdraw_issue: { chatId: "", topicId: null },
       risk_issue: { chatId: "", topicId: null },
       promotion_request: { chatId: "", topicId: null },
       daily_report: { chatId: "", topicId: null },
@@ -82,6 +84,8 @@ export const RECORD_TO_SHEET = {
   // No Google Sheet exists for this yet — Telegram still sends fine,
   // Sheet logging just skips. Flip to true once a tab/columns are set up.
   bank_issue: false,
+  // No Google Sheet exists for this yet either — same as Bank Issue above.
+  withdraw_issue: false,
   risk_issue: true,
   promotion_request: true,
   daily_report: true,
@@ -93,6 +97,7 @@ export const MODULE_META = {
   qa: { emoji: "🔐", name: "QA", accent: "#60A5FA" },
   account_issue: { emoji: "🔑", name: "Account Issue", accent: "#FBBF24" },
   bank_issue: { emoji: "🏦", name: "Bank Issue", accent: "#38BDF8" },
+  withdraw_issue: { emoji: "💸", name: "Withdraw Issue", accent: "#4ADE80" },
   risk_issue: { emoji: "⚠️", name: "Risk Issue", accent: "#F87171" },
   promotion_request: { emoji: "🎟️", name: "Promotion Request", accent: "#F472B6" },
   daily_report: { emoji: "📊", name: "Daily Report", accent: "#34D399" },
@@ -197,6 +202,15 @@ export const BANK_ISSUE_FIELD_STYLE = {
   accountNumber: { emoji: "🏦" },
   accountName: { emoji: "🧾" },
   relationship: { emoji: "🤝" },
+};
+
+/**
+ * Same idea again, for the Withdraw Issue module.
+ */
+export const WITHDRAW_ISSUE_FIELD_STYLE = {
+  tid: { emoji: "🆔" },
+  submittedAmount: { emoji: "💵" },
+  receivedAmount: { emoji: "💰" },
 };
 
 /**
@@ -459,4 +473,5 @@ export const SCREENSHOT_R2_ENABLED = {
   qa: true,
   account_issue: true,
   bank_issue: true,
+  withdraw_issue: true,
 };
