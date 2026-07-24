@@ -233,6 +233,7 @@ const MODULES = [
           "Withdraw Approved but Not Received",
           "Withdraw Amount Received Less",
           "Withdraw Reversed Back to Agent",
+          "Withdraw Follow Up",
         ],
       },
       { key: "username", label: "Username", type: "text", required: true, placeholder: "Player username..." },
