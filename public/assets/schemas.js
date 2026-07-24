@@ -20,7 +20,7 @@ const DEFAULT_ATTACHMENTS = { max: 3, accept: "image/png,image/jpeg,application/
 
 // A field can declare `showIf: { field: "<otherFieldKey>", oneOf: [...values] }`
 // to only appear when that other field currently holds one of those values —
-// e.g. "Add Number" only shows up when Issue Type is "Add Mobile Number Verify".
+// e.g. "Add Number" only shows up when Issue Type is "Add Mobile Number".
 // It stays in the DOM (kept in field order) but is hidden + not required
 // until its condition is met, so add each issue type's extra fields inline
 // at the position they should appear.
@@ -168,27 +168,27 @@ const MODULES = [
       {
         key: "issueType", label: "Issue Type", type: "select", required: true, emphasize: true,
         options: [
-          "Add Mobile Number Verify",
-          "Add Number Remove",
+          "Add Mobile Number",
+          "Remove Mobile Number",
           "Registration Number Inputted Wrong",
           "Change Mobile Number",
         ],
       },
       { key: "uid", label: "UID", type: "text", required: true, placeholder: "Player UID..." },
-      // -- Add Mobile Number Verify -- (moved from Account Issue, same fields/format)
+      // -- Add Mobile Number -- (moved from Account Issue, same fields/format)
       { key: "registerNumber", label: "Register Number", type: "text", required: false, placeholder: "Register number...",
-        showIf: { field: "issueType", oneOf: ["Add Mobile Number Verify", "Add Number Remove"] },
+        showIf: { field: "issueType", oneOf: ["Add Mobile Number", "Remove Mobile Number"] },
       },
       {
         key: "addNumber", label: "Add Number", type: "text", required: false, placeholder: "Number to add...",
-        showIf: { field: "issueType", oneOf: ["Add Mobile Number Verify"] },
+        showIf: { field: "issueType", oneOf: ["Add Mobile Number"] },
       },
       { key: "nid", label: "CNIC Number", type: "text", required: false, placeholder: "CNIC number...",
-        showIf: { field: "issueType", oneOf: ["Add Mobile Number Verify"] },
+        showIf: { field: "issueType", oneOf: ["Add Mobile Number"] },
       },
-      // -- Add Number Remove -- (moved from Account Issue, same fields/format)
+      // -- Remove Mobile Number -- (moved from Account Issue, same fields/format)
       { key: "removeNumber", label: "Remove Number", type: "text", required: false,
-        showIf: { field: "issueType", oneOf: ["Add Number Remove"] },
+        showIf: { field: "issueType", oneOf: ["Remove Mobile Number"] },
       },
       // -- Registration Number Inputted Wrong -- (moved from Account Issue, same fields/format)
       { key: "registerWrongNumber", label: "Register Wrong Number", type: "text", required: false,

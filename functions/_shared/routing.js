@@ -190,7 +190,7 @@ export const BANK_ISSUE_FIELD_STYLE = {
   registerWrongNumber: { emoji: "❌", label: "Wrong Number" },
   playerCorrectNumber: { emoji: "✅", label: "Correct Number" },
   addNumber: { emoji: "➕" },
-  nid: { emoji: "🆔" }, // "CNIC Number" field, used for Add Mobile Number Verify
+  nid: { emoji: "🆔" }, // "CNIC Number" field, used for Add Mobile Number
   removeNumber: { emoji: "➖" },
   previousMobileNumber: { emoji: "📤" },
   newMobileNumber: { emoji: "📥" },
