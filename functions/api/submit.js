@@ -407,6 +407,7 @@ function buildBankIssueDynamicMessage({ brandName, fields, fieldMap, reporter })
   fields
     .filter((f) => !["issueType", "uid", "remark"].includes(f.key) && f.value)
     .forEach((f) => {
+      if (f.key === "accountNumber") lines.push(""); // blank line groups mobile-number fields apart from account-info fields
       const style = BANK_ISSUE_FIELD_STYLE[f.key];
       const emoji = style ? style.emoji : "🔸";
       const label = style && style.label ? style.label : f.label;
