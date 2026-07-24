@@ -162,7 +162,7 @@ const MODULES = [
     name: "Bank Issue",
     icon: "🏦",
     accent: "#38BDF8",
-    description: "Mobile number verify/remove & bank account issues.",
+    description: "Mobile number Update/Add/Change",
     attachments: DEFAULT_ATTACHMENTS,
     fields: [
       {

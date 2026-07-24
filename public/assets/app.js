@@ -39,10 +39,19 @@
   const container = document.getElementById("dynamicFields");
   const fieldEls = {}; // key -> { wrap, control }
 
+  // The one `emphasize: true` field per module (Issue Type / Motive /
+  // Promotion / Shift) acts as a "gate": every other field below it, PLUS
+  // the attachments dropzone and the reporter-name field further down the
+  // page, stay hidden until the gate has a value — not just fields with
+  // their own explicit showIf. Keeps a half-picked form from dumping every
+  // field on screen before the agent has even said what they're reporting.
+  const gateField = module.fields.find((f) => f.emphasize);
+
   module.fields.forEach((f) => {
     const wrap = document.createElement("div");
     wrap.className = "field" + (f.emphasize ? " field-emphasize" : "");
-    if (f.showIf) wrap.setAttribute("data-conditional", "true");
+    const isGated = !!(f.showIf || (gateField && f.key !== gateField.key));
+    if (isGated) wrap.setAttribute("data-conditional", "true");
 
     const req = f.required ? '<span class="required">*</span>' : "";
     let control = "";
@@ -73,8 +82,8 @@
       fieldEls[f.key].control.value = new Date().toISOString().slice(0, 10);
     }
 
-    // Base required state (conditional fields only become required once visible+required)
-    if (f.required && !f.showIf) fieldEls[f.key].control.required = true;
+    // Base required state (conditional/gated fields only become required once visible+required)
+    if (f.required && !isGated) fieldEls[f.key].control.required = true;
   });
 
   // ---- Brand-dependent select options (e.g. Promotion / Tier Level lists
@@ -155,16 +164,32 @@
       return driver && c.oneOf.includes(driver.control.value);
     });
   }
+  const gateHasValue = () => !gateField || !!fieldEls[gateField.key].control.value;
+  const attachFieldWrap = document.getElementById("attachLabel").closest(".field");
+  const reporterFieldWrap = document.querySelector('input[name="reporter"]').closest(".field");
+  const reporterControl = reporterFieldWrap.querySelector("input,select,textarea");
   function refreshConditionals() {
     module.fields.forEach((f) => {
-      if (!f.showIf) return;
-      const visible = conditionMet(f.showIf);
+      if (!f.showIf && (!gateField || f.key === gateField.key)) return; // never gated
+      const visible = f.showIf ? conditionMet(f.showIf) : gateHasValue();
       const { wrap, control } = fieldEls[f.key];
       wrap.classList.toggle("is-visible", visible);
       control.required = visible && !!f.required;
       if (!visible) control.value = "";
     });
+    // Attachments + reporter name live outside module.fields (static markup
+    // in form.html), gated the same way once a module actually has a gate.
+    if (gateField) {
+      const gated = gateHasValue();
+      attachFieldWrap.classList.toggle("is-visible", gated);
+      reporterFieldWrap.classList.toggle("is-visible", gated);
+      reporterControl.required = gated;
+    }
     refreshAutoFilledAmounts();
+  }
+  if (gateField) {
+    attachFieldWrap.setAttribute("data-conditional", "true");
+    reporterFieldWrap.setAttribute("data-conditional", "true");
   }
   module.fields.forEach((f) => {
     if (f.type === "select") fieldEls[f.key].control.addEventListener("change", refreshConditionals);
