@@ -232,28 +232,28 @@ export const PROMOTION_SHEET_CONFIG = {
     tab: "BJ",
     startColumn: "A",
     tidColumn: "A",
-    columns: ["tid", "dateFormatted", "username", "amount", "screenshotLink", "nid", "promotion", "pic", "brand"],
+    columns: ["tid", "dateLongLower", "username", "amount", "screenshotLink", "nid", "promotion", "pic", "brand"],
   },
   "betjili|Free Bet Upon Registration 75": {
     sheetId: "1QCdIPCAxOUDJEyde1qUa0cJgL_ztcDXet8OWKVzU5l0",
     tab: "BJ",
     startColumn: "A",
     tidColumn: "A",
-    columns: ["tid", "dateFormatted", "username", "amount", "screenshotLink", "nid", "promotion", "pic", "brand"],
+    columns: ["tid", "dateLongLower", "username", "amount", "screenshotLink", "nid", "promotion", "pic", "brand"],
   },
   "betjili|₱100 Free Cash On App Download": {
     sheetId: "1QCdIPCAxOUDJEyde1qUa0cJgL_ztcDXet8OWKVzU5l0",
     tab: "BJ",
     startColumn: "A",
     tidColumn: "A",
-    columns: ["tid", "dateFormatted", "username", "amount", "screenshotLink", "nid", "promotion", "pic", "brand"],
+    columns: ["tid", "dateLongLower", "username", "amount", "screenshotLink", "nid", "promotion", "pic", "brand"],
   },
   "betvisa|Birthday Bonus": {
     sheetId: "1QCdIPCAxOUDJEyde1qUa0cJgL_ztcDXet8OWKVzU5l0",
     tab: "BV",
     startColumn: "A",
     tidColumn: "A",
-    columns: ["tid", "dateFormatted", "username", "amount", "screenshotLink", "nid", "promotion", "pic", "brand"],
+    columns: ["tid", "dateLongLower", "username", "amount", "screenshotLink", "nid", "promotion", "pic", "brand"],
   },
 };
 

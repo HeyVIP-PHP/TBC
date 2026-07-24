@@ -245,6 +245,8 @@ function resolveColumnValues(columns, { fieldMap, brand, reporter, screenshotLin
       if (col === "pic") return reporter || "-";
       if (col === "screenshotLink") return (screenshotLink || attachmentLinks.join(", ")) || "-";
       if (col === "dateFormatted") return formatDateDDMMYYYY(fieldMap.reportDate || fieldMap.date) || "-";
+      // "02-june-2026" style — Promotion Sheet only, see formatDateDMonthYLower above.
+      if (col === "dateLongLower") return formatDateDMonthYLower(fieldMap.reportDate || fieldMap.date) || "-";
       // Server-generated date, independent of any form field — used by
       // modules (like Bank Issue) that don't ask the agent for a date at
       // all, so the Sheet still gets one automatically at submit time.
@@ -341,6 +343,21 @@ function formatDateDDMMYYYY(isoDate) {
   const [y, m, d] = isoDate.split("-");
   if (!y || !m || !d) return isoDate;
   return `${d}/${m}/${y}`;
+}
+
+const MONTH_NAMES_LOWER = [
+  "january", "february", "march", "april", "may", "june",
+  "july", "august", "september", "october", "november", "december",
+];
+// "02-june-2026" — used only for the Promotion Sheet's Date column, to
+// match the existing rows there. Everywhere else in the project keeps
+// using formatDateDDMMYYYY above.
+function formatDateDMonthYLower(isoDate) {
+  if (!isoDate) return "";
+  const [y, m, d] = isoDate.split("-");
+  const monthName = MONTH_NAMES_LOWER[parseInt(m, 10) - 1];
+  if (!y || !d || !monthName) return isoDate;
+  return `${d}-${monthName}-${y}`;
 }
 
 // Used for any Risk Issue type that doesn't have its own row list in
