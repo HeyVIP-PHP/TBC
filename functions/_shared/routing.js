@@ -162,6 +162,13 @@ export const ACCOUNT_ISSUE_FIELD_STYLE = {
   updateRequest: { emoji: "✏️" },
   fullName: { emoji: "🧾" },
   aadharPan: { emoji: "🆔" },
+  updateInfoType: { emoji: "📨" },
+  previousName: { emoji: "📤" },
+  newName: { emoji: "📥" },
+  previousBirthDate: { emoji: "📤" },
+  newBirthDate: { emoji: "📥" },
+  realName: { emoji: "🧾" },
+  birthDate: { emoji: "🎂" },
 };
 
 /**
@@ -366,6 +373,12 @@ export const SHEET_LAYOUT = {
   account_issue: {
     tab: "Account Issue",
     startColumn: "B",
+    // "Update Information" issue type's fields (updateInfoType/previousName/
+    // newName/previousBirthDate/newBirthDate/realName/birthDate) are
+    // deliberately NOT listed below — the "BV PHP Record Issue" sheet has
+    // no columns for them, so they only show up in the Telegram message,
+    // never written to the Sheet. Nothing to break if that changes later:
+    // just add the relevant key(s) to this array once a column exists.
     columns: [
       "brand",
       "uid",
