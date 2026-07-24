@@ -373,7 +373,8 @@ const MODULES = [
     // selector needed) — Amount auto-locks to this the moment both are
     // picked. Keyed by "<brandId>|<promotion value>".
     fixedAmounts: {
-      "betjili|Review Bonus": 150,
+      "betjili|Free Bet Upon Registration 75": 75,
+      "betjili|₱100 Free Cash On App Download": 100,
     },
     fields: [
       {
@@ -381,14 +382,14 @@ const MODULES = [
         // Options depend on the selected Brand — see optionsByBrand below.
         // Brands/promotions not listed here yet just show no options until added.
         optionsByBrand: {
-          betjili: ["Birthday Bonus", "Review Bonus"],
+          betjili: ["Birthday Bonus", "Free Bet Upon Registration 75", "₱100 Free Cash On App Download"],
           betvisa: ["Birthday Bonus"],
         },
       },
       { key: "date", label: "Date", type: "date", required: true, defaultToday: true },
       { key: "username", label: "Username", type: "text", required: true, placeholder: "Player username..." },
       {
-        key: "tid", label: "TID", type: "text", required: true, placeholder: "e.g. BVXXXBB1020",
+        key: "tid", label: "TID", type: "text", required: true, placeholder: "e.g. BJLPHPB003 / BVPHPBB004",
         generate: true, // shows a button that fetches the next TID from the sheet
       },
       {
@@ -405,12 +406,12 @@ const MODULES = [
         autoFillsInto: "amount",
         optionsByBrand: {
           betvisa: [
-            { value: "Bronze", amount: 300 },
-            { value: "Silver", amount: 1000 },
-            { value: "Gold", amount: 2000 },
-            { value: "Platinum", amount: 3000 },
-            { value: "Diamond", amount: 4000 },
-            { value: "Legend", amount: 5000 },
+            { value: "Bronze", amount: 250 },
+            { value: "Silver", amount: 600 },
+            { value: "Gold", amount: 1000 },
+            { value: "Platinum", amount: 1800 },
+            { value: "Diamond", amount: 2800 },
+            { value: "Legend", amount: 4000 },
           ],
         },
       },
@@ -424,11 +425,11 @@ const MODULES = [
         autoFillsInto: "amount",
         optionsByBrand: {
           betjili: [
-            { value: "10 Deposits", amount: 1000 },
-            { value: "20 Deposits", amount: 2000 },
-            { value: "30 Deposits", amount: 3000 },
-            { value: "40 Deposits", amount: 4000 },
-            { value: "50 Deposits", amount: 5000 },
+            { value: "10 Deposits", amount: 500 },
+            { value: "20 Deposits", amount: 1000 },
+            { value: "30 Deposits", amount: 1500 },
+            { value: "40 Deposits", amount: 2000 },
+            { value: "50 Deposits", amount: 2500 },
           ],
         },
       },

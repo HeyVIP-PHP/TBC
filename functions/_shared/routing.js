@@ -31,11 +31,7 @@
 export const BRANDS = {
   betjili: {
     name: "Betjili",
-    // Was pointing at the old INR sheet — removed 2026-07-24. Empty ""
-    // disables Sheet logging entirely for this brand; Telegram still
-    // sends fine either way. Fill in a real PHP sheet ID here once one
-    // exists, following the same steps as the comment above BRANDS.
-    sheetId: "",
+    sheetId: "1APYDc-MrKBiUWX7oLEcfNtx-S4p1h3o_Cn1rSFa6JLE",
     // No hardcoded defaults on purpose — PHP market's own Telegram group
     // hasn't been set up yet. Every row shows empty in the "TG Group /
     // Channel" admin panel until a real chatId/topicId is saved there
@@ -55,11 +51,7 @@ export const BRANDS = {
   },
   betvisa: {
     name: "BetVisa",
-    // Was pointing at the old INR sheet — removed 2026-07-24. Empty ""
-    // disables Sheet logging entirely for this brand; Telegram still
-    // sends fine either way. Fill in a real PHP sheet ID here once one
-    // exists.
-    sheetId: "",
+    sheetId: "1brMMEKXgiMVhq_VCShRLdR-jhSIb2BmIhYZj58Re3qM",
     // Same as Betjili above — no hardcoded defaults, fill in via the
     // "TG Group / Channel" admin panel once the PHP group exists.
     telegram: {
@@ -83,7 +75,7 @@ export const RECORD_TO_SHEET = {
   account_issue: true,
   // No Google Sheet exists for this yet — Telegram still sends fine,
   // Sheet logging just skips. Flip to true once a tab/columns are set up.
-  bank_issue: false,
+  bank_issue: true,
   // No Google Sheet exists for this yet either — same as Bank Issue above.
   withdraw_issue: false,
   risk_issue: true,
@@ -230,7 +222,58 @@ export const WITHDRAW_ISSUE_FIELD_STYLE = {
 // 2026-07-24. Telegram messages still send fine either way; only Sheet
 // logging + the "generate next TID" button are affected (shows "not
 // configured yet" until an entry is added back here for a real PHP sheet).
-export const PROMOTION_SHEET_CONFIG = {};
+export const PROMOTION_SHEET_CONFIG = {
+  // All 3 Betjili promotions write to the SAME tab ("BJ") — they're not
+  // split by promotion type like the old INR sheets were. The "Remarks"
+  // column holds the promotion name (see the "promotion" entry in
+  // `columns` below) so rows stay distinguishable within that one tab.
+  "betjili|Birthday Bonus": {
+    sheetId: "1QCdIPCAxOUDJEyde1qUa0cJgL_ztcDXet8OWKVzU5l0",
+    tab: "BJ",
+    startColumn: "A",
+    tidColumn: "A",
+    columns: ["tid", "dateFormatted", "username", "amount", "screenshotLink", "nid", "promotion", "pic", "brand"],
+  },
+  "betjili|Free Bet Upon Registration 75": {
+    sheetId: "1QCdIPCAxOUDJEyde1qUa0cJgL_ztcDXet8OWKVzU5l0",
+    tab: "BJ",
+    startColumn: "A",
+    tidColumn: "A",
+    columns: ["tid", "dateFormatted", "username", "amount", "screenshotLink", "nid", "promotion", "pic", "brand"],
+  },
+  "betjili|₱100 Free Cash On App Download": {
+    sheetId: "1QCdIPCAxOUDJEyde1qUa0cJgL_ztcDXet8OWKVzU5l0",
+    tab: "BJ",
+    startColumn: "A",
+    tidColumn: "A",
+    columns: ["tid", "dateFormatted", "username", "amount", "screenshotLink", "nid", "promotion", "pic", "brand"],
+  },
+  "betvisa|Birthday Bonus": {
+    sheetId: "1QCdIPCAxOUDJEyde1qUa0cJgL_ztcDXet8OWKVzU5l0",
+    tab: "BV",
+    startColumn: "A",
+    tidColumn: "A",
+    columns: ["tid", "dateFormatted", "username", "amount", "screenshotLink", "nid", "promotion", "pic", "brand"],
+  },
+};
+
+/**
+ * The "generate next TID" button (functions/api/next-tid.js) used to just
+ * copy whatever prefix the LAST row in the tab happened to have. That
+ * breaks now that Betjili's 3 promotions share ONE tab ("BJ") — the last
+ * row could be a Free Cash entry (prefix "A") while the agent is actually
+ * filling out a Birthday Bonus request (prefix "B"). So: the prefix comes
+ * from HERE (keyed to the promotion actually selected), while the NUMBER
+ * still comes from the highest one found anywhere in the column,
+ * regardless of which prefix it had — see getNextSequenceValue() in
+ * _shared/googleSheets.js.
+ */
+export const PROMOTION_TID_PREFIX = {
+  "betjili|Birthday Bonus": "BJLPHPB",
+  "betjili|Free Bet Upon Registration 75": "BJLPHPF",
+  "betjili|₱100 Free Cash On App Download": "BJLPHPA",
+  "betvisa|Birthday Bonus": "BVPHPBB",
+};
 
 /**
  * Promotion Request only: the Telegram message rows, now the SAME for
@@ -415,6 +458,17 @@ export const SHEET_LAYOUT = {
       "remark",
       "pic",
     ],
+  },
+  // Trimmed on purpose — only these 7 columns exist on the "Bank Issue"
+  // tab (Date A → PIC G). The rest of the module's fields (Register
+  // Number, Add Number, CNIC, Previous/New Mobile Number, Account
+  // Number/Name, Relationship, etc.) only show up in the Telegram
+  // message, same "not listed = Sheet skips it" rule as Account Issue's
+  // Update Information fields above.
+  bank_issue: {
+    tab: "Bank Issue",
+    startColumn: "A",
+    columns: ["autoDate", "brand", "uid", "issueType", "screenshotLink", "remark", "pic"],
   },
   risk_issue: {
     tab: "Risk Issue",
