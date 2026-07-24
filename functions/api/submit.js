@@ -1,4 +1,4 @@
-import { BRANDS, RECORD_TO_SHEET, MODULE_META, SHEET_LAYOUT, MESSAGE_TEMPLATE, SCREENSHOT_R2_ENABLED, RISK_ISSUE_AUTO_REMARKS, RISK_ISSUE_FIELD_EMOJI, ACCOUNT_ISSUE_FIELD_STYLE, PROMOTION_SHEET_CONFIG, PROMOTION_MESSAGE_TEMPLATE } from "../_shared/routing.js";
+import { BRANDS, RECORD_TO_SHEET, MODULE_META, SHEET_LAYOUT, MESSAGE_TEMPLATE, SCREENSHOT_R2_ENABLED, RISK_ISSUE_AUTO_REMARKS, RISK_ISSUE_FIELD_EMOJI, ACCOUNT_ISSUE_FIELD_STYLE, BANK_ISSUE_FIELD_STYLE, PROMOTION_SHEET_CONFIG, PROMOTION_MESSAGE_TEMPLATE } from "../_shared/routing.js";
 import { appendRowToSheet, appendRowByColumns, writeRowForDate } from "../_shared/googleSheets.js";
 import { uploadAttachmentToR2, screenshotUrl } from "../_shared/r2.js";
 import { createThread } from "../_shared/threads.js";
@@ -97,6 +97,8 @@ async function handleSubmit({ request, env }) {
     text = buildRiskIssueDynamicMessage({ brandName: brand.name, fields, fieldMap, reporter });
   } else if (moduleId === "account_issue") {
     text = buildAccountIssueDynamicMessage({ brandName: brand.name, fields, fieldMap, reporter });
+  } else if (moduleId === "bank_issue") {
+    text = buildBankIssueDynamicMessage({ brandName: brand.name, fields, fieldMap, reporter });
   } else if (moduleId === "promotion_request" && PROMOTION_MESSAGE_TEMPLATE[`${brandId}|${fieldMap.promotion}`]) {
     text = buildPromotionRequestMessage(PROMOTION_MESSAGE_TEMPLATE[`${brandId}|${fieldMap.promotion}`], { brandName: brand.name, fieldMap, reporter });
   } else {
@@ -383,6 +385,29 @@ function buildAccountIssueDynamicMessage({ brandName, fields, fieldMap, reporter
     .filter((f) => !["issueType", "uid", "remark"].includes(f.key) && f.value)
     .forEach((f) => {
       const style = ACCOUNT_ISSUE_FIELD_STYLE[f.key];
+      const emoji = style ? style.emoji : "🔸";
+      const label = style && style.label ? style.label : f.label;
+      lines.push(`${emoji} <b>${escapeHtml(label)}:</b> ${escapeHtml(f.value)}`);
+    });
+
+  lines.push("", `📝 <b>Remark:</b> ${escapeHtml(fieldMap.remark || "-")}`);
+  lines.push("", `👷 <b>PIC:</b> ${escapeHtml(reporter)}`);
+  return lines.join("\n");
+}
+
+// Same structure as buildAccountIssueDynamicMessage above — kept as its
+// own function (not a shared helper) since Bank Issue and Account Issue
+// are independently maintained modules that happen to look alike today;
+// don't assume they'll always stay in sync.
+function buildBankIssueDynamicMessage({ brandName, fields, fieldMap, reporter }) {
+  const lines = [`🏦 <b>Bank Issue — ${escapeHtml(fieldMap.issueType || "-")}</b>`, ""];
+  lines.push(`🎮 <b>Brand/Platform:</b> ${escapeHtml(brandCurrencyLabel(brandName))}`);
+  lines.push(`👤 <b>Username:</b> ${escapeHtml(fieldMap.uid || "-")}`);
+
+  fields
+    .filter((f) => !["issueType", "uid", "remark"].includes(f.key) && f.value)
+    .forEach((f) => {
+      const style = BANK_ISSUE_FIELD_STYLE[f.key];
       const emoji = style ? style.emoji : "🔸";
       const label = style && style.label ? style.label : f.label;
       lines.push(`${emoji} <b>${escapeHtml(label)}:</b> ${escapeHtml(f.value)}`);

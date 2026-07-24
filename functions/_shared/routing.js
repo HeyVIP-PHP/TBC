@@ -31,7 +31,11 @@
 export const BRANDS = {
   betjili: {
     name: "Betjili",
-    sheetId: "1jEIomHdq9BBiwI8AcpWCB0IJolcHYWw1tlT3DR8WzeQ",
+    // Was pointing at the old INR sheet — removed 2026-07-24. Empty ""
+    // disables Sheet logging entirely for this brand; Telegram still
+    // sends fine either way. Fill in a real PHP sheet ID here once one
+    // exists, following the same steps as the comment above BRANDS.
+    sheetId: "",
     // No hardcoded defaults on purpose — PHP market's own Telegram group
     // hasn't been set up yet. Every row shows empty in the "TG Group /
     // Channel" admin panel until a real chatId/topicId is saved there
@@ -41,6 +45,7 @@ export const BRANDS = {
       default: { chatId: "", topicId: null },
       qa: { chatId: "", topicId: null },
       account_issue: { chatId: "", topicId: null },
+      bank_issue: { chatId: "", topicId: null },
       risk_issue: { chatId: "", topicId: null },
       promotion_request: { chatId: "", topicId: null },
       daily_report: { chatId: "", topicId: null },
@@ -49,15 +54,18 @@ export const BRANDS = {
   },
   betvisa: {
     name: "BetVisa",
-    // The long ID in the sheet's URL: https://docs.google.com/spreadsheets/d/<THIS PART>/edit
-    // Leave "" to disable sheet logging entirely for this brand.
-    sheetId: "17wXVfUS8QywtiT8AiHxBr3iycKnWCR5vAJbCcboLJUs",
+    // Was pointing at the old INR sheet — removed 2026-07-24. Empty ""
+    // disables Sheet logging entirely for this brand; Telegram still
+    // sends fine either way. Fill in a real PHP sheet ID here once one
+    // exists.
+    sheetId: "",
     // Same as Betjili above — no hardcoded defaults, fill in via the
     // "TG Group / Channel" admin panel once the PHP group exists.
     telegram: {
       default: { chatId: "", topicId: null },
       qa: { chatId: "", topicId: null },
       account_issue: { chatId: "", topicId: null },
+      bank_issue: { chatId: "", topicId: null },
       risk_issue: { chatId: "", topicId: null },
       promotion_request: { chatId: "", topicId: null },
       daily_report: { chatId: "", topicId: null },
@@ -71,6 +79,9 @@ export const BRANDS = {
 export const RECORD_TO_SHEET = {
   qa: true,
   account_issue: true,
+  // No Google Sheet exists for this yet — Telegram still sends fine,
+  // Sheet logging just skips. Flip to true once a tab/columns are set up.
+  bank_issue: false,
   risk_issue: true,
   promotion_request: true,
   daily_report: true,
@@ -81,6 +92,7 @@ export const RECORD_TO_SHEET = {
 export const MODULE_META = {
   qa: { emoji: "🔐", name: "QA", accent: "#60A5FA" },
   account_issue: { emoji: "🔑", name: "Account Issue", accent: "#FBBF24" },
+  bank_issue: { emoji: "🏦", name: "Bank Issue", accent: "#38BDF8" },
   risk_issue: { emoji: "⚠️", name: "Risk Issue", accent: "#F87171" },
   promotion_request: { emoji: "🎟️", name: "Promotion Request", accent: "#F472B6" },
   daily_report: { emoji: "📊", name: "Daily Report", accent: "#34D399" },
@@ -149,11 +161,6 @@ export const RISK_ISSUE_FIELD_EMOJI = {
  */
 export const ACCOUNT_ISSUE_FIELD_STYLE = {
   registerNumber: { emoji: "📱" },
-  registerWrongNumber: { emoji: "❌", label: "Wrong Number" },
-  playerCorrectNumber: { emoji: "✅", label: "Correct Number" },
-  addNumber: { emoji: "➕" },
-  nid: { emoji: "🆔" }, // "CNIC Number" field, used for Add Mobile Number Verify
-  removeNumber: { emoji: "➖" },
   gmail: { emoji: "📧" },
   removeGmail: { emoji: "🗑" },
   previousGmail: { emoji: "📤" },
@@ -172,6 +179,27 @@ export const ACCOUNT_ISSUE_FIELD_STYLE = {
 };
 
 /**
+ * Same idea as ACCOUNT_ISSUE_FIELD_STYLE above, for the Bank Issue module.
+ * The first 5 entries carry over the EXACT emoji they had when these
+ * fields lived under Account Issue (moved 2026-07-24, currency-specific
+ * mobile number / bank flows) — same Telegram message look, just a
+ * different module now. The rest are new, for Change Mobile Number.
+ */
+export const BANK_ISSUE_FIELD_STYLE = {
+  registerNumber: { emoji: "📱" },
+  registerWrongNumber: { emoji: "❌", label: "Wrong Number" },
+  playerCorrectNumber: { emoji: "✅", label: "Correct Number" },
+  addNumber: { emoji: "➕" },
+  nid: { emoji: "🆔" }, // "CNIC Number" field, used for Add Mobile Number Verify
+  removeNumber: { emoji: "➖" },
+  previousMobileNumber: { emoji: "📤" },
+  newMobileNumber: { emoji: "📥" },
+  accountNumber: { emoji: "🏦" },
+  accountName: { emoji: "🧾" },
+  relationship: { emoji: "🤝" },
+};
+
+/**
  * Promotion Request only: each (brand + promotion) combination has its OWN
  * spreadsheet (not the brand's main "Record Issue" sheet used elsewhere),
  * its own tab, and its own TID prefix/sequence. Keyed by
@@ -183,29 +211,12 @@ export const ACCOUNT_ISSUE_FIELD_STYLE = {
  * is which column the generate-next-TID button reads (usually same as
  * startColumn, since TID is column A on these sheets).
  */
-export const PROMOTION_SHEET_CONFIG = {
-  "betvisa|Birthday Bonus": {
-    sheetId: "1_aLEvpJoVqyFAHMhYfzIQMvAv_TxaLx55MsxLHiby0w",
-    tab: "BV Birthday Bonus",
-    startColumn: "A",
-    tidColumn: "A",
-    columns: ["tid", "date", "username", "promotion", "nid", "tier", "amount", "brand", "pic"],
-  },
-  "betjili|Birthday Bonus": {
-    sheetId: "1O6LeDa1Gs7EiAfqGF_lY6hpCieREOzc9L8x33bbBW1Y",
-    tab: "BJ Birthday Bonus",
-    startColumn: "A",
-    tidColumn: "A",
-    columns: ["tid", "date", "username", "amount", "promotion", "brand", "nid", "pic"],
-  },
-  "betjili|Review Bonus": {
-    sheetId: "1O6LeDa1Gs7EiAfqGF_lY6hpCieREOzc9L8x33bbBW1Y",
-    tab: "FB Review Bonus",
-    startColumn: "A",
-    tidColumn: "A",
-    columns: ["tid", "username", "date", "amount", "promotion", "brand", "pic"],
-  },
-};
+// None of the (brand + promotion) combinations below have a PHP sheet yet
+// — all 3 entries pointed at the old INR sheets and were removed
+// 2026-07-24. Telegram messages still send fine either way; only Sheet
+// logging + the "generate next TID" button are affected (shows "not
+// configured yet" until an entry is added back here for a real PHP sheet).
+export const PROMOTION_SHEET_CONFIG = {};
 
 /**
  * Promotion Request only: the Telegram message rows, now the SAME for
@@ -447,4 +458,5 @@ function dailyReportColumns() {
 export const SCREENSHOT_R2_ENABLED = {
   qa: true,
   account_issue: true,
+  bank_issue: true,
 };
