@@ -76,8 +76,9 @@ export const RECORD_TO_SHEET = {
   // No Google Sheet exists for this yet — Telegram still sends fine,
   // Sheet logging just skips. Flip to true once a tab/columns are set up.
   bank_issue: true,
-  // No Google Sheet exists for this yet either — same as Bank Issue above.
-  withdraw_issue: false,
+  // Same brand Sheet file the Bank Issue tab lives in (BJ/BV PHP Record
+  // Issue), just a different tab — see SHEET_LAYOUT.withdraw_issue below.
+  withdraw_issue: true,
   risk_issue: true,
   promotion_request: true,
   daily_report: true,
@@ -469,6 +470,16 @@ export const SHEET_LAYOUT = {
     tab: "Bank Issue",
     startColumn: "A",
     columns: ["autoDate", "brand", "uid", "issueType", "screenshotLink", "remark", "pic"],
+  },
+  // Full field list this time (unlike Bank Issue's trimmed 7) — BJ and
+  // BV both use this exact same column order on their own "Withdraw
+  // Issue" tab. submittedAmount/receivedAmount only ever have a value
+  // for the "Withdraw Amount Received Less" issue type; every other
+  // type just writes "-" there, same as any unused field elsewhere.
+  withdraw_issue: {
+    tab: "Withdraw Issue",
+    startColumn: "A",
+    columns: ["autoDate", "brand", "username", "issueType", "tid", "submittedAmount", "receivedAmount", "screenshotLink", "remark", "pic"],
   },
   risk_issue: {
     tab: "Risk Issue",
