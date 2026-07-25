@@ -32,6 +32,12 @@
  *   - recallRoot: deletes the original ticket message from Telegram.
  *   - editReply { messageId, text }: edits one of our own past replies.
  *   - recallReply { messageId }: deletes one of our own past replies.
+ *   - editDetails { fields, fieldMap }: field-level edit ("🔄 Sync to
+ *     Sheet") — regenerates the Telegram message AND (if this ticket's
+ *     submission wrote a trackable Sheet row — see submit.js's
+ *     `sheetRef`) that Sheet row, from a corrected field-value map.
+ *     Threads created before this feature existed (no brandId saved)
+ *     reject this action; use editRoot instead for those.
  *
  *   Only messages our own bot sent (the root ticket + "self" replies) can
  *   be edited/recalled — Telegram doesn't let a bot edit or delete
@@ -44,10 +50,13 @@
  */
 import {
   getThread, setSolved, softDeleteThread, appendMessage,
-  updateRootText, markRootRecalled, editMessageInThread, removeMessageFromThread,
+  updateRootText, updateThreadDetails, markRootRecalled, editMessageInThread, removeMessageFromThread,
   logDeletion,
 } from "../../_shared/threads.js";
 import { verifyRequest, canSeeBrand } from "../../_shared/accounts.js";
+import { BRANDS, MODULE_META, MESSAGE_TEMPLATE, PROMOTION_MESSAGE_TEMPLATE } from "../../_shared/routing.js";
+import { updateRowByColumns } from "../../_shared/googleSheets.js";
+import { buildTicketMessage, buildTitleAndSummary, resolveColumnValues } from "../../_shared/messageBuilders.js";
 
 export async function onRequestGet({ request, env, params }) {
   if (!env.THREADS_KV) return json({ ok: false, error: "THREADS_KV is not bound yet." }, 500);
@@ -189,6 +198,72 @@ async function handleThreadAction({ request, env, params }) {
 
     const updated = await updateRootText(env, id, text);
     return json({ ok: true, thread: updated });
+  }
+
+  // Field-level edit — the "🔄 Sync to Sheet" flow. Regenerates the
+  // Telegram message text AND (if this ticket wrote a trackable Sheet
+  // row) the Sheet row itself, from a corrected { fieldKey: value } map,
+  // using the exact same builder functions submit.js used at creation
+  // time (see _shared/messageBuilders.js) — never a hand-parsed guess at
+  // what the old message text meant.
+  //
+  // Body: { action: "editDetails", fields: [{key,label,value}], fieldMap }
+  // — same shape submit.js's own request body uses for these two, built
+  // client-side in threads.html from window.MODULES (schemas.js), same
+  // as the original submission form does.
+  if (action === "editDetails") {
+    const { fields, fieldMap } = body || {};
+    if (!Array.isArray(fields) || !fieldMap || typeof fieldMap !== "object") {
+      return json({ ok: false, error: "Missing fields or fieldMap." }, 400);
+    }
+    if (!env.TELEGRAM_BOT_TOKEN) return json({ ok: false, error: "Server is missing TELEGRAM_BOT_TOKEN." }, 500);
+
+    const thread = existingThread;
+    if (thread.rootRecalled) return json({ ok: false, error: "This ticket's original message was already recalled — nothing to edit." }, 400);
+    // Threads created before this feature existed (or that never got a
+    // brandId for some other reason) don't have enough saved to safely
+    // rebuild a message the same way submit.js originally did — fail
+    // clearly instead of silently producing a differently-formatted
+    // message. The plain ✏️ text editor (editRoot above) still works on
+    // any thread, old or new.
+    const brand = thread.brandId && BRANDS[thread.brandId];
+    if (!brand) return json({ ok: false, error: "This ticket doesn't support field-level editing (created before this feature existed) — use the ✏️ text editor instead." }, 400);
+    const meta = MODULE_META[thread.module];
+    if (!meta) return json({ ok: false, error: `Unknown module "${thread.module}".` }, 400);
+
+    const reporter = thread.submitter;
+    const screenshotLink = thread.screenshotLink || "";
+    const text = buildTicketMessage({
+      moduleId: thread.module, brandId: thread.brandId, meta, brand, fieldMap, fields, reporter, screenshotLink,
+      messageTemplate: MESSAGE_TEMPLATE, promotionMessageTemplate: PROMOTION_MESSAGE_TEMPLATE,
+    });
+
+    const method = thread.hasMedia ? "editMessageCaption" : "editMessageText";
+    const payload = { chat_id: thread.chatId, message_id: thread.rootMessageId, parse_mode: "HTML" };
+    if (thread.hasMedia) payload.caption = text; else payload.text = text;
+
+    const tg = await callTelegram(env, method, payload);
+    if (!tg.ok) return json({ ok: false, error: telegramEditError(tg) }, 502);
+
+    // Sheet sync is best-effort/non-fatal, same reasoning as submit.js's
+    // own Sheet write: the Telegram message above is the part that just
+    // succeeded and is now the source of truth; a Sheet hiccup shouldn't
+    // undo that or block the rest of this action.
+    let sheetSynced = false;
+    let sheetError = null;
+    if (thread.sheetRef) {
+      try {
+        const values = resolveColumnValues(thread.sheetRef.columns, { fieldMap, brand, reporter, screenshotLink, attachmentLinks: [] });
+        await updateRowByColumns(env, thread.sheetRef.sheetId, thread.sheetRef.tab, thread.sheetRef.startColumn, thread.sheetRef.row, values);
+        sheetSynced = true;
+      } catch (e) {
+        sheetError = String(e.message || e);
+      }
+    }
+
+    const { title, summary } = buildTitleAndSummary({ meta, brand, fieldMap, fields });
+    const updated = await updateThreadDetails(env, id, { fieldMap, rootText: text, title, summary });
+    return json({ ok: true, thread: updated, sheetHasRef: !!thread.sheetRef, sheetSynced, sheetError });
   }
 
   if (action === "recallRoot") {

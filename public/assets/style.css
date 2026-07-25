@@ -1237,3 +1237,32 @@ h1 {
 @media (prefers-reduced-motion: reduce) {
   .page-morph-in, .page-morph-out { animation: none; }
 }
+
+/* ---- "Edit fields — syncs Telegram + Sheet" modal, threads.html only.
+   Field rows themselves reuse the existing .field/label/input/select/
+   textarea styling from the submission form above — only the
+   overlay/card chrome around them is new here. */
+.edit-details-overlay {
+  position: fixed; inset: 0; z-index: 300;
+  background: rgba(6, 8, 20, 0.72);
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px;
+  animation: fadeIn 0.15s ease;
+}
+.edit-details-modal {
+  position: relative;
+  width: 100%; max-width: 480px; max-height: 85vh;
+  overflow-y: auto;
+  background: var(--card-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 30px 34px 28px;
+}
+.edit-details-title { font-family: var(--font-display); font-weight: 700; font-size: 18px; margin-bottom: 4px; padding-right: 24px; }
+.edit-details-sub { color: var(--ink-soft); font-size: 12.5px; line-height: 1.5; margin-bottom: 20px; }
+.edit-details-fields .field { margin-bottom: 16px; }
+.edit-details-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 6px; }
+.edit-details-status { font-size: 13px; font-weight: 600; margin-top: 4px; min-height: 18px; }
+.edit-details-status.err { color: #e0577a; }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }

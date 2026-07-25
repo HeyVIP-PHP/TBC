@@ -1,0 +1,20 @@
+# This is a SEPARATE Worker from the main site — deployed on its own,
+# not part of the Pages project's build. See ../README.md's "Optional:
+# cron worker" section for the full deploy walkthrough.
+name = "telegram-issue-hub-cron"
+main = "src/index.js"
+compatibility_date = "2026-07-01"
+
+# Same KV namespace ID as the main site's wrangler.toml (php-ticket-threads).
+# Must always match — this worker reads/writes the exact same cache key
+# the main site's functions/_shared/threads.js reads from.
+[[kv_namespaces]]
+binding = "THREADS_KV"
+id = "0e6719a9def74126ad2071feb919d625"
+
+# Every 10 minutes, on the hour — matches LIST_CACHE_TTL_MS in
+# functions/_shared/threads.js exactly. If you ever change one, change
+# the other to match, or the "budget math" in that file's comments stops
+# being accurate.
+[triggers]
+crons = ["*/10 * * * *"]

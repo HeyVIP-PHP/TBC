@@ -9,6 +9,7 @@
 <script src="/assets/starfield.js" defer></script>
 <script src="/assets/authguard.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/twemoji.min.js"></script>
+<script src="/assets/schemas.js"></script>
 </head>
 <body class="threads-page">
   <!-- Attachment lightbox — populated live by viewAttachment() below.
@@ -402,7 +403,8 @@
           </div>
           <div class="thread-detail-actions">
             <button class="status-chip ${t.solved ? "solved" : "unsolved"}" id="solveBtn">${t.solved ? "✅ Solved" : "❌ Not Solved"}</button>
-            ${!t.rootRecalled ? '<button class="icon-btn" id="editRootBtn" title="Edit the original Telegram message">✏️</button>' : ""}
+            ${!t.rootRecalled ? '<button class="icon-btn" id="editRootBtn" title="Edit the original Telegram message (plain text)">✏️</button>' : ""}
+            ${!t.rootRecalled && t.fieldMap && t.brandId ? '<button class="icon-btn" id="editDetailsBtn" title="Edit fields — syncs the Telegram message + the Sheet row (if any)">📊</button>' : ""}
             ${!t.rootRecalled ? '<button class="icon-btn" id="recallRootBtn" title="Recall (delete) the original Telegram message">↩️</button>' : ""}
             <button class="icon-btn" id="deleteBtn" title="Delete this tracking record (Telegram + Sheet are untouched)">🗑</button>
             <button class="icon-btn" id="refreshBtn" title="Refresh this thread">🔄</button>
@@ -435,13 +437,17 @@
           // undefined for older ones, so this cleanly renders nothing
           // rather than a broken button.
           const fileIds = t.attachmentFileIds || [];
+          const fileNames = t.attachmentNames || []; // parallel to fileIds — see attachmentNames comment in _shared/threads.js
           const attachmentButtons = fileIds.length ? `
             <div class="thread-summary-attachments">
-              ${fileIds.map((fid, i) => `
-                <div class="inline-attach-slot" data-attachment-file="${escapeAttr(fid)}" data-attachment-name="ticket-attachment-${i + 1}">
+              ${fileIds.map((fid, i) => {
+                const name = fileNames[i] || `ticket-attachment-${i + 1}`;
+                return `
+                <div class="inline-attach-slot" data-attachment-file="${escapeAttr(fid)}" data-attachment-name="${escapeAttr(name)}">
                   <div class="inline-attach-loading">Loading attachment…</div>
                 </div>
-              `).join("")}
+              `;
+              }).join("")}
             </div>` : "";
 
           if (t.rootEdited) {
@@ -501,6 +507,7 @@
       document.getElementById("solveBtn")?.addEventListener("click", () => toggleSolved());
       document.getElementById("deleteBtn")?.addEventListener("click", () => deleteThread());
       document.getElementById("editRootBtn")?.addEventListener("click", () => editRoot());
+      document.getElementById("editDetailsBtn")?.addEventListener("click", () => openEditDetailsModal());
       document.getElementById("recallRootBtn")?.addEventListener("click", () => recallRoot());
       document.getElementById("refreshBtn")?.addEventListener("click", async (e) => {
         const btn = e.currentTarget;
@@ -726,6 +733,134 @@
       if (!res.ok) return alert(res.error || "Edit failed.");
       selectedThread = res.thread;
       updateThreadContent(selectedThread);
+    }
+
+    // "🔄 Sync to Sheet" flow — a real per-field form (built straight off
+    // window.MODULES, same source of truth the submission form itself
+    // uses) instead of editRoot's single free-text prompt(). Saving posts
+    // { action: "editDetails", fields, fieldMap } to the same endpoint,
+    // which rebuilds the Telegram message AND (if this ticket wrote a
+    // trackable Sheet row — see submit.js's `sheetRef`) that Sheet row,
+    // using the exact same builder functions the original submission
+    // used. Only offered at all when the thread has t.fieldMap/t.brandId
+    // saved — see the showIf on the 📊 button in buildHeaderHTML.
+    function openEditDetailsModal() {
+      const t = selectedThread;
+      const module = (window.MODULES || []).find((m) => m.id === t.module);
+      if (!module) return alert(`Unknown module "${t.module}" — can't build an edit form for this ticket.`);
+      const fieldMap = t.fieldMap || {};
+
+      const overlay = document.createElement("div");
+      overlay.className = "edit-details-overlay";
+      overlay.innerHTML = `
+        <div class="edit-details-modal">
+          <button type="button" class="modal-close-btn" id="editDetailsClose" title="Close" aria-label="Close">✕</button>
+          <div class="edit-details-title">${module.icon || "📊"} Edit fields — ${escapeHtml(module.name)}</div>
+          <div class="edit-details-sub">Updates the Telegram message${t.sheetRef ? " and the Google Sheet row" : ""} from these values — not a guess at parsed text.</div>
+          <div class="edit-details-fields" id="editDetailsFields"></div>
+          <div class="edit-details-status" id="editDetailsStatus"></div>
+          <div class="edit-details-actions">
+            <button type="button" class="icon-btn" id="editDetailsCancel" style="width:auto; padding:0 16px;">Cancel</button>
+            <button type="button" class="btn-submit" id="editDetailsSave" style="width:auto; padding:10px 22px;">Save &amp; Sync</button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(overlay);
+
+      const container = overlay.querySelector("#editDetailsFields");
+      const fieldEls = {};
+
+      module.fields.forEach((f) => {
+        const wrap = document.createElement("div");
+        wrap.className = "field";
+        const value = fieldMap[f.key] != null ? fieldMap[f.key] : "";
+        let controlHtml;
+        if (f.type === "textarea") {
+          controlHtml = `<textarea name="${escapeAttr(f.key)}">${escapeHtml(value)}</textarea>`;
+        } else if (f.type === "select") {
+          const rawOpts = f.optionsByBrand ? (f.optionsByBrand[t.brandId] || []) : (f.options || []);
+          const opts = rawOpts.map((o) => (typeof o === "object" ? o.value : o));
+          controlHtml = `<select name="${escapeAttr(f.key)}">
+            <option value="">— Select —</option>
+            ${opts.map((o) => `<option value="${escapeAttr(o)}" ${o === value ? "selected" : ""}>${escapeHtml(o)}</option>`).join("")}
+          </select>`;
+        } else {
+          const inputType = f.type === "number" ? "number" : f.type === "date" ? "date" : "text";
+          controlHtml = `<input type="${inputType}" name="${escapeAttr(f.key)}" value="${escapeAttr(value)}" />`;
+        }
+        wrap.innerHTML = `<label>${escapeHtml(f.label)}${f.required ? ' <span class="required">*</span>' : ""}</label>${controlHtml}`;
+        container.appendChild(wrap);
+        fieldEls[f.key] = { wrap, control: wrap.querySelector("input,select,textarea") };
+      });
+
+      // Same AND-of-conditions showIf logic as the submission form
+      // (public/assets/app.js) — deliberately re-implemented here rather
+      // than shared, since this modal's fieldEls are plain DOM lookups
+      // with no brand-select/attachment/reporter concepts to worry about.
+      function conditionMet(showIf) {
+        const conditions = Array.isArray(showIf) ? showIf : [showIf];
+        return conditions.every((c) => {
+          if (c.field === "brand") return c.oneOf.includes(t.brandId); // brand isn't editable here — fixed to the ticket's own
+          const driver = fieldEls[c.field];
+          return driver && c.oneOf.includes(driver.control.value);
+        });
+      }
+      function refreshVisibility() {
+        module.fields.forEach((f) => {
+          if (!f.showIf) return;
+          fieldEls[f.key].wrap.style.display = conditionMet(f.showIf) ? "" : "none";
+        });
+      }
+      module.fields.forEach((f) => {
+        if (fieldEls[f.key].control.tagName === "SELECT") {
+          fieldEls[f.key].control.addEventListener("change", refreshVisibility);
+        }
+      });
+      refreshVisibility();
+
+      function close() { overlay.remove(); }
+      overlay.querySelector("#editDetailsClose").addEventListener("click", close);
+      overlay.querySelector("#editDetailsCancel").addEventListener("click", close);
+      overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
+
+      overlay.querySelector("#editDetailsSave").addEventListener("click", async () => {
+        const fields = module.fields
+          .filter((f) => !f.showIf || fieldEls[f.key].wrap.style.display !== "none")
+          .map((f) => ({ key: f.key, label: f.label, value: (fieldEls[f.key].control.value || "").trim() }));
+        const missingRequired = module.fields.find((f) =>
+          f.required && (!f.showIf || fieldEls[f.key].wrap.style.display !== "none") && !fieldEls[f.key].control.value.trim()
+        );
+        const statusEl = overlay.querySelector("#editDetailsStatus");
+        if (missingRequired) {
+          statusEl.textContent = `"${missingRequired.label}" is required.`;
+          statusEl.className = "edit-details-status err";
+          return;
+        }
+
+        const newFieldMap = Object.fromEntries(fields.map((f) => [f.key, f.value]));
+        const saveBtn = overlay.querySelector("#editDetailsSave");
+        saveBtn.disabled = true;
+        saveBtn.textContent = "Saving…";
+        statusEl.textContent = "";
+        statusEl.className = "edit-details-status";
+
+        const res = await postAction({ action: "editDetails", fields, fieldMap: newFieldMap });
+        if (!res.ok) {
+          statusEl.textContent = res.error || "Save failed.";
+          statusEl.className = "edit-details-status err";
+          saveBtn.disabled = false;
+          saveBtn.textContent = "Save & Sync";
+          return;
+        }
+        selectedThread = res.thread;
+        updateThreadContent(selectedThread);
+        patchLocalThread(selectedThread);
+        loadList();
+        if (res.sheetHasRef && !res.sheetSynced) {
+          alert("Telegram message updated, but the Sheet row couldn't be updated:\n" + (res.sheetError || "unknown error") + "\n\nYou may need to fix that row manually.");
+        }
+        close();
+      });
     }
 
     async function recallRoot() {

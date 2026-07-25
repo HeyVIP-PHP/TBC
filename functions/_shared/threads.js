@@ -193,7 +193,7 @@ async function sweepExpired(env, list) {
   return keep;
 }
 
-export async function createThread(env, { module: moduleId, moduleName, icon, accent, brand, title, submitter, chatId, topicId, rootMessageId, rootText, hasMedia, attachmentFileIds, summary }) {
+export async function createThread(env, { module: moduleId, moduleName, icon, accent, brand, brandId, title, submitter, chatId, topicId, rootMessageId, rootText, hasMedia, attachmentFileIds, attachmentNames, summary, fieldMap, screenshotLink, sheetRef }) {
   const now = new Date().toISOString();
   const thread = {
     id: newId(),
@@ -202,6 +202,11 @@ export async function createThread(env, { module: moduleId, moduleName, icon, ac
     icon,
     accent,
     brand,
+    // routing.js's BRANDS key (e.g. "betjili") — display name alone
+    // (`brand` above) isn't enough to re-look-up BRANDS[...] later, and
+    // editDetails() (see functions/api/threads/[id].js) needs the real
+    // brand object to rebuild the message/Sheet row correctly.
+    brandId: brandId || null,
     title,
     submitter,
     submittedAt: now,
@@ -218,6 +223,12 @@ export async function createThread(env, { module: moduleId, moduleName, icon, ac
     // captured at ticket-creation time instead of reply time. Empty array
     // for text-only tickets, or if the module doesn't collect attachments.
     attachmentFileIds: attachmentFileIds || [],
+    // Real uploaded filename per attachment above (same index), used for
+    // MIME-type guessing when previewing — see attachment-name-lookup
+    // comment on the frontend's rendering of this. Threads created before
+    // this field existed just have an empty array here; the frontend
+    // falls back to a generic placeholder name for those old records.
+    attachmentNames: attachmentNames || [],
     rootRecalled: false,
     msgIds: [rootMessageId],
     summary: summary || [],
@@ -225,6 +236,21 @@ export async function createThread(env, { module: moduleId, moduleName, icon, ac
     solved: false,
     solvedAt: null,
     deleted: false,
+    // The raw { fieldKey: value } this ticket was submitted with, plus
+    // where (if anywhere) it landed in a Google Sheet — both only used by
+    // the "Sync to Sheet" editDetails action (functions/api/threads/[id].js).
+    // Threads created before this existed just have fieldMap: null /
+    // sheetRef: null, meaning they can still get their Telegram message
+    // edited the old way, just not the Sheet-syncing kind of edit.
+    fieldMap: fieldMap || null,
+    screenshotLink: screenshotLink || "",
+    // { sheetId, tab, startColumn, columns, row } — null if this
+    // submission never wrote a (trackable) Sheet row. See submit.js's
+    // comment on `sheetRef` for why it's captured at write time instead
+    // of re-derived later (routing.js's config for this brand+module
+    // could change after the fact; the row this ticket ACTUALLY landed
+    // on never does).
+    sheetRef: sheetRef || null,
   };
   await Promise.all([
     saveThread(env, thread),
@@ -475,6 +501,23 @@ async function getFreshOrCachedEntries(env) {
   }
 }
 
+// Called by the standalone cron-worker (see /cron-worker in the repo
+// root) on its schedule — forces a real scan + cache write regardless of
+// how fresh the existing cache still is, so the sidebar stays warm even
+// when nobody's actively polling it. Still goes through
+// tryReserveScanSlot() like every other real scan, so cron-triggered
+// scans count against the same DAILY_SCAN_LIMIT budget (144/day at the
+// recommended 10-minute Cron Trigger interval — nowhere near the 800
+// ceiling on its own, but this keeps the accounting honest if the
+// interval is ever tightened).
+export async function refreshThreadListCache(env) {
+  const allowed = await tryReserveScanSlot(env);
+  if (!allowed) return { refreshed: false, reason: "daily-scan-limit-reached" };
+  const entries = await scanThreadsFromKV(env);
+  await env.THREADS_KV.put(LIST_CACHE_KEY, JSON.stringify({ generatedAt: Date.now(), entries }));
+  return { refreshed: true, count: entries.length };
+}
+
 // Sidebar list — served from the cache above almost all the time; only
 // touches KV's list() directly when that cache is missing or stale.
 export async function listThreads(env, { q } = {}) {
@@ -546,6 +589,31 @@ export async function updateRootText(env, threadId, text) {
   thread.rootEdited = true;
   thread.lastActivity = new Date().toISOString();
   await saveThread(env, thread);
+  return thread;
+}
+
+// Used by the "Sync to Sheet" editDetails action (functions/api/threads/
+// [id].js) after an agent corrects a ticket's field values — updates
+// everything that could have changed as a result: the raw fieldMap, the
+// re-rendered Telegram message text (rootText), and the sidebar's
+// title/preview (title/summary), which were all originally derived from
+// fieldMap at submission time and would otherwise go stale. Unlike
+// updateRootText above, this DOES call patchListCache() — title/summary
+// are exactly what the sidebar shows, so a stale cache here would mean
+// agents see outdated info until the next scan.
+export async function updateThreadDetails(env, threadId, { fieldMap, rootText, title, summary }) {
+  const thread = await getThread(env, threadId);
+  if (!thread) return null;
+  if (fieldMap !== undefined) thread.fieldMap = fieldMap;
+  if (rootText !== undefined) {
+    thread.rootText = rootText;
+    thread.rootEdited = true;
+  }
+  if (title !== undefined) thread.title = title;
+  if (summary !== undefined) thread.summary = summary;
+  thread.lastActivity = new Date().toISOString();
+  await saveThread(env, thread);
+  await patchListCache(env, thread);
   return thread;
 }
 
