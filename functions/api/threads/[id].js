@@ -253,7 +253,7 @@ async function handleThreadAction({ request, env, params }) {
     let sheetError = null;
     if (thread.sheetRef) {
       try {
-        const values = resolveColumnValues(thread.sheetRef.columns, { fieldMap, brand, reporter, screenshotLink, attachmentLinks: [] });
+        const values = resolveColumnValues(thread.sheetRef.columns, { fieldMap, brand, reporter, screenshotLink, attachmentLinks: thread.attachmentLinks || [] });
         await updateRowByColumns(env, thread.sheetRef.sheetId, thread.sheetRef.tab, thread.sheetRef.startColumn, thread.sheetRef.row, values);
         sheetSynced = true;
       } catch (e) {

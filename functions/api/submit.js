@@ -239,6 +239,7 @@ async function handleSubmit({ request, env }) {
         summary,
         fieldMap,
         screenshotLink,
+        attachmentLinks,
         sheetRef,
       });
       threadId = thread.id;

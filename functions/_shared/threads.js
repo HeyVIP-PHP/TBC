@@ -193,7 +193,7 @@ async function sweepExpired(env, list) {
   return keep;
 }
 
-export async function createThread(env, { module: moduleId, moduleName, icon, accent, brand, brandId, title, submitter, chatId, topicId, rootMessageId, rootText, hasMedia, attachmentFileIds, attachmentNames, summary, fieldMap, screenshotLink, sheetRef }) {
+export async function createThread(env, { module: moduleId, moduleName, icon, accent, brand, brandId, title, submitter, chatId, topicId, rootMessageId, rootText, hasMedia, attachmentFileIds, attachmentNames, summary, fieldMap, screenshotLink, attachmentLinks, sheetRef }) {
   const now = new Date().toISOString();
   const thread = {
     id: newId(),
@@ -244,6 +244,16 @@ export async function createThread(env, { module: moduleId, moduleName, icon, ac
     // edited the old way, just not the Sheet-syncing kind of edit.
     fieldMap: fieldMap || null,
     screenshotLink: screenshotLink || "",
+    // Telegram deep-link(s) (https://t.me/c/...) to the attachment(s) as
+    // actually sent — the fallback resolveColumnValues() uses for a
+    // Sheet's "Screenshot Link" column whenever this module doesn't have
+    // R2 uploads enabled (SCREENSHOT_R2_ENABLED in routing.js), Promotion
+    // Request being the main example. Without saving this here too,
+    // editDetails() had nothing to fall back to on a later edit and
+    // would blank that column out to "-" even though the original
+    // submission wrote a real link — see the 2026-07-26 fix for the bug
+    // this caused.
+    attachmentLinks: attachmentLinks || [],
     // { sheetId, tab, startColumn, columns, row } — null if this
     // submission never wrote a (trackable) Sheet row. See submit.js's
     // comment on `sheetRef` for why it's captured at write time instead
