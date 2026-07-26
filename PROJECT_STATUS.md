@@ -713,59 +713,78 @@ was the whole miss the first time around.
   side endpoints independently 401 without valid credentials too, not
   just the page redirect.
 
-### Role hierarchy — Agent / Senior / Admin / SuperAdmin
-Each tier's authority is a **literal allow-list**, not a sliding "anything
-below my rank" comparison:
+### Role hierarchy — Agent / Senior / Admin / SuperAdmin / Owner
+**Updated 2026-07 — replaced with the Owner role.** Full design writeup
+in `OWNER_ROLE_SETUP.md`. The old per-tier hand-written allow-list
+(`MANAGE_SCOPE`) is gone; there's now ONE rule:
 
-| Capability | Agent | Senior | Admin | SuperAdmin |
-|---|---|---|---|---|
-| Reset own password | ✅ | ✅ | ✅ | ✅ |
-| Reset an Agent's password (assisted) | ❌ | ✅ | ✅ | ✅ |
-| Reset a Senior's password (assisted) | ❌ | ❌ | ✅ | ✅ |
-| Reset an Admin/SuperAdmin's password | ❌ | ❌ | ❌ | ✅ (anyone) |
-| Create an Agent account | ❌ | ✅ | ✅ | ✅ |
-| Create a Senior account | ❌ | ❌ | ✅ | ✅ |
-| Create an Admin/SuperAdmin account | ❌ | ❌ | ❌ | ✅ (any role) |
-| Delete an Agent account | ❌ | ❌ | ✅ | ✅ |
-| Delete a Senior account | ❌ | ❌ | ✅ | ✅ |
-| Delete an Admin/SuperAdmin account | ❌ | ❌ | ❌ | ✅ |
-| View Whitelist IP (Offices) | ❌ | ❌ | 👁️ view only | ✅ view + edit |
-| View / edit TG Group Channel routing | ❌ | ❌ | ❌ | ✅ only |
-| Lock / unlock an account (manual) | ❌ | ❌ | ❌ | ✅ only |
-| View Agent Profile table | ❌ | ❌ | ✅ view | ✅ view |
-| Edit Agent Profile fullName/PID | ❌ | ❌ | ✅ | ✅ |
-| Edit Agent Profile Role | ❌ | ❌ | ❌ | ✅ |
+> **actor can only manage a target whose rank is STRICTLY LOWER than
+> the actor's own.** Same rank can never manage same rank — a
+> SuperAdmin can't touch another SuperAdmin; only Owner can.
 
-`MANAGE_SCOPE` in `functions/api/admin/accounts.js`:
-`{ senior: ["agent"], admin: ["agent", "senior"] }` (superadmin bypasses
-the map entirely). SuperAdmin self-promotion bootstrap: while zero
-SuperAdmin accounts exist anywhere, any Admin-or-above account can
-promote ONLY its own account to `superadmin` (via `accounts-admin.html`'s
-Edit Account) — the instant one SuperAdmin exists, this path closes for
-good.
+```
+Owner (4)      — highest, hidden, can't be created/assigned through the
+                 site (only a direct KV write — see OWNER_ROLE_SETUP.md),
+                 exempt from the Office+IP login requirement
+SuperAdmin (3) — now ALSO requires Office + IP whitelist to log in
+Admin (2)
+Senior (1)
+Agent (0)
+```
 
-### ✅ Office/IP rule — CHANGED this session: SuperAdmin is now the ONLY
-role exempt from needing an office
+| Capability | Agent | Senior | Admin | SuperAdmin | Owner |
+|---|---|---|---|---|---|
+| Reset own password | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Reset a strictly-lower-ranked account's password | ❌ | ✅ (Agent) | ✅ (Agent/Senior) | ✅ (anyone below) | ✅ (anyone below) |
+| Create an account with a strictly-lower role | ❌ | ✅ (Agent) | ✅ (Agent/Senior) | ✅ (Agent/Senior/Admin) | ✅ (anyone but Owner) |
+| Delete a strictly-lower-ranked account | ❌ | ❌ | ✅ (Agent/Senior) | ✅ (anyone below) | ✅ (anyone below) |
+| View Whitelist IP (Offices) | ❌ | ❌ | 👁️ view only | ✅ view + edit | ✅ view + edit |
+| View / edit TG Group Channel routing | ❌ | ❌ | ❌ | ✅ only | ✅ |
+| Lock / unlock an account | ❌ | ❌ | ❌ | ✅ (strictly-lower rank only — NOT another SuperAdmin) | ✅ (anyone below, incl. SuperAdmin) |
+| View Agent Profile table | ❌ | ❌ | ✅ view | ✅ view | ✅ view (sees own row too) |
+| Edit Agent Profile fullName/PID | ❌ | ❌ | ✅ own or lower-ranked | ✅ own or lower-ranked | ✅ |
+| Edit Agent Profile Role/Office/Brands/Topic Access | ❌ | ❌ | ❌ | ✅ strictly-lower rank only | ✅ anyone below |
+| Be assigned the "owner" role through the site | ❌ | ❌ | ❌ | ❌ | — (impossible for anyone, including Owner — see OWNER_ROLE_SETUP.md) |
 
-**Old behavior:** an account with no `officeId` had no IP restriction at
-all — could log in from anywhere, for any role. Easy to forget and
-accidentally leave an account wide open.
+`canManage(actorRank, targetRank)` in `functions/api/admin/accounts.js`
+is the one function that replaced `MANAGE_SCOPE` — `return actorRank >
+targetRank;`. SuperAdmin self-promotion bootstrap is unchanged: while
+zero SuperAdmin accounts exist anywhere, any Admin-or-above account can
+promote ONLY its own account to `superadmin` — the instant one exists,
+this path closes for good. (Owner accounts don't count toward "does a
+SuperAdmin exist" — see `anySuperAdminExists()`'s deliberately-hidden
+`listAccounts()` call in `_shared/accounts.js`.)
 
-**New behavior**, requested directly by the business owner after
-confirming they understood the trade-off: `officeIpCheckPasses()` in
-`_shared/accounts.js` — **SuperAdmin can still log in from anywhere,
-office or not** (deliberate, so there's always at least one way to reach
-admin tools remotely). **Every other role (Agent/Senior/Admin) with no
-office now fails to log in outright.** This is shared by both
-`verifyRequest()` (every protected endpoint) and `auth/login.js` (the
-login form itself) via one function, so the two can't drift out of sync.
+**Owner accounts are hidden everywhere** — `GET /api/admin/accounts`,
+the Agent Profile table, `anyAdminExists()`/`anySuperAdminExists()`, all
+of it — except an Owner viewing the list sees their own single row. A
+non-Owner trying to `save`/`delete`/`lock`/`unlock` a hidden Owner
+account gets `404 Account not found`, not `403`, so there's no way to
+even infer one exists at a given username from the error code alone.
+
+### ✅ Office/IP rule — CHANGED again 2026-07: Owner (not SuperAdmin) is
+now the ONLY role exempt from needing an office
+
+**Previous behavior (this session, since superseded):** SuperAdmin was
+the one role exempt from the Office+IP check.
+
+**Current behavior:** `officeIpCheckPasses()` in `_shared/accounts.js`
+now checks `account.role === "owner"`, not `"superadmin"`. **SuperAdmin
+now requires an Office + IP whitelist to log in, same as Agent/Senior/
+Admin.** Deploying this change with an existing SuperAdmin that has no
+office bound will lock that account out immediately — always bind an
+Office to every existing SuperAdmin BEFORE deploying, or create/upgrade
+an Owner account first as a guaranteed way back in. `auth/login.js` has
+its own separate, earlier "no office at all" pre-check (for a clearer
+error message) that also had to be updated to match — see that file.
 
 **Accepted trade-off, stated explicitly to the business owner:** if the
 very first Admin-tier account (before any SuperAdmin exists) has no
 office, that account is now locked out of everything, including its own
 SuperAdmin self-promotion path — no in-app recovery, only a direct
-Cloudflare KV edit. **Always assign an office to every non-SuperAdmin
-account — login will fail without one, not just be unrestricted.**
+Cloudflare KV edit. **Always assign an office to every non-Owner
+account, including SuperAdmin — login will fail without one, not just
+be unrestricted.**
 
 ### Bootstrap (first-time setup after a fresh deploy)
 `accounts-admin.html` accepts the existing `BRAND_EDIT_PASSWORD` secret

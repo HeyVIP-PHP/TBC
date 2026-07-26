@@ -157,7 +157,7 @@ async function handleLogin({ request, env, waitUntil }) {
   // being assigned an office yet — could get auto-locked just for
   // trying to log in a few times while waiting on an admin. So: alert
   // yes, lock-counter no.
-  if (!account.officeId && account.role !== "superadmin") {
+  if (!account.officeId && account.role !== "owner") {
     const ip = requestIP(request) || "unknown";
     if (waitUntil) waitUntil(notifyLoginFailure(env, { account, ip, request, reasonTitle: "No Office Assigned" }));
     return json({ ok: false, error: `Your account has no office assigned, so it can't log in from anywhere. Ask an admin to assign you an office (your current IP: ${ip}).` }, 401);

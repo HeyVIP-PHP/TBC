@@ -308,7 +308,7 @@
     // ---- Account Management (sidebar dropdown + 4 focused modals) ----
     // Rank matches functions/_shared/accounts.js ROLE_RANK exactly — keep
     // these in sync if that ever changes.
-    const ROLE_RANK = { agent: 0, senior: 1, admin: 2, superadmin: 3 };
+    const ROLE_RANK = { agent: 0, senior: 1, admin: 2, superadmin: 3, owner: 4 };
     const authInfo = window.AgentAuth.getAuth();
     const myRank = ROLE_RANK[authInfo?.role] ?? ROLE_RANK.agent;
     const isSenior = myRank >= ROLE_RANK.senior;   // sees Create Account, and Reset Password gains an account-picker
@@ -396,11 +396,14 @@
         acctOffices = data.ok ? data.offices : [];
         const officeOptions = acctOffices.map((o) => `<option value="${o.id}">${acctEsc(o.name)}</option>`).join("");
         const brandPills = (window.BRANDS || []).map((b) => `<div class="brand-toggle-pill" data-brand="${acctEsc(b.name)}">${acctEsc(b.name).toUpperCase()}</div>`).join("");
-        // Manage scope is a literal allow-list per tier, not "below my
-        // rank" — Senior: agent only. Admin: agent + senior. SuperAdmin:
-        // anything. Server enforces this too; this just keeps the
-        // dropdown from offering a choice that would get rejected.
-        const manageScope = isSuperAdmin ? ["agent", "senior", "admin", "superadmin"] : (myRank === ROLE_RANK.admin ? ["agent", "senior"] : ["agent"]);
+        // Server now enforces "strictly outranks the target" (see
+        // functions/api/admin/accounts.js canManage()), not a
+        // hand-written per-tier allow-list — mirror that here so the
+        // dropdown only ever offers a choice the server will accept.
+        // "owner" never appears: ROLE_RANK has it, but it's excluded on
+        // purpose (nobody can create an owner account through the UI —
+        // see OWNER_ROLE_SETUP.md).
+        const manageScope = Object.keys(ROLE_RANK).filter((r) => r !== "owner" && ROLE_RANK[r] < myRank);
         const roleOptions = manageScope.map((r) => `<option value="${r}">${r}</option>`).join("");
         acctBody.innerHTML = `
           <div class="field"><label>Username</label><input type="text" id="am_username" autocomplete="off" /></div>
@@ -441,16 +444,17 @@
         acctTitle.textContent = "Reset Password";
         const res = await window.AgentAuth.authFetch("/api/admin/accounts");
         const data = await res.json();
-        // Manage scope allow-list: Senior -> agent only. Admin -> agent +
-        // senior. SuperAdmin -> everyone.
-        const manageScope = isSuperAdmin ? null : (myRank === ROLE_RANK.admin ? ["agent", "senior"] : ["agent"]);
-        acctAccounts = data.ok ? data.accounts.filter((a) => !manageScope || manageScope.includes(a.role)) : [];
+        // Same "strictly outranks the target, or it's your own account"
+        // rule the server enforces (functions/api/admin/accounts.js) —
+        // no more hand-written per-tier allow-list.
+        const myUsername = authInfo?.username;
+        acctAccounts = data.ok ? data.accounts.filter((a) => a.username === myUsername || ROLE_RANK[a.role] < myRank) : [];
         const accountOptions = acctAccounts.map((a) => `<option value="${acctEsc(a.username)}">${acctEsc(a.username)} (${acctEsc(a.role)})</option>`).join("");
         acctBody.innerHTML = `
           <div class="field"><label>Account</label><select id="am_reset_account">${accountOptions || '<option value="">— no eligible accounts —</option>'}</select></div>
           <div class="field"><label>New Password</label><input type="password" id="am_reset_newpass" autocomplete="new-password" /></div>
           <div class="field"><label>Confirm New Password</label><input type="password" id="am_reset_confirm" autocomplete="new-password" /></div>
-          <p class="edit-modal-note">${isSuperAdmin ? "SuperAdmin reset" : `You can only reset a password for: ${manageScope.join(" or ")}`} — the old password isn't needed.</p>`;
+          <p class="edit-modal-note">You can reset your own password, or one for any account ranked below your own — the old password isn't needed.</p>`;
       }
 
       if (mode === "reset" && !isSenior) {
@@ -667,15 +671,19 @@
         // Office / IP — SuperAdmin can log in from anywhere with no office
         // bound (intentional); every other role now REQUIRES one to log in
         // at all (see _shared/accounts.js officeIpCheckPasses()), so a
-        // non-SuperAdmin account with no office is flagged as broken, not
-        // just "unrestricted".
+        // non-Owner/non-SuperAdmin account with no office is flagged as
+        // broken, not just "unrestricted".
         const office = a.officeId ? acctOfficesById[a.officeId] : null;
         let officeCell;
         if (office) {
           officeCell = acctEsc(office.name);
-        } else if (a.role === "superadmin") {
-          officeCell = `<span class="office-none">— no office (unrestricted, OK for SuperAdmin)</span>`;
+        } else if (a.role === "owner") {
+          officeCell = `<span class="office-none">— no office (unrestricted, OK for Owner)</span>`;
         } else {
+          // SuperAdmin is no longer exempt — it now requires an Office +
+          // IP whitelist to log in too (see OWNER_ROLE_SETUP.md §1.5),
+          // so a SuperAdmin with no office genuinely can't log in, same
+          // warning as any other role.
           officeCell = `<span class="office-missing">⚠️ No office — can't log in</span>`;
         }
         const statusCell = a.locked
@@ -760,13 +768,32 @@
       const a = acctAccounts.find((acc) => acc.username === username);
       if (!a) return;
 
+      // Per-TARGET permission, not the global isSuperAdmin — the same
+      // SuperAdmin viewer might outrank one account (agent/senior/admin)
+      // but not another (a fellow SuperAdmin, or themselves), so this has
+      // to be recomputed for whichever specific account this popup is
+      // open for. See OWNER_ROLE_SETUP.md — this mirrors the server's
+      // own canManage() check in functions/api/admin/accounts.js exactly;
+      // the server enforces this independently regardless of what this
+      // modal does or doesn't disable.
+      const targetRank = ROLE_RANK[a.role] ?? ROLE_RANK.agent;
+      const canManageAccess = isSuperAdmin && myRank > targetRank;
+
       const overlay = document.createElement("div");
       overlay.className = "edit-details-overlay";
       overlay.id = "agentProfileOverlay";
 
       const office = a.officeId ? acctOfficesById[a.officeId] : null;
       const officeOptions = acctOffices.map((o) => `<option value="${o.id}" ${o.id === a.officeId ? "selected" : ""}>${acctEsc(o.name)}</option>`).join("");
-      const roleOptions = ["agent", "senior", "admin", "superadmin"].map((r) => `<option value="${r}" ${r === a.role ? "selected" : ""}>${r}</option>`).join("");
+      // Only roles strictly below the viewer's own rank — same rule the
+      // create-account dropdown uses, and same reasoning: don't offer a
+      // choice the server will reject anyway. Always includes the
+      // target's CURRENT role too (even if it wouldn't otherwise qualify)
+      // so the dropdown doesn't silently change their role just by
+      // opening this popup.
+      const roleOptions = Object.keys(ROLE_RANK)
+        .filter((r) => r !== "owner" && (ROLE_RANK[r] < myRank || r === a.role))
+        .map((r) => `<option value="${r}" ${r === a.role ? "selected" : ""}>${r}</option>`).join("");
       const pwBy = a.lastPasswordChange
         ? `${timeAgoLocal(a.lastPasswordChange.at)} by ${acctEsc(a.lastPasswordChange.by)}`
         : "—";
@@ -775,7 +802,7 @@
       const allModulesSelected = a.allowedModules === "all" || a.allowedModules === undefined;
       const moduleChecks = AGENT_PROFILE_MODULE_LIST.map((m) => `
         <label class="agent-profile-module-check">
-          <input type="checkbox" value="${acctEsc(m.id)}" ${allModulesSelected || (Array.isArray(a.allowedModules) && a.allowedModules.includes(m.id)) ? "checked" : ""} ${isSuperAdmin ? "" : "disabled"} />
+          <input type="checkbox" value="${acctEsc(m.id)}" ${allModulesSelected || (Array.isArray(a.allowedModules) && a.allowedModules.includes(m.id)) ? "checked" : ""} ${canManageAccess ? "" : "disabled"} />
           ${m.icon || ""} ${acctEsc(m.name)}
         </label>`).join("");
 
@@ -791,29 +818,29 @@
             <div style="display:flex; gap:10px;">
               <div class="field" style="flex:1;">
                 <label>Role</label>
-                ${isSuperAdmin ? `<select id="ap_role">${roleOptions}</select>` : `<input type="text" value="${acctEsc(a.role)}" disabled />`}
+                ${canManageAccess ? `<select id="ap_role">${roleOptions}</select>` : `<input type="text" value="${acctEsc(a.role)}" disabled />`}
               </div>
               <div class="field" style="flex:1;">
                 <label>Status</label>
                 <div class="agent-profile-status-row">
                   <span class="agent-profile-status-text ${a.locked ? "is-locked" : "is-active"}">${a.locked ? "🔒 Locked" : "Active"}</span>
-                  ${isSuperAdmin ? `<button type="button" class="icon-btn" id="ap_lockToggle" title="${a.locked ? "Unlock" : "Lock"} this account">${a.locked ? "🔓" : "🔒"}</button>` : ""}
+                  ${canManageAccess ? `<button type="button" class="icon-btn" id="ap_lockToggle" title="${a.locked ? "Unlock" : "Lock"} this account">${a.locked ? "🔓" : "🔒"}</button>` : ""}
                 </div>
               </div>
             </div>
             <div class="field">
               <label>Office</label>
-              ${isSuperAdmin ? `<select id="ap_office"><option value="">— none —</option>${officeOptions}</select>` : `<input type="text" value="${office ? acctEsc(office.name) : "—"}" disabled />`}
+              ${canManageAccess ? `<select id="ap_office"><option value="">— none —</option>${officeOptions}</select>` : `<input type="text" value="${office ? acctEsc(office.name) : "—"}" disabled />`}
             </div>
             <div class="field">
               <label>Brands</label>
-              <div class="brand-toggle-label"><span></span>${isSuperAdmin ? `<span class="select-all-btn" id="ap_selectAllBrands">${allBrandsSelected ? "✓ All Selected" : "Select All"}</span>` : ""}</div>
-              <div class="brand-toggle-grid" id="ap_brandGrid" style="${isSuperAdmin ? "" : "pointer-events:none; opacity:0.65;"}">${brandPills}</div>
+              <div class="brand-toggle-label"><span></span>${canManageAccess ? `<span class="select-all-btn" id="ap_selectAllBrands">${allBrandsSelected ? "✓ All Selected" : "Select All"}</span>` : ""}</div>
+              <div class="brand-toggle-grid" id="ap_brandGrid" style="${canManageAccess ? "" : "pointer-events:none; opacity:0.65;"}">${brandPills}</div>
             </div>
             <div class="field"><label>Full name</label><input type="text" id="ap_fullname" value="${acctEsc(a.fullName || "")}" autocomplete="off" /></div>
             <div class="field"><label>Agent PSD</label><input type="text" id="ap_pid" value="${acctEsc(a.pid || "")}" placeholder="e.g. PSD-014" autocomplete="off" /></div>
 
-            <p class="agent-profile-section-label" style="margin-top:14px;">Topic access ${isSuperAdmin ? "" : '<span class="agent-profile-locked-note">(SuperAdmin only)</span>'}</p>
+            <p class="agent-profile-section-label" style="margin-top:14px;">Topic access ${canManageAccess ? "" : '<span class="agent-profile-locked-note">(requires outranking this account)</span>'}</p>
             <div class="agent-profile-module-list">${moduleChecks}</div>
           </div>
 
@@ -825,7 +852,7 @@
         </div>`;
       document.body.appendChild(overlay);
 
-      if (isSuperAdmin) wireAgentProfileBrandPicker();
+      if (canManageAccess) wireAgentProfileBrandPicker();
 
       function close() { overlay.remove(); }
       document.getElementById("agentProfileClose").addEventListener("click", close);
@@ -873,7 +900,15 @@
         fullName: document.getElementById("ap_fullname").value.trim(),
         pid: document.getElementById("ap_pid").value.trim(),
       };
-      if (isSuperAdmin) {
+      // Check the actual DOM, not the global isSuperAdmin — the same
+      // SuperAdmin viewer can have canManageAccess true for one account
+      // and false for another (see openAgentProfileModal above), so
+      // whether #ap_role actually got rendered as an editable <select>
+      // (vs. a disabled <input>) is what determines whether it's safe to
+      // read from here. Reading a global flag instead could try to read
+      // a value out of an input that was never rendered at all.
+      const canEditAccess = !!document.getElementById("ap_role");
+      if (canEditAccess) {
         payload.role = document.getElementById("ap_role").value;
         payload.officeId = document.getElementById("ap_office").value || null;
         const pills = Array.from(document.querySelectorAll("#ap_brandGrid .brand-toggle-pill"));

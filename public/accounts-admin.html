@@ -260,7 +260,7 @@
         // compare here would lock SuperAdmin out of their own admin page.
         // Same class of bug threads.html's Recall Chat History section and
         // /api/deletion-log both had; fixed here the same way.
-        const ROLE_RANK = { agent: 0, senior: 1, admin: 2, superadmin: 3 };
+        const ROLE_RANK = { agent: 0, senior: 1, admin: 2, superadmin: 3, owner: 4 };
         if ((ROLE_RANK[data.account.role] ?? 0) < ROLE_RANK.admin) { err.textContent = "This account isn't an admin."; err.style.display = "block"; return; }
         setAuth({ username: data.account.username, token: data.token, role: data.account.role, allowedBrands: data.account.allowedBrands, allowedModules: data.account.allowedModules });
         enterAdminShell();
