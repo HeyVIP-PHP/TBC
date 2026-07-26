@@ -85,11 +85,14 @@ async function handleSubmit({ request, env }) {
       // exact same result instead of doing everything a second time.
       return new Response(already, { status: 200, headers: { "Content-Type": "application/json" } });
     }
-    // Placeholder first, 30s TTL — so a near-simultaneous duplicate
-    // request (the two-requests-racing case, not just "the first one
-    // finished and a retry came later") also gets caught immediately,
-    // before this request has even finished processing.
-    await env.THREADS_KV.put(dedupeKey, JSON.stringify({ ok: true, duplicate: true, note: "Original submission was still processing — this is not a second ticket." }), { expirationTtl: 30 });
+    // Placeholder first — so a near-simultaneous duplicate request (the
+    // two-requests-racing case, not just "the first one finished and a
+    // retry came later") also gets caught immediately, before this
+    // request has even finished processing. 60s (not the originally
+    // planned 30s) because Cloudflare KV flat-out rejects any
+    // expirationTtl under 60 — this isn't a tunable choice, it's the
+    // platform's actual minimum.
+    await env.THREADS_KV.put(dedupeKey, JSON.stringify({ ok: true, duplicate: true, note: "Original submission was still processing — this is not a second ticket." }), { expirationTtl: 60 });
   }
 
   const botToken = env.TELEGRAM_BOT_TOKEN;
