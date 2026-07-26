@@ -539,4 +539,5 @@ export const SCREENSHOT_R2_ENABLED = {
   account_issue: true,
   bank_issue: true,
   withdraw_issue: true,
+  promotion_request: true,
 };
