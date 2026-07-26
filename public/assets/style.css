@@ -339,6 +339,12 @@ a { color: inherit; text-decoration: none; }
   background: var(--field-bg); border: 1.5px solid var(--border); border-radius: 8px;
   padding: 6px 10px; font-size: 12px; font-weight: 600; color: var(--ink); font-family: inherit; cursor: pointer;
 }
+.acct-profile-search {
+  background: var(--field-bg); border: 1.5px solid var(--border); border-radius: 8px;
+  padding: 6px 10px; font-size: 12px; color: var(--ink); font-family: inherit;
+  width: 220px; margin-right: 8px;
+}
+.acct-profile-search:focus { outline: none; border-color: var(--accent-gold); }
 .edit-modal-note { min-height: 16px; font-size: 12px; font-weight: 600; color: var(--ink-soft); margin: 0 0 10px; }
 .edit-modal-note.ok { color: #1a9c6e; }
 .edit-modal-note.err { color: #e0577a; }
@@ -383,6 +389,38 @@ a { color: inherit; text-decoration: none; }
 .agent-profile-table .office-missing { color: #e0577a; font-weight: 700; font-size: 11.5px; }
 .agent-profile-table .office-none { color: var(--ink-soft); font-size: 11.5px; }
 .agent-profile-table .row-btn { background: none; border: none; cursor: pointer; font-size: 13px; padding: 2px 4px; }
+/* Username-as-entry-point into the Agent Personal Profile popup — reset
+   <button> defaults so it still reads as a plain table cell with a
+   clickable-link affordance, same underline-on-hover treatment
+   .msg-attach-link already uses elsewhere for the same reason. */
+.agent-profile-table .link-btn {
+  border: none; background: none; padding: 0; margin: 0; font: inherit; font-size: 12.5px;
+  color: var(--label-blue); text-decoration: underline; text-underline-offset: 2px; cursor: pointer;
+}
+.agent-profile-table .link-btn:hover { color: var(--accent-gold); }
+
+/* ---- Agent Personal Profile popup (opened by clicking a username in
+   the table above) — field groups inside .edit-details-fields ---- */
+.agent-profile-section-label {
+  font-size: 11px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase;
+  color: var(--ink-soft); margin: 0 0 8px;
+}
+.agent-profile-locked-note { text-transform: none; font-weight: 600; letter-spacing: 0; color: var(--ink-soft); }
+.agent-profile-status-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  border: 1.5px solid var(--border); background: var(--field-bg); border-radius: 12px;
+  padding: 0 10px; height: 44px; box-sizing: border-box;
+}
+.agent-profile-status-row .icon-btn { flex-shrink: 0; }
+.agent-profile-status-text { font-size: 14px; font-weight: 700; }
+.agent-profile-status-text.is-active { color: #1a9c6e; }
+.agent-profile-status-text.is-locked { color: var(--required); }
+.agent-profile-module-list { display: flex; flex-direction: column; gap: 2px; }
+.agent-profile-module-check {
+  display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 4px 2px;
+  color: var(--ink);
+}
+.agent-profile-module-check input[disabled] { cursor: not-allowed; }
 
 /* ---- TG Group / Channel (live-editable Telegram routing) ---- */
 .tgroute-layout { display: flex; gap: 14px; max-height: 78vh; }

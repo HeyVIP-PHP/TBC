@@ -3,7 +3,7 @@
  *   GET                                  -> list accounts (no secrets).
  *     Requires rank >= senior (Senior needs this to pick a target for
  *     assisted password resets).
- *   POST { action:"save", username, password?, role?, officeId?, allowedBrands?, fullName?, pid? }
+ *   POST { action:"save", username, password?, role?, officeId?, allowedBrands?, allowedModules?, fullName?, pid? }
  *     What's allowed depends on the caller's rank AND what's actually
  *     changing — see the permission matrix below. Any field omitted from
  *     the body keeps its existing value (saveAccount uses patch/merge
@@ -27,7 +27,7 @@
  *   account with that role, an assisted password-only reset targeting
  *   an existing account with that role, and deleting an account with
  *   that role.
- *   - Editing role / officeId / allowedBrands on an EXISTING account:
+ *   - Editing role / officeId / allowedBrands / allowedModules on an EXISTING account:
  *     SuperAdmin only — EXCEPT the one-time SuperAdmin self-promotion
  *     bootstrap (an admin-or-above promoting THEIR OWN account to
  *     "superadmin", only while no superadmin exists anywhere yet).
@@ -111,7 +111,8 @@ async function handlePost({ request, env }) {
         (body.pid !== undefined && body.pid !== (existingTarget.pid || ""));
       const accessChanging =
         (body.officeId !== undefined && (body.officeId || null) !== (existingTarget.officeId || null)) ||
-        (body.allowedBrands !== undefined && JSON.stringify(body.allowedBrands) !== JSON.stringify(existingTarget.allowedBrands ?? []));
+        (body.allowedBrands !== undefined && JSON.stringify(body.allowedBrands) !== JSON.stringify(existingTarget.allowedBrands ?? [])) ||
+        (body.allowedModules !== undefined && JSON.stringify(body.allowedModules) !== JSON.stringify(existingTarget.allowedModules ?? "all"));
       const passwordChanging = !!body.password;
 
       if (roleChanging || accessChanging) {
@@ -123,7 +124,7 @@ async function handlePost({ request, env }) {
         const superAdminAlreadyExists = await anySuperAdminExists(env);
 
         if (actorRank < ROLE_RANK.superadmin && !(isSelfPromotionToSuperAdmin && !superAdminAlreadyExists)) {
-          return json({ ok: false, error: "Only SuperAdmin can change role, office, or brand access." }, 403);
+          return json({ ok: false, error: "Only SuperAdmin can change role, office, brand access, or topic access." }, 403);
         }
       }
       if (profileChanging && actorRank < ROLE_RANK.admin) {
@@ -145,6 +146,7 @@ async function handlePost({ request, env }) {
         role: body.role !== undefined ? body.role : undefined,
         officeId: body.officeId !== undefined ? (body.officeId || null) : undefined,
         allowedBrands: body.allowedBrands !== undefined ? body.allowedBrands : undefined,
+        allowedModules: body.allowedModules !== undefined ? body.allowedModules : undefined,
         fullName: body.fullName !== undefined ? body.fullName : undefined,
         pid: body.pid !== undefined ? body.pid : undefined,
       });

@@ -2,7 +2,7 @@ import { BRANDS, RECORD_TO_SHEET, MODULE_META, SHEET_LAYOUT, MESSAGE_TEMPLATE, S
 import { appendRowToSheet, appendRowByColumns, writeRowForDate } from "../_shared/googleSheets.js";
 import { uploadAttachmentToR2, screenshotUrl } from "../_shared/r2.js";
 import { createThread } from "../_shared/threads.js";
-import { verifyRequest, canSeeBrand } from "../_shared/accounts.js";
+import { verifyRequest, canSeeBrand, canSeeModule } from "../_shared/accounts.js";
 import { getRouteOverride } from "../_shared/routes.js";
 import {
   resolveColumnValues, resolveSheetLayout, formatDateDDMMYYYY, buildTicketMessage, buildTitleAndSummary,
@@ -39,10 +39,19 @@ async function handleSubmit({ request, env }) {
     return json({ ok: false, error: "Invalid JSON body." }, 400);
   }
 
-  const { module: moduleId, brand: brandId, reporter, fields, attachments } = body || {};
+  const { module: moduleId, brand: brandId, reporter, fields, attachments, idempotencyKey } = body || {};
 
   if (!VALID_MODULES.includes(moduleId)) {
     return json({ ok: false, error: `Unknown module "${moduleId}".` }, 400);
+  }
+  // Real enforcement, not just hiding it from the sidebar — an agent
+  // scoped away from a topic (account.allowedModules, set in the Agent
+  // Personal Profile modal) can't submit to it even by calling this
+  // endpoint directly, bypassing the Home page and app.js's own checks
+  // entirely. Checked before the brand lookup below on purpose — no
+  // reason to even validate brandId for a module this account can't use.
+  if (!canSeeModule(account, moduleId)) {
+    return json({ ok: false, error: `Your account doesn't have access to the ${MODULE_META[moduleId]?.name || moduleId} topic.` }, 403);
   }
   const brand = BRANDS[brandId];
   if (!brand) {
@@ -58,6 +67,29 @@ async function handleSubmit({ request, env }) {
   }
   if (!reporter || !Array.isArray(fields)) {
     return json({ ok: false, error: "Missing reporter or fields." }, 400);
+  }
+
+  // Dedupe: the same submit CLICK occasionally reaches the server twice
+  // (flaky mobile network retry, double-tap, an edge node retrying a
+  // request it thinks failed) — without this, that means two identical
+  // Telegram messages, two duplicate ticket records, and a Sheet write
+  // race that can under- or over-count rows. idempotencyKey is a fresh
+  // random ID app.js generates per submit click (not tied to form
+  // content), so resubmitting after a genuine failure still works fine —
+  // only an actual duplicate delivery of the same click gets short-circuited.
+  if (idempotencyKey && env.THREADS_KV) {
+    const dedupeKey = `submit_dedupe:${idempotencyKey}`;
+    const already = await env.THREADS_KV.get(dedupeKey);
+    if (already) {
+      // Already processed (or still being processed) — hand back the
+      // exact same result instead of doing everything a second time.
+      return new Response(already, { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    // Placeholder first, 30s TTL — so a near-simultaneous duplicate
+    // request (the two-requests-racing case, not just "the first one
+    // finished and a retry came later") also gets caught immediately,
+    // before this request has even finished processing.
+    await env.THREADS_KV.put(dedupeKey, JSON.stringify({ ok: true, duplicate: true, note: "Original submission was still processing — this is not a second ticket." }), { expirationTtl: 30 });
   }
 
   const botToken = env.TELEGRAM_BOT_TOKEN;
@@ -213,7 +245,7 @@ async function handleSubmit({ request, env }) {
     }
   }
 
-  return json({
+  const finalResponse = {
     ok: true,
     telegramMessageId: tgResult.messageId,
     threadId,
@@ -222,7 +254,14 @@ async function handleSubmit({ request, env }) {
     sheetError,
     attachmentErrors: attachmentErrors.length ? attachmentErrors : undefined,
     r2Errors: r2Errors.length ? r2Errors : undefined,
-  });
+  };
+  if (idempotencyKey && env.THREADS_KV) {
+    // Overwrite the 30s placeholder with the real result, now kept
+    // around for 10 minutes — long enough to cover any realistic delayed
+    // retry, short enough not to matter for KV's daily write quota.
+    await env.THREADS_KV.put(`submit_dedupe:${idempotencyKey}`, JSON.stringify(finalResponse), { expirationTtl: 600 });
+  }
+  return json(finalResponse);
 }
 
 

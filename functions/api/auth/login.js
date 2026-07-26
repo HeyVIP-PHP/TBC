@@ -189,7 +189,7 @@ async function handleLogin({ request, env, waitUntil }) {
   return json({
     ok: true,
     token,
-    account: { username: account.username, role: account.role, allowedBrands: account.allowedBrands, officeId: account.officeId },
+    account: { username: account.username, role: account.role, allowedBrands: account.allowedBrands, allowedModules: account.allowedModules, officeId: account.officeId },
   });
 }
 

@@ -46,6 +46,7 @@
       <button type="button" class="modal-close-btn" id="acctModalClose" title="Close" aria-label="Close">✕</button>
       <div class="edit-modal-header-row">
         <p class="edit-modal-title" id="acctModalTitle">Account Management</p>
+        <input type="text" id="acctProfileSearch" class="acct-profile-search" placeholder="🔍 Search username, full name, PSD…" autocomplete="off" style="display:none;" />
         <select id="acctProfileRoleFilter" class="acct-role-filter" style="display:none;">
           <option value="all">All roles</option>
           <option value="agent">Agent</option>
@@ -280,14 +281,15 @@
 
     const hubStats = document.getElementById("hubStats");
     const visibleBrandCount = (window.AgentAuth ? window.AgentAuth.filterAllowedBrands(window.BRANDS) : window.BRANDS).length;
+    const visibleModules = window.AgentAuth ? window.AgentAuth.filterAllowedModules(window.MODULES) : window.MODULES;
     hubStats.innerHTML = `
       <div class="stat"><b>${visibleBrandCount}</b><span>Brands</span></div>
-      <div class="stat"><b>${window.MODULES.length}</b><span>Modules</span></div>
+      <div class="stat"><b>${visibleModules.length}</b><span>Modules</span></div>
       <div class="stat"><b>24/7</b><span>Live routing</span></div>
     `;
 
     const list = document.getElementById("sidebarList");
-    window.MODULES.forEach((m) => {
+    visibleModules.forEach((m) => {
       const a = document.createElement("a");
       a.href = `/form.html?module=${m.id}`;
       a.className = "sidebar-item";
@@ -333,6 +335,7 @@
     document.getElementById("subResetPassword").addEventListener("click", () => openAcctModal("reset"));
     document.getElementById("subAgentProfile").addEventListener("click", () => openAcctModal("profile"));
     document.getElementById("acctProfileRoleFilter").addEventListener("change", () => renderAgentProfileTable());
+    document.getElementById("acctProfileSearch").addEventListener("input", () => renderAgentProfileTable());
 
 
     const acctBackdrop = document.getElementById("acctModalBackdrop");
@@ -382,6 +385,9 @@
       const roleFilterEl = document.getElementById("acctProfileRoleFilter");
       roleFilterEl.style.display = mode === "profile" ? "" : "none";
       if (mode === "profile") roleFilterEl.value = "all";
+      const searchEl = document.getElementById("acctProfileSearch");
+      searchEl.style.display = mode === "profile" ? "" : "none";
+      if (mode === "profile") searchEl.value = "";
 
       if (mode === "create") {
         acctTitle.textContent = "Create Account";
@@ -637,6 +643,7 @@
       const accountsData = await accountsRes.json();
       const officesData = await officesRes.json();
       acctAccounts = accountsData.ok ? accountsData.accounts : [];
+      acctOffices = officesData.ok ? officesData.offices : [];
       acctOfficesById = {};
       if (officesData.ok) {
         officesData.offices.forEach((o) => { acctOfficesById[o.id] = o; });
@@ -646,16 +653,17 @@
 
     function renderAgentProfileTable() {
       const roleFilter = document.getElementById("acctProfileRoleFilter").value || "all";
-      const visibleAccounts = roleFilter === "all" ? acctAccounts : acctAccounts.filter((a) => a.role === roleFilter);
+      const searchTerm = document.getElementById("acctProfileSearch").value.trim().toLowerCase();
+      let visibleAccounts = roleFilter === "all" ? acctAccounts : acctAccounts.filter((a) => a.role === roleFilter);
+      if (searchTerm) {
+        visibleAccounts = visibleAccounts.filter((a) =>
+          (a.username || "").toLowerCase().includes(searchTerm) ||
+          (a.fullName || "").toLowerCase().includes(searchTerm) ||
+          (a.pid || "").toLowerCase().includes(searchTerm)
+        );
+      }
 
       const rows = visibleAccounts.map((a) => {
-        const pwBy = a.lastPasswordChange
-          ? `${timeAgoLocal(a.lastPasswordChange.at)}<span class="pw-by">by ${acctEsc(a.lastPasswordChange.by)}</span>`
-          : "—";
-        // Admin can edit fullName/PSD; only SuperAdmin can also change Role.
-        const editCell = isAdmin
-          ? `<button type="button" class="row-btn" data-edit="${acctEsc(a.username)}" title="Edit name/PSD${isSuperAdmin ? "/role" : ""}">✏️</button>`
-          : "";
         // Office / IP — SuperAdmin can log in from anywhere with no office
         // bound (intentional); every other role now REQUIRES one to log in
         // at all (see _shared/accounts.js officeIpCheckPasses()), so a
@@ -679,30 +687,36 @@
               ? `<button type="button" class="row-btn" data-unlock="${acctEsc(a.username)}" title="Unlock this account">🔓</button>`
               : `<button type="button" class="row-btn" data-lock="${acctEsc(a.username)}" title="Lock this account">🔒</button>`)
           : "";
+        // Username itself is the entry point into the Agent Personal
+        // Profile popup now (see openAgentProfileModal below) — only
+        // clickable for Admin/SuperAdmin, same gating the old ✏️ edit
+        // button used to have; Senior still sees the read-only table but
+        // can't open the editable popup.
+        const usernameCell = isAdmin
+          ? `<button type="button" class="link-btn" data-open-profile="${acctEsc(a.username)}">${acctEsc(a.username)}</button>`
+          : acctEsc(a.username);
         return `
           <tr data-username="${acctEsc(a.username)}">
-            <td>${acctEsc(a.username)}</td>
+            <td>${usernameCell}</td>
             <td class="cell-role"><span class="role-tag">${acctEsc(a.role)}</span></td>
             <td class="cell-office">${officeCell}</td>
             <td class="cell-brands">${acctEsc(brandsCell)}</td>
             <td>${statusCell}</td>
             <td class="cell-fullname">${acctEsc(a.fullName || "—")}</td>
             <td class="cell-pid">${acctEsc(a.pid || "—")}</td>
-            <td>${timeAgoLocal(a.lastActiveAt)}</td>
-            <td>${pwBy}</td>
-            <td>${editCell}${lockBtn}</td>
+            <td>${lockBtn}</td>
           </tr>`;
       }).join("");
       acctBody.innerHTML = `
         <div class="agent-profile-table-wrap">
           <table class="agent-profile-table">
-            <thead><tr><th>Username</th><th>Role</th><th>Office</th><th>Brands</th><th>Status</th><th>Full Name</th><th>PSD</th><th>Last Log In Time</th><th>Password Changed</th><th></th></tr></thead>
-            <tbody>${rows || '<tr><td colspan="10" style="color:var(--ink-soft);">No accounts match this filter.</td></tr>'}</tbody>
+            <thead><tr><th>Username</th><th>Role</th><th>Office</th><th>Brands</th><th>Status</th><th>Full Name</th><th>PSD</th><th></th></tr></thead>
+            <tbody>${rows || '<tr><td colspan="8" style="color:var(--ink-soft);">No accounts match this filter.</td></tr>'}</tbody>
           </table>
         </div>
         ${isAdmin ? "" : '<p class="edit-modal-note">View only.</p>'}`;
-      acctBody.querySelectorAll("[data-edit]").forEach((btn) => {
-        btn.addEventListener("click", () => editAgentProfileRow(btn.dataset.edit));
+      acctBody.querySelectorAll("[data-open-profile]").forEach((btn) => {
+        btn.addEventListener("click", () => openAgentProfileModal(btn.dataset.openProfile));
       });
       acctBody.querySelectorAll("[data-lock]").forEach((btn) => {
         btn.addEventListener("click", () => setAgentLock(btn.dataset.lock, true));
@@ -724,37 +738,164 @@
       await loadAgentProfileTable();
     }
 
-    function editAgentProfileRow(username) {
-      const account = acctAccounts.find((a) => a.username === username);
-      if (!account) return;
-      const row = acctBody.querySelector(`tr[data-username="${CSS.escape(username)}"]`);
-      // Role is SuperAdmin-only — Admin sees it as read-only text, not a dropdown.
-      if (isSuperAdmin) {
-        const roleOptions = ["agent", "senior", "admin", "superadmin"]
-          .map((r) => `<option value="${r}" ${r === account.role ? "selected" : ""}>${r}</option>`).join("");
-        row.querySelector(".cell-role").innerHTML = `<select class="edit-role">${roleOptions}</select>`;
+    // ---- Agent Personal Profile popup ----
+    //
+    // Opened by clicking a username in the table above (Admin/SuperAdmin
+    // only — see renderAgentProfileTable). A separate floating overlay
+    // stacked on top of the Account Management modal, not another mode of
+    // acctBody — reuses the same .edit-details-overlay/.edit-details-modal
+    // chrome the "🔄 Sync to Sheet" popup in threads.html already
+    // established, for a consistent look without duplicating CSS.
+    //
+    // Field-level permissions (matches the server's own enforcement in
+    // functions/api/admin/accounts.js — this is just the UI reflecting
+    // it, the server checks independently regardless of what this modal
+    // does or doesn't disable):
+    //   - Full Name / Agent PSD: Admin and SuperAdmin can edit.
+    //   - Role / Status(lock) / Office / Brands / Topic Access:
+    //     SuperAdmin only — Admin sees them as read-only.
+    const AGENT_PROFILE_MODULE_LIST = window.MODULES || [];
+
+    function openAgentProfileModal(username) {
+      const a = acctAccounts.find((acc) => acc.username === username);
+      if (!a) return;
+
+      const overlay = document.createElement("div");
+      overlay.className = "edit-details-overlay";
+      overlay.id = "agentProfileOverlay";
+
+      const office = a.officeId ? acctOfficesById[a.officeId] : null;
+      const officeOptions = acctOffices.map((o) => `<option value="${o.id}" ${o.id === a.officeId ? "selected" : ""}>${acctEsc(o.name)}</option>`).join("");
+      const roleOptions = ["agent", "senior", "admin", "superadmin"].map((r) => `<option value="${r}" ${r === a.role ? "selected" : ""}>${r}</option>`).join("");
+      const pwBy = a.lastPasswordChange
+        ? `${timeAgoLocal(a.lastPasswordChange.at)} by ${acctEsc(a.lastPasswordChange.by)}`
+        : "—";
+      const allBrandsSelected = a.allowedBrands === "all";
+      const brandPills = (window.BRANDS || []).map((b) => `<div class="brand-toggle-pill${allBrandsSelected || (a.allowedBrands || []).includes(b.name) ? " selected" : ""}" data-brand="${acctEsc(b.name)}">${acctEsc(b.name).toUpperCase()}</div>`).join("");
+      const allModulesSelected = a.allowedModules === "all" || a.allowedModules === undefined;
+      const moduleChecks = AGENT_PROFILE_MODULE_LIST.map((m) => `
+        <label class="agent-profile-module-check">
+          <input type="checkbox" value="${acctEsc(m.id)}" ${allModulesSelected || (Array.isArray(a.allowedModules) && a.allowedModules.includes(m.id)) ? "checked" : ""} ${isSuperAdmin ? "" : "disabled"} />
+          ${m.icon || ""} ${acctEsc(m.name)}
+        </label>`).join("");
+
+      overlay.innerHTML = `
+        <div class="edit-details-modal">
+          <button type="button" class="modal-close-btn" id="agentProfileClose" title="Close" aria-label="Close">✕</button>
+          <div class="edit-details-title">🪪 Agent personal profile</div>
+          <div class="edit-details-sub">Last active ${timeAgoLocal(a.lastActiveAt)} · Password changed ${pwBy}</div>
+
+          <div class="edit-details-fields">
+            <p class="agent-profile-section-label">Edit profile</p>
+            <div class="field"><label>Username</label><input type="text" value="${acctEsc(a.username)}" disabled /></div>
+            <div style="display:flex; gap:10px;">
+              <div class="field" style="flex:1;">
+                <label>Role</label>
+                ${isSuperAdmin ? `<select id="ap_role">${roleOptions}</select>` : `<input type="text" value="${acctEsc(a.role)}" disabled />`}
+              </div>
+              <div class="field" style="flex:1;">
+                <label>Status</label>
+                <div class="agent-profile-status-row">
+                  <span class="agent-profile-status-text ${a.locked ? "is-locked" : "is-active"}">${a.locked ? "🔒 Locked" : "Active"}</span>
+                  ${isSuperAdmin ? `<button type="button" class="icon-btn" id="ap_lockToggle" title="${a.locked ? "Unlock" : "Lock"} this account">${a.locked ? "🔓" : "🔒"}</button>` : ""}
+                </div>
+              </div>
+            </div>
+            <div class="field">
+              <label>Office</label>
+              ${isSuperAdmin ? `<select id="ap_office"><option value="">— none —</option>${officeOptions}</select>` : `<input type="text" value="${office ? acctEsc(office.name) : "—"}" disabled />`}
+            </div>
+            <div class="field">
+              <label>Brands</label>
+              <div class="brand-toggle-label"><span></span>${isSuperAdmin ? `<span class="select-all-btn" id="ap_selectAllBrands">${allBrandsSelected ? "✓ All Selected" : "Select All"}</span>` : ""}</div>
+              <div class="brand-toggle-grid" id="ap_brandGrid" style="${isSuperAdmin ? "" : "pointer-events:none; opacity:0.65;"}">${brandPills}</div>
+            </div>
+            <div class="field"><label>Full name</label><input type="text" id="ap_fullname" value="${acctEsc(a.fullName || "")}" autocomplete="off" /></div>
+            <div class="field"><label>Agent PSD</label><input type="text" id="ap_pid" value="${acctEsc(a.pid || "")}" placeholder="e.g. PSD-014" autocomplete="off" /></div>
+
+            <p class="agent-profile-section-label" style="margin-top:14px;">Topic access ${isSuperAdmin ? "" : '<span class="agent-profile-locked-note">(SuperAdmin only)</span>'}</p>
+            <div class="agent-profile-module-list">${moduleChecks}</div>
+          </div>
+
+          <div class="edit-details-status" id="agentProfileStatus"></div>
+          <div class="edit-details-actions">
+            <button type="button" class="icon-btn" id="agentProfileCancel" style="width:auto; height:auto; padding:14px 22px; font-size:14px; font-weight:800; display:flex; align-items:center; justify-content:center;">Cancel</button>
+            <button type="button" class="btn-submit" id="agentProfileSave" style="width:auto; padding:10px 22px;">Save</button>
+          </div>
+        </div>`;
+      document.body.appendChild(overlay);
+
+      if (isSuperAdmin) wireAgentProfileBrandPicker();
+
+      function close() { overlay.remove(); }
+      document.getElementById("agentProfileClose").addEventListener("click", close);
+      document.getElementById("agentProfileCancel").addEventListener("click", close);
+      overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
+
+      const lockToggleBtn = document.getElementById("ap_lockToggle");
+      if (lockToggleBtn) {
+        lockToggleBtn.addEventListener("click", async () => {
+          await setAgentLock(a.username, !a.locked);
+          close();
+          openAgentProfileModal(a.username); // reopen with fresh state
+        });
       }
-      row.querySelector(".cell-fullname").innerHTML = `<input type="text" class="edit-fullname" value="${acctEsc(account.fullName || "")}" autocomplete="off" />`;
-      row.querySelector(".cell-pid").innerHTML = `<input type="text" class="edit-pid" value="${acctEsc(account.pid || "")}" autocomplete="off" />`;
-      const btnCell = row.lastElementChild;
-      btnCell.innerHTML = `<button type="button" class="row-btn" title="Save">✅</button><button type="button" class="row-btn" title="Cancel">✖️</button>`;
-      const [saveBtn, cancelBtn] = btnCell.querySelectorAll("button");
-      saveBtn.addEventListener("click", () => saveAgentProfileRow(username, row));
-      cancelBtn.addEventListener("click", renderAgentProfileTable);
+
+      document.getElementById("agentProfileSave").addEventListener("click", () => saveAgentProfileModal(a.username));
     }
 
-    async function saveAgentProfileRow(username, row) {
-      const fullName = row.querySelector(".edit-fullname").value.trim();
-      const pid = row.querySelector(".edit-pid").value.trim();
-      const roleEl = row.querySelector(".edit-role"); // only present for SuperAdmin
-      const payload = { action: "save", username, fullName, pid };
-      if (roleEl) payload.role = roleEl.value;
+    function wireAgentProfileBrandPicker() {
+      const grid = document.getElementById("ap_brandGrid");
+      const selectAllBtn = document.getElementById("ap_selectAllBrands");
+      const pills = Array.from(grid.querySelectorAll(".brand-toggle-pill"));
+      function sync() {
+        const allSelected = pills.length > 0 && pills.every((p) => p.classList.contains("selected"));
+        if (selectAllBtn) {
+          selectAllBtn.classList.toggle("active", allSelected);
+          selectAllBtn.textContent = allSelected ? "✓ All Selected" : "Select All";
+        }
+      }
+      pills.forEach((p) => p.addEventListener("click", () => { p.classList.toggle("selected"); sync(); }));
+      if (selectAllBtn) {
+        selectAllBtn.addEventListener("click", () => {
+          const allSelected = pills.every((p) => p.classList.contains("selected"));
+          pills.forEach((p) => p.classList.toggle("selected", !allSelected));
+          sync();
+        });
+      }
+    }
+
+    async function saveAgentProfileModal(username) {
+      const statusEl = document.getElementById("agentProfileStatus");
+      const payload = {
+        action: "save",
+        username,
+        fullName: document.getElementById("ap_fullname").value.trim(),
+        pid: document.getElementById("ap_pid").value.trim(),
+      };
+      if (isSuperAdmin) {
+        payload.role = document.getElementById("ap_role").value;
+        payload.officeId = document.getElementById("ap_office").value || null;
+        const pills = Array.from(document.querySelectorAll("#ap_brandGrid .brand-toggle-pill"));
+        const selected = pills.filter((p) => p.classList.contains("selected")).map((p) => p.dataset.brand);
+        payload.allowedBrands = pills.length > 0 && selected.length === pills.length ? "all" : selected;
+        const moduleChecks = Array.from(document.querySelectorAll(".agent-profile-module-list input[type=checkbox]"));
+        const selectedModules = moduleChecks.filter((c) => c.checked).map((c) => c.value);
+        payload.allowedModules = selectedModules.length === moduleChecks.length ? "all" : selectedModules;
+      }
+      statusEl.textContent = "Saving…";
+      statusEl.className = "edit-details-status";
       const res = await window.AgentAuth.authFetch("/api/admin/accounts", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
       const data = await res.json();
-      if (!data.ok) { alert(data.error || "Save failed."); return; }
+      if (!data.ok) {
+        statusEl.textContent = data.error || "Save failed.";
+        statusEl.className = "edit-details-status err";
+        return;
+      }
+      document.getElementById("agentProfileOverlay")?.remove();
       await loadAgentProfileTable();
     }
 

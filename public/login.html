@@ -81,7 +81,7 @@
           return;
         }
         localStorage.setItem("agentAuth", JSON.stringify({
-          username: data.account.username, token: data.token, role: data.account.role, allowedBrands: data.account.allowedBrands,
+          username: data.account.username, token: data.token, role: data.account.role, allowedBrands: data.account.allowedBrands, allowedModules: data.account.allowedModules,
         }));
         localStorage.setItem("agentLastActivity", String(Date.now()));
         location.href = redirectTo;

@@ -123,6 +123,19 @@
       const allowed = new Set(a.allowedBrands || []);
       return (brands || []).filter(function (b) { return allowed.has(b.name); });
     },
+    // Same idea, for Topic Access (which module cards this agent is
+    // allowed to see) — used on the Home page sidebar so a restricted
+    // agent never even sees a topic they can't touch, not just gets
+    // rejected by the server after clicking it. `allowedModules === "all"`
+    // (the default — see accounts.js saveAccount()) or missing entirely
+    // (not logged in yet, or an account saved before this field existed)
+    // returns the full list unfiltered.
+    filterAllowedModules: function (modules) {
+      const a = getAuth();
+      if (!a || !a.allowedModules || a.allowedModules === "all") return modules;
+      const allowed = new Set(a.allowedModules);
+      return (modules || []).filter(function (m) { return allowed.has(m.id); });
+    },
     // After a successful self-service password change, the OLD token is
     // now stale (password changes bump the account's tokenVersion server
     // -side — see accounts.js) — the change-password endpoint returns a
