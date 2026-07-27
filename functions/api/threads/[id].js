@@ -270,8 +270,18 @@ async function handleThreadAction({ request, env, params }) {
     if (!env.TELEGRAM_BOT_TOKEN) return json({ ok: false, error: "Server is missing TELEGRAM_BOT_TOKEN." }, 500);
 
     const thread = existingThread;
-    const tg = await callTelegram(env, "deleteMessage", { chat_id: thread.chatId, message_id: thread.rootMessageId });
-    if (!tg.ok) return json({ ok: false, error: telegramDeleteError(tg) }, 502);
+    // A ticket submitted (or forwarded — see functions/api/forward.js)
+    // with 2+ attachments becomes a Telegram album — one message_id PER
+    // photo, only the first one carrying the caption. This used to only
+    // ever delete thread.rootMessageId (the first/captioned one), so
+    // recalling a multi-photo ticket left every other photo sitting in
+    // the group forever. rootMessageIds (falls back to the single
+    // rootMessageId for tickets created before this existed) is every
+    // message_id in the original send — delete all of them.
+    const idsToDelete = thread.rootMessageIds && thread.rootMessageIds.length ? thread.rootMessageIds : [thread.rootMessageId];
+    const results = await Promise.all(idsToDelete.map((mid) => callTelegram(env, "deleteMessage", { chat_id: thread.chatId, message_id: mid })));
+    const firstFailure = results.find((r) => !r.ok);
+    if (firstFailure) return json({ ok: false, error: telegramDeleteError(firstFailure) }, 502);
 
     const updated = await markRootRecalled(env, id);
     await logDeletion(env, {

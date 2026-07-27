@@ -146,7 +146,7 @@ async function handleSubmit({ request, env }) {
     if (!fallback.ok) {
       return json({ ok: false, error: `Telegram send failed: ${fallback.error}` }, 502);
     }
-    tgResult = { messageId: fallback.messageId, attachmentLinks: [], attachmentFileIds: [], attachmentNames: [] };
+    tgResult = { messageId: fallback.messageId, messageIds: [fallback.messageId], attachmentLinks: [], attachmentFileIds: [], attachmentNames: [] };
   }
   const attachmentLinks = tgResult.attachmentLinks;
 
@@ -232,6 +232,7 @@ async function handleSubmit({ request, env }) {
         chatId: route.chatId,
         topicId: route.topicId,
         rootMessageId: tgResult.messageId,
+        rootMessageIds: tgResult.messageIds,
         rootText: text,
         hasMedia: Array.isArray(attachments) && attachments.length > 0,
         attachmentFileIds: tgResult.attachmentFileIds || [],
@@ -306,13 +307,14 @@ async function sendTelegramWithAttachments({ botToken, route, text, attachments 
   if (!attachments.length) {
     const r = await sendTelegramMessage({ botToken, route, text });
     if (!r.ok) throw new Error(r.error);
-    return { messageId: r.messageId, attachmentLinks: [], attachmentFileIds: [], attachmentNames: [] };
+    return { messageId: r.messageId, messageIds: [r.messageId], attachmentLinks: [], attachmentFileIds: [], attachmentNames: [] };
   }
 
   if (attachments.length === 1) {
     const { messageId, fileId, name } = await sendSingleWithCaption({ botToken, route, text, attachment: attachments[0] });
     return {
       messageId,
+      messageIds: [messageId],
       attachmentLinks: [buildMessageLink(route, messageId)],
       attachmentFileIds: fileId ? [fileId] : [],
       attachmentNames: fileId ? [name] : [],
@@ -325,6 +327,10 @@ async function sendTelegramWithAttachments({ botToken, route, text, attachments 
     const withFileId = sent.filter((s) => s.fileId);
     return {
       messageId: sent[0].messageId,
+      // EVERY message_id in the album, not just the first/captioned one —
+      // recallRoot() (threads/[id].js) needs to delete all of them; see
+      // that file's comment for the bug this fixes.
+      messageIds: sent.map((s) => s.messageId),
       attachmentLinks: sent.map((s) => buildMessageLink(route, s.messageId)),
       attachmentFileIds: withFileId.map((s) => s.fileId),
       attachmentNames: withFileId.map((s) => s.name),
@@ -342,6 +348,7 @@ async function sendTelegramWithAttachments({ botToken, route, text, attachments 
   const withFileId = sent.filter((s) => s.fileId);
   return {
     messageId: sent[0].messageId,
+    messageIds: sent.map((s) => s.messageId),
     attachmentLinks: sent.map((s) => buildMessageLink(route, s.messageId)),
     attachmentFileIds: withFileId.map((s) => s.fileId),
     attachmentNames: withFileId.map((s) => s.name),

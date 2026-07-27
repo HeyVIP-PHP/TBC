@@ -405,6 +405,7 @@
             <button class="status-chip ${t.solved ? "solved" : "unsolved"}" id="solveBtn">${t.solved ? "✅ Solved" : "❌ Not Solved"}</button>
             ${!t.rootRecalled && (!t.fieldMap || !t.brandId) ? '<button class="icon-btn" id="editRootBtn" title="Edit the original Telegram message (plain text — this ticket predates field-level editing)">✏️</button>' : ""}
             ${!t.rootRecalled && t.fieldMap && t.brandId ? '<button class="icon-btn" id="editDetailsBtn" title="Edit fields — syncs the Telegram message + the Sheet row (if any)">📊</button>' : ""}
+            ${t.fieldMap && t.brandId ? '<button class="icon-btn" id="forwardBtn" title="Generate a new ticket in another Topic, pre-filled from this one">↗️</button>' : ""}
             ${!t.rootRecalled ? '<button class="icon-btn" id="recallRootBtn" title="Recall (delete) the original Telegram message">↩️</button>' : ""}
             <button class="icon-btn" id="deleteBtn" title="Delete this tracking record (Telegram + Sheet are untouched)">🗑</button>
             <button class="icon-btn" id="refreshBtn" title="Refresh this thread">🔄</button>
@@ -480,6 +481,15 @@
           }
           return "";
         })()}
+
+        ${t.forwardedFrom ? `
+          <div class="forward-link-card" data-goto-thread="${escapeAttr(t.forwardedFrom.threadId)}">
+            ↩️ Forwarded from <b>${escapeHtml(t.forwardedFrom.moduleName)}</b> — ${escapeHtml(t.forwardedFrom.title)}
+          </div>` : ""}
+        ${(t.forwardedTo || []).map((link) => `
+          <div class="forward-link-card" data-goto-thread="${escapeAttr(link.threadId)}">
+            ↗️ Forwarded to <b>${escapeHtml(link.moduleName)}</b> — ${escapeHtml(link.title)} &nbsp;<span class="forward-link-time">${timeAgo(link.at)}</span>
+          </div>`).join("")}
       `;
     }
 
@@ -508,6 +518,7 @@
       document.getElementById("deleteBtn")?.addEventListener("click", () => deleteThread());
       document.getElementById("editRootBtn")?.addEventListener("click", () => editRoot());
       document.getElementById("editDetailsBtn")?.addEventListener("click", () => openEditDetailsModal());
+      document.getElementById("forwardBtn")?.addEventListener("click", () => openForwardModal());
       document.getElementById("recallRootBtn")?.addEventListener("click", () => recallRoot());
       document.getElementById("refreshBtn")?.addEventListener("click", async (e) => {
         const btn = e.currentTarget;
@@ -536,6 +547,9 @@
       });
       document.querySelectorAll("[data-reply-target]").forEach((btn) => {
         btn.addEventListener("click", () => setReplyTarget(btn.dataset.replyTarget, btn.dataset.replyFrom, btn.dataset.replyText));
+      });
+      document.querySelectorAll("[data-goto-thread]").forEach((card) => {
+        card.addEventListener("click", () => openThread(card.dataset.gotoThread));
       });
     }
 
@@ -871,6 +885,285 @@
       updateThreadContent(selectedThread);
       patchLocalThread(selectedThread);
       loadList();
+    }
+
+    // "↗️ Generate to another Topic" — creates a brand-new ticket in a
+    // DIFFERENT module, pre-filled from this one. Two-stage UI: pick the
+    // target Topic first (nothing else makes sense to show before that's
+    // chosen, since every module has different fields), THEN the fields
+    // for that module render below, pre-filled wherever the source
+    // ticket happens to have a same-named field (uid/number/email/etc —
+    // whatever matches), left blank otherwise. Brand is carried over
+    // read-only, never editable here — see functions/api/forward.js's
+    // header comment for why. Posts to a completely separate endpoint
+    // (/api/forward), not postAction()'s /api/threads/<id> — this
+    // creates an unrelated SECOND thread, it doesn't modify this one.
+    function openForwardModal() {
+      const source = selectedThread;
+      const otherModules = (window.MODULES || []).filter((m) => m.id !== source.module);
+      if (!otherModules.length) return alert("There are no other Topics to forward this to.");
+
+      const overlay = document.createElement("div");
+      overlay.className = "edit-details-overlay";
+      overlay.innerHTML = `
+        <div class="edit-details-modal">
+          <button type="button" class="modal-close-btn" id="fwdClose" title="Close" aria-label="Close">✕</button>
+          <div class="edit-details-title">↗️ Generate to another Topic</div>
+          <div class="edit-details-sub">Creates a brand-new ticket, pre-filled from this one — sends to Telegram and (if that Topic logs to a Sheet) writes a row, same as submitting normally.</div>
+
+          <div class="edit-details-fields">
+            <div class="field">
+              <label>Target Topic <span class="required">*</span></label>
+              <select id="fwdModule">
+                <option value="">— Select a Topic —</option>
+                ${otherModules.map((m) => `<option value="${escapeAttr(m.id)}">${m.icon || ""} ${escapeHtml(m.name)}</option>`).join("")}
+              </select>
+            </div>
+            <div class="field"><label>Brand / Platform</label><input type="text" value="${escapeAttr(source.brand || "")}" disabled /></div>
+            <div class="field"><label>Reporter</label><input type="text" id="fwdReporter" value="${escapeAttr((getAuth() && getAuth().username) || "")}" autocomplete="off" /></div>
+          </div>
+
+          <div id="fwdFieldsWrap" style="display:none;">
+            <div class="edit-details-fields" id="fwdFields"></div>
+
+            <div class="field">
+              <span class="attach-label">Additional Screenshots (optional)</span>
+              <div class="dropzone" id="fwdDropzone" tabindex="0">
+                <div class="dz-icon">📎</div>
+                <p class="dz-main">Click or drag files here</p>
+                <p class="dz-sub">JPG, PNG, PDF — Max 3 files, 20MB each</p>
+                <p class="dz-paste">📋 Ctrl+V / ⌘V to paste screenshot</p>
+              </div>
+              <div class="file-list" id="fwdFileList"></div>
+              <input type="file" id="fwdNewFile" multiple hidden />
+            </div>
+          </div>
+
+          <div class="edit-details-status" id="fwdStatus"></div>
+          <div class="edit-details-actions">
+            <button type="button" class="icon-btn" id="fwdCancel" style="width:auto; height:auto; padding:14px 22px; font-size:14px; font-weight:800; display:flex; align-items:center; justify-content:center;">Cancel</button>
+            <button type="button" class="btn-submit" id="fwdSend" style="width:auto; padding:10px 22px;">Generate &amp; Send</button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(overlay);
+
+      function close() {
+        window.removeEventListener("paste", onPaste); // see the dropzone section below for why this matters
+        overlay.remove();
+      }
+      overlay.querySelector("#fwdClose").addEventListener("click", close);
+      overlay.querySelector("#fwdCancel").addEventListener("click", close);
+      overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
+
+      // ---- Dynamic fields for whichever Topic gets picked ----
+      const fieldsWrap = overlay.querySelector("#fwdFieldsWrap");
+      const fieldsContainer = overlay.querySelector("#fwdFields");
+      let targetModule = null;
+      let fieldEls = {};
+
+      function conditionMet(showIf) {
+        const conditions = Array.isArray(showIf) ? showIf : [showIf];
+        return conditions.every((c) => {
+          if (c.field === "brand") return c.oneOf.includes(source.brandId); // brand is fixed to the source ticket's own, never editable here
+          const driver = fieldEls[c.field];
+          return driver && c.oneOf.includes(driver.control.value);
+        });
+      }
+      function refreshVisibility() {
+        targetModule.fields.forEach((f) => {
+          if (!f.showIf) return;
+          fieldEls[f.key].wrap.style.display = conditionMet(f.showIf) ? "" : "none";
+        });
+      }
+
+      overlay.querySelector("#fwdModule").addEventListener("change", (e) => {
+        const moduleId = e.target.value;
+        targetModule = otherModules.find((m) => m.id === moduleId) || null;
+        fieldsContainer.innerHTML = "";
+        fieldEls = {};
+        if (!targetModule) {
+          fieldsWrap.style.display = "none";
+          return;
+        }
+        fieldsWrap.style.display = "";
+
+        targetModule.fields.forEach((f) => {
+          const wrap = document.createElement("div");
+          wrap.className = "field";
+          // Pre-fill from the SOURCE ticket wherever the same field key
+          // exists there too (uid/number/email/username/etc, whatever
+          // this target module happens to share with the source one) —
+          // still fully editable, this is a starting point, not a lock.
+          const value = source.fieldMap && source.fieldMap[f.key] != null ? source.fieldMap[f.key] : "";
+          let controlHtml;
+          if (f.type === "textarea") {
+            controlHtml = `<textarea name="${escapeAttr(f.key)}">${escapeHtml(value)}</textarea>`;
+          } else if (f.type === "select") {
+            const rawOpts = f.optionsByBrand ? (f.optionsByBrand[source.brandId] || []) : (f.options || []);
+            const opts = rawOpts.map((o) => (typeof o === "object" ? o.value : o));
+            controlHtml = `<select name="${escapeAttr(f.key)}">
+              <option value="">— Select —</option>
+              ${opts.map((o) => `<option value="${escapeAttr(o)}" ${o === value ? "selected" : ""}>${escapeHtml(o)}</option>`).join("")}
+            </select>`;
+          } else {
+            const inputType = f.type === "number" ? "number" : f.type === "date" ? "date" : "text";
+            controlHtml = `<input type="${inputType}" name="${escapeAttr(f.key)}" value="${escapeAttr(value)}" />`;
+          }
+          wrap.innerHTML = `<label>${escapeHtml(f.label)}${f.required ? ' <span class="required">*</span>' : ""}</label>${controlHtml}`;
+          fieldsContainer.appendChild(wrap);
+          fieldEls[f.key] = { wrap, control: wrap.querySelector("input,select,textarea") };
+        });
+
+        targetModule.fields.forEach((f) => {
+          if (fieldEls[f.key].control.tagName === "SELECT") {
+            fieldEls[f.key].control.addEventListener("change", refreshVisibility);
+          }
+        });
+        refreshVisibility();
+      });
+
+      // ---- Dropzone for additional attachments — same click/drag/paste
+      // behavior as the main submission form (public/assets/app.js),
+      // just scoped to this modal's own file list instead of a page-load
+      // one. Max 3 / 20MB each, matching that form's own defaults (this
+      // modal doesn't know the TARGET module's own attachment limits
+      // ahead of time the way app.js does, since those aren't loaded
+      // until a Topic is picked — 3/20MB is a reasonable universal cap).
+      const dropzone = overlay.querySelector("#fwdDropzone");
+      const fileInput = overlay.querySelector("#fwdNewFile");
+      const fileListEl = overlay.querySelector("#fwdFileList");
+      const maxFiles = 3;
+      const maxSizeMB = 20;
+      let newFiles = [];
+
+      function renderFileList() {
+        fileListEl.innerHTML = newFiles
+          .map((f, i) => `<div class="file-chip"><span class="name">${escapeHtml(f.name)}</span><button type="button" data-i="${i}">&times;</button></div>`)
+          .join("");
+        fileListEl.querySelectorAll("button").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            newFiles.splice(Number(btn.dataset.i), 1);
+            renderFileList();
+          });
+        });
+      }
+      function addFiles(list) {
+        const rejected = [];
+        for (const f of list) {
+          if (newFiles.length >= maxFiles) break;
+          if (f.size > maxSizeMB * 1024 * 1024) {
+            rejected.push(f.name);
+            continue;
+          }
+          newFiles.push(f);
+        }
+        renderFileList();
+        const statusEl = overlay.querySelector("#fwdStatus");
+        if (rejected.length) {
+          statusEl.textContent = `Skipped (over ${maxSizeMB}MB): ${rejected.join(", ")}`;
+          statusEl.className = "edit-details-status err";
+        }
+      }
+      dropzone.addEventListener("click", () => fileInput.click());
+      dropzone.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") fileInput.click();
+      });
+      fileInput.addEventListener("change", () => addFiles(fileInput.files));
+      ["dragenter", "dragover"].forEach((evt) =>
+        dropzone.addEventListener(evt, (e) => { e.preventDefault(); dropzone.classList.add("drag-over"); })
+      );
+      ["dragleave", "drop"].forEach((evt) =>
+        dropzone.addEventListener(evt, (e) => { e.preventDefault(); dropzone.classList.remove("drag-over"); })
+      );
+      dropzone.addEventListener("drop", (e) => addFiles(e.dataTransfer.files));
+      // Scoped to only fire while THIS modal is open — a page-global
+      // paste listener (like app.js's, which lives for the page's whole
+      // lifetime because the form IS the page) would otherwise keep
+      // intercepting paste anywhere on threads.html forever, including
+      // after this modal closes. Removed in close() above.
+      function onPaste(e) {
+        const items = Array.from(e.clipboardData.items).filter((i) => i.kind === "file");
+        if (!items.length) return;
+        addFiles(items.map((i) => i.getAsFile()).filter(Boolean));
+      }
+      window.addEventListener("paste", onPaste);
+
+      function fileToDataUrl(file) {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+      }
+
+      overlay.querySelector("#fwdSend").addEventListener("click", async () => {
+        const statusEl = overlay.querySelector("#fwdStatus");
+        if (!targetModule) {
+          statusEl.textContent = "Pick a target Topic first.";
+          statusEl.className = "edit-details-status err";
+          return;
+        }
+        const reporter = overlay.querySelector("#fwdReporter").value.trim();
+        if (!reporter) {
+          statusEl.textContent = "Reporter can't be empty.";
+          statusEl.className = "edit-details-status err";
+          return;
+        }
+        const missingRequired = targetModule.fields.find((f) =>
+          f.required && (!f.showIf || fieldEls[f.key].wrap.style.display !== "none") && !fieldEls[f.key].control.value.trim()
+        );
+        if (missingRequired) {
+          statusEl.textContent = `"${missingRequired.label}" is required.`;
+          statusEl.className = "edit-details-status err";
+          return;
+        }
+
+        const fields = targetModule.fields
+          .filter((f) => !f.showIf || fieldEls[f.key].wrap.style.display !== "none")
+          .map((f) => ({ key: f.key, label: f.label, value: (fieldEls[f.key].control.value || "").trim() }));
+        const fieldMap = Object.fromEntries(fields.map((f) => [f.key, f.value]));
+
+        const sendBtn = overlay.querySelector("#fwdSend");
+        sendBtn.disabled = true;
+        sendBtn.textContent = "Generating…";
+        statusEl.textContent = "";
+        statusEl.className = "edit-details-status";
+
+        const newAttachments = await Promise.all(
+          newFiles.map(async (f) => ({ name: f.name, type: f.type, dataUrl: await fileToDataUrl(f) }))
+        );
+
+        const res = await authFetch("/api/forward", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sourceThreadId: source.id, targetModule: targetModule.id, fields, fieldMap, reporter, newAttachments }),
+        }).then((r) => r.json());
+
+        if (!res.ok) {
+          statusEl.textContent = res.error || "Forwarding failed.";
+          statusEl.className = "edit-details-status err";
+          sendBtn.disabled = false;
+          sendBtn.textContent = "Generate & Send";
+          return;
+        }
+
+        // Reflect the new backlink on THIS (source) ticket locally,
+        // without a full reload — matches the shape addForwardedToLink()
+        // actually saved server-side.
+        selectedThread.forwardedTo = [
+          ...(selectedThread.forwardedTo || []),
+          { threadId: res.thread.id, module: targetModule.id, moduleName: targetModule.name, title: res.thread.title, at: new Date().toISOString() },
+        ];
+        patchLocalThread(selectedThread);
+        loadList();
+        if (res.sheetAttempted && !res.sheetLogged) {
+          alert("Sent to Telegram, but the Sheet write failed:\n" + (res.sheetError || "unknown error"));
+        }
+        window.removeEventListener("paste", onPaste);
+        openThread(res.thread.id); // jump straight to the newly-created ticket
+      });
     }
 
     async function editReply(messageId, currentText) {
