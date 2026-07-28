@@ -296,7 +296,7 @@ function stripSecret(account) {
 // `passwordChangedBy` is only meaningful when `password` is also given —
 // the username of whoever triggered the change (their own, for
 // self-service; the admin's, for an admin-driven reset).
-export async function saveAccount(env, { username, password, passwordChangedBy, role, officeId, allowedBrands, allowedModules, fullName, pid }) {
+export async function saveAccount(env, { username, password, passwordChangedBy, role, officeId, allowedBrands, allowedModules, allowedAdminSections, canManageAdminAccess, fullName, pid }) {
   const key = username.toLowerCase();
   const existing = await getAccount(env, key);
   let salt = existing?.salt;
@@ -349,6 +349,17 @@ export async function saveAccount(env, { username, password, passwordChangedBy, 
     allowedModules: allowedModules !== undefined
       ? (allowedModules === "all" ? "all" : (Array.isArray(allowedModules) ? allowedModules : []))
       : (existing?.allowedModules ?? "all"),
+    // Account Management Access — same "all" default reasoning as
+    // allowedModules above: ships as a no-op for every existing account
+    // until the Owner explicitly restricts one. See canSeeAdminSection().
+    allowedAdminSections: allowedAdminSections !== undefined
+      ? (allowedAdminSections === "all" ? "all" : (Array.isArray(allowedAdminSections) ? allowedAdminSections : []))
+      : (existing?.allowedAdminSections ?? "all"),
+    // Whether this account can edit OTHER accounts' allowedAdminSections.
+    // Only ever set true by the Owner — see canManageOthersAdminAccess()
+    // and the server-side guard in functions/api/admin/accounts.js (this
+    // function itself doesn't check who's calling; that's the caller's job).
+    canManageAdminAccess: canManageAdminAccess !== undefined ? !!canManageAdminAccess : !!(existing?.canManageAdminAccess),
     fullName: fullName !== undefined ? fullName : (existing?.fullName || ""),
     pid: pid !== undefined ? pid : (existing?.pid || ""),
     lastActiveAt: existing?.lastActiveAt || null,
@@ -510,6 +521,34 @@ export function canSeeModule(account, moduleId) {
   if (rankOf(account.role) >= ROLE_RANK.admin) return true;
   if (account.allowedModules === "all" || account.allowedModules === undefined) return true;
   return Array.isArray(account.allowedModules) && account.allowedModules.includes(moduleId);
+}
+
+// Account Management Access — per-account gate on top of the existing
+// role-rank floor for the Account Management sidebar (Create Account /
+// Whitelist IP / TG Group·Channel / Agent Profile so far; add new ids to
+// ADMIN_SECTIONS below as more sections need this). Unlike canSeeBrand/
+// canSeeModule (which auto-pass at admin+ rank), this one does NOT
+// auto-pass by rank — only the Owner is unrestricted. Everyone else,
+// including SuperAdmin, is subject to allowedAdminSections, which
+// defaults to "all" so shipping this feature doesn't retroactively hide
+// anything until the Owner actually unchecks something. `account` may be
+// `null` in bootstrap mode (see authenticateStaff()) — treated as fully
+// trusted, same as every other check bootstrap mode bypasses.
+export const ADMIN_SECTIONS = ["createAccount", "whitelistIp", "tgRoutes", "agentProfile"];
+export function canSeeAdminSection(account, sectionId) {
+  if (!account) return true; // bootstrap mode
+  if (account.role === "owner") return true;
+  if (account.allowedAdminSections === "all" || account.allowedAdminSections === undefined) return true;
+  return Array.isArray(account.allowedAdminSections) && account.allowedAdminSections.includes(sectionId);
+}
+
+// Whether `account` is allowed to EDIT another account's
+// allowedAdminSections. Owner always can (source of all delegation);
+// anyone else needs canManageAdminAccess === true, which itself can only
+// ever be set by the Owner (enforced in functions/api/admin/accounts.js,
+// not here) — so this can never self-escalate into a delegation chain.
+export function canManageOthersAdminAccess(account) {
+  return !!account && (account.role === "owner" || !!account.canManageAdminAccess);
 }
 
 /**

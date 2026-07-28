@@ -1,15 +1,21 @@
 /**
  * /api/admin/offices
  *   GET                                  -> list offices. Requires rank >= admin
- *     (Admin can SEE the IP whitelist for awareness, but not change it).
+ *     (Admin can SEE the IP whitelist for awareness, but not change it),
+ *     AND the "whitelistIp" Account Management Access section (see
+ *     canSeeAdminSection() in _shared/accounts.js) — an additive
+ *     per-account restriction on top of the rank floor, defaults to
+ *     allowed so this doesn't change behavior until the Owner
+ *     deliberately unchecks it for someone.
  *   POST { action:"save", id?, name, allowedIPs[] }  -> create/update.
- *     Requires rank >= superadmin.
- *   POST { action:"delete", id }         -> delete. Requires rank >= superadmin.
+ *     Requires rank >= superadmin, AND "whitelistIp".
+ *   POST { action:"delete", id }         -> delete. Requires rank >= superadmin,
+ *     AND "whitelistIp".
  *
  * See _shared/accounts.js authenticateStaff() for the two ways in (real
  * login at the required rank, or the one-time bootstrap password).
  */
-import { listOffices, saveOffice, deleteOffice, authenticateStaff, ROLE_RANK } from "../../_shared/accounts.js";
+import { listOffices, saveOffice, deleteOffice, authenticateStaff, ROLE_RANK, canSeeAdminSection } from "../../_shared/accounts.js";
 
 export async function onRequestGet(context) {
   try {
@@ -23,6 +29,7 @@ async function handleGet({ request, env }) {
   if (!env.THREADS_KV) return json({ ok: false, error: "THREADS_KV is not bound yet." }, 500);
   const auth = await authenticateStaff(request, env, ROLE_RANK.admin);
   if (!auth.ok) return json({ ok: false, error: "Not authorized." }, 401);
+  if (!canSeeAdminSection(auth.account, "whitelistIp")) return json({ ok: false, error: "You don't have access to Whitelist IP." }, 403);
   return json({ ok: true, offices: await listOffices(env) });
 }
 
@@ -43,6 +50,7 @@ async function handlePost({ request, env }) {
   // trust until an admin-or-above account exists — see _shared/accounts.js.
   const auth = await authenticateStaff(request, env, ROLE_RANK.superadmin);
   if (!auth.ok) return json({ ok: false, error: "SuperAdmin required." }, 403);
+  if (!canSeeAdminSection(auth.account, "whitelistIp")) return json({ ok: false, error: "You don't have access to Whitelist IP." }, 403);
 
   let body;
   try {

@@ -422,6 +422,26 @@ a { color: inherit; text-decoration: none; }
 }
 .agent-profile-module-check input[disabled] { cursor: not-allowed; }
 
+/* Collapsible section header — Topic access + Account management access
+   share this exact toggle/chevron mechanic (see wireCollapse() in
+   index.html). Collapsed by default; click to expand. */
+.agent-profile-collapse-toggle {
+  width: 100%; display: flex; align-items: center; justify-content: space-between;
+  background: none; border: none; padding: 0; margin: 0 0 8px; cursor: pointer;
+  font-size: 11px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase;
+  color: var(--ink-soft); font-family: inherit;
+}
+.agent-profile-collapse-toggle.is-restricted { color: var(--required); }
+.agent-profile-collapse-chevron { font-size: 12px; transition: transform 0.15s ease; flex-shrink: 0; }
+.agent-profile-collapse-toggle[aria-expanded="true"] .agent-profile-collapse-chevron { transform: rotate(90deg); }
+.agent-profile-collapse-body { display: none; }
+.agent-profile-collapse-body.is-open { display: flex; flex-direction: column; gap: 2px; }
+.agent-profile-admin-note { font-size: 11px; color: var(--ink-soft); margin: 2px 0 0; }
+.agent-profile-delegate-row {
+  display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink);
+  margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border);
+}
+
 /* ---- TG Group / Channel (live-editable Telegram routing) ---- */
 .tgroute-layout { display: flex; gap: 14px; max-height: 78vh; }
 .tgroute-brands {
