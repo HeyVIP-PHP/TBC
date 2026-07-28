@@ -15,16 +15,8 @@
  * directly — it's pure "given these fields, produce this string / this
  * array of column values" functions, no I/O. submit.js and
  * threads/[id].js are both responsible for the actual network calls.
- *
- * PKR-specific note: this project only has 4 dynamic-message modules
- * (qa / risk_issue / account_issue / promotion_request / daily_report /
- * genie_issue use MESSAGE_TEMPLATE where possible) — there's no Bank
- * Issue or Withdraw Issue module here like some other currency copies of
- * this codebase have, so those builder functions were intentionally
- * left out rather than ported over unused. See CHANGES.md from the
- * original patch this was adapted from if this project ever grows one.
  */
-import { RISK_ISSUE_AUTO_REMARKS, RISK_ISSUE_FIELD_EMOJI, ACCOUNT_ISSUE_FIELD_STYLE, WITHDRAW_ISSUE_FIELD_STYLE } from "./routing.js";
+import { RISK_ISSUE_AUTO_REMARKS, RISK_ISSUE_FIELD_EMOJI, ACCOUNT_ISSUE_FIELD_STYLE, BANK_ISSUE_FIELD_STYLE, WITHDRAW_ISSUE_FIELD_STYLE } from "./routing.js";
 
 export function escapeHtml(str) {
   return String(str)
@@ -34,18 +26,18 @@ export function escapeHtml(str) {
 }
 
 // Business owner wants every TG-message "Platform"/"Brand" labeled ROW to
-// read "<Brand> PKR" (e.g. "Crickex PKR") — NOT the Sheet columns, and
-// NOT the "New X — Brand" title/header lines, both of which stay as the
-// plain brand name. Used at the spots that render a labeled brand row:
-// buildPromotionRequestMessage, resolveFieldValue (the MESSAGE_TEMPLATE
-// row renderer used by QA/Risk Issue/Genie Issue/Daily Report), and
-// buildAccountIssueDynamicMessage.
+// read "<Brand> <CURRENCY>" (e.g. "Betjili PHP") — NOT the Sheet columns,
+// and NOT the "New X — Brand" title/header lines, both of which stay as
+// the plain brand name. Used at the spots that render a labeled brand
+// row: buildPromotionRequestMessage, resolveFieldValue (the
+// MESSAGE_TEMPLATE row renderer used by QA/Risk Issue/Genie Issue/Daily
+// Report), and the Account/Bank/Withdraw Issue dynamic message builders.
 //
 // ONE PLACE TO EDIT when reusing this project for a different currency
 // market — change CURRENCY_LABEL below and every outgoing Telegram
 // message updates automatically. Leave it as "" to drop the suffix
 // entirely and show just the plain brand name.
-const CURRENCY_LABEL = "PKR";
+const CURRENCY_LABEL = "PHP";
 export function brandCurrencyLabel(name) {
   return name && CURRENCY_LABEL ? `${name} ${CURRENCY_LABEL}` : name;
 }
@@ -55,22 +47,17 @@ export function resolveColumnValues(columns, { fieldMap, brand, reporter, screen
     if (col === null) return "-";
     if (typeof col === "string") {
       if (col === "brand") return brand.name || "-";
-      // Promotion Request's own reference sheet format (confirmed with the
-      // business owner via screenshot) wants "<Brand> PKR" in its Platform
-      // column — unlike every other module's Sheet, which intentionally
-      // keeps the plain brand name (see the CURRENCY_LABEL note above:
-      // that "PKR" suffix rule was for Telegram message rows specifically,
-      // NOT Sheet columns, in general). This is an opt-in key, only used
-      // where a sheet actually wants that suffix — it doesn't change the
-      // plain "brand" behavior above for anyone else.
-      if (col === "brandCurrency") return brandCurrencyLabel(brand.name) || "-";
       if (col === "pic") return reporter || "-";
       if (col === "screenshotLink") return (screenshotLink || (attachmentLinks || []).join(", ")) || "-";
       if (col === "dateFormatted") return formatDateDDMMYYYY(fieldMap.reportDate || fieldMap.date) || "-";
-      // "autoDate" — today's date, written automatically with no form
-      // field needed (unlike "dateFormatted" above, which reads a real
-      // field the agent filled in). Used by modules whose form doesn't
-      // ask the agent to pick a date at all (e.g. Withdraw Issue).
+      // "02-june-2026" style — Promotion Sheet only, see formatDateDMonthYLower below.
+      if (col === "dateLongLower") return formatDateDMonthYLower(fieldMap.reportDate || fieldMap.date) || "-";
+      // Server-generated date, independent of any form field — used by
+      // modules (like Bank Issue) that don't ask the agent for a date at
+      // all, so the Sheet still gets one automatically at submit time.
+      // NOTE: on an editDetails() re-write this recomputes to TODAY, not
+      // the original submit date — acceptable since these modules never
+      // asked for/stored a real date to begin with.
       if (col === "autoDate") return formatDateDDMMYYYY(new Date().toISOString().slice(0, 10));
       return fieldMap[col] || "-";
     }
@@ -143,14 +130,6 @@ export function buildMessageFromTemplate({ template, meta, brandName, fieldMap, 
       if (!value) return; // skip entirely — no placeholder line for optional raw notes
       lines.push(`${item.emoji} ${escapeHtml(value)}`);
     } else {
-      // Opt-in per-row flag — skip a normally-labeled row entirely (no
-      // "Label: -" / "Label: undefined" line, and no blank line for its
-      // slot either) when there's nothing to show. Off by default so
-      // templates that WANT an explicit placeholder for missing fields
-      // (e.g. daily_report's `emptyPlaceholder: "Nil"`) keep working
-      // exactly as before — this only changes behavior for rows that
-      // explicitly opt in.
-      if (item.skipIfEmpty && !value) return;
       lines.push(`${item.emoji} <b>${escapeHtml(item.label)}:</b> ${escapeHtml(value || emptyPlaceholder)}`);
     }
     if (spacing === "loose" && i < rows.length - 1 && !item.tight) lines.push("");
@@ -174,10 +153,25 @@ export function formatDateDDMMYYYY(isoDate) {
   return `${d}/${m}/${y}`;
 }
 
+const MONTH_NAMES_LOWER = [
+  "january", "february", "march", "april", "may", "june",
+  "july", "august", "september", "october", "november", "december",
+];
+// "02-june-2026" — used only for the Promotion Sheet's Date column, to
+// match the existing rows there. Everywhere else in the project keeps
+// using formatDateDDMMYYYY above.
+export function formatDateDMonthYLower(isoDate) {
+  if (!isoDate) return "";
+  const [y, m, d] = isoDate.split("-");
+  const monthName = MONTH_NAMES_LOWER[parseInt(m, 10) - 1];
+  if (!y || !d || !monthName) return isoDate;
+  return `${d}-${monthName}-${y}`;
+}
+
 // Used for any Risk Issue type that doesn't have its own row list in
 // MESSAGE_TEMPLATE.risk_issue.templates — keeps the same visual style
 // (emoji-labeled bold rows, header showing the Issue Type) without needing
-// a hand-written template for all issue types up front.
+// a hand-written template for all 11 issue types up front.
 export function buildRiskIssueDynamicMessage({ brandName, fields, fieldMap, reporter }) {
   const lines = [`⚠️ <b>Risk Issue — ${escapeHtml(fieldMap.issueType || "-")}</b>`, ""];
   lines.push(`🎮 <b>Brand/Platform:</b> ${escapeHtml(brandCurrencyLabel(brandName))}`);
@@ -193,10 +187,12 @@ export function buildRiskIssueDynamicMessage({ brandName, fields, fieldMap, repo
   }
 
   // Only show a Remark row if this issue type's form actually had a
-  // Remark field with something typed into it — several issue types use
-  // "Issue Description" instead of "Remark" and never collect
-  // fieldMap.remark at all, so this used to unconditionally print an
-  // empty "Remark: -" line even when the form never asked for one.
+  // Remark field with something typed into it — several issue types
+  // (Others Bonus Related Issue, VIP Level Update Issue, KYC Issues,
+  // Remove Bank Account, Others Issues, Verify Bank Detail) use "Issue
+  // Description" instead of "Remark" and never collect fieldMap.remark
+  // at all, so this used to unconditionally print an empty "Remark: -"
+  // line even when the form never asked for one.
   if (fieldMap.remark) {
     lines.push("", `📝 <b>Remark:</b> ${escapeHtml(fieldMap.remark)}`);
   }
@@ -214,13 +210,7 @@ export function buildRiskIssueDynamicMessage({ brandName, fields, fieldMap, repo
 export function buildAccountIssueDynamicMessage({ brandName, fields, fieldMap, reporter }) {
   const lines = [`🔑 <b>Account Issue — ${escapeHtml(fieldMap.issueType || "-")}</b>`, ""];
   lines.push(`🎮 <b>Brand/Platform:</b> ${escapeHtml(brandCurrencyLabel(brandName))}`);
-  // "Forget Username & Gmail" is the one issue type whose form never shows
-  // a UID field at all (see showIf on the "uid" field in schemas.js) —
-  // fieldMap.uid is always empty for it, so this line used to always print
-  // a pointless "Username: -". Only show it when there's an actual value.
-  if (fieldMap.uid) {
-    lines.push(`👤 <b>Username:</b> ${escapeHtml(fieldMap.uid)}`);
-  }
+  lines.push(`👤 <b>Username:</b> ${escapeHtml(fieldMap.uid || "-")}`);
 
   fields
     .filter((f) => !["issueType", "uid", "remark"].includes(f.key) && f.value)
@@ -236,13 +226,32 @@ export function buildAccountIssueDynamicMessage({ brandName, fields, fieldMap, r
   return lines.join("\n");
 }
 
-// Withdraw Issue: header shows Issue Type, Username right under Brand
-// (no blank line between them, same grouping style Account Issue/Risk
-// Issue use), then any type-specific extra fields (only "Withdraw Amount
-// Received Less" has any — submittedAmount/receivedAmount), then a blank
-// line before Remark and another before PIC. Identifier field here is
-// "username" (not "uid" like most other modules) — that's this module's
-// own design, not a mismatch to fix.
+// Same structure as buildAccountIssueDynamicMessage above — kept as its
+// own function (not a shared helper) since Bank Issue and Account Issue
+// are independently maintained modules that happen to look alike today;
+// don't assume they'll always stay in sync.
+export function buildBankIssueDynamicMessage({ brandName, fields, fieldMap, reporter }) {
+  const lines = [`🏦 <b>Bank Issue — ${escapeHtml(fieldMap.issueType || "-")}</b>`, ""];
+  lines.push(`🎮 <b>Brand/Platform:</b> ${escapeHtml(brandCurrencyLabel(brandName))}`);
+  lines.push(`👤 <b>Username:</b> ${escapeHtml(fieldMap.uid || "-")}`);
+
+  fields
+    .filter((f) => !["issueType", "uid", "remark"].includes(f.key) && f.value)
+    .forEach((f) => {
+      if (f.key === "accountNumber") lines.push(""); // blank line groups mobile-number fields apart from account-info fields
+      const style = BANK_ISSUE_FIELD_STYLE[f.key];
+      const emoji = style ? style.emoji : "🔸";
+      const label = style && style.label ? style.label : f.label;
+      lines.push(`${emoji} <b>${escapeHtml(label)}:</b> ${escapeHtml(f.value)}`);
+    });
+
+  lines.push("", `📝 <b>Remark:</b> ${escapeHtml(fieldMap.remark || "-")}`);
+  lines.push("", `👷 <b>PIC:</b> ${escapeHtml(reporter)}`);
+  return lines.join("\n");
+}
+
+// Same structure again, for Withdraw Issue — identifier field here is
+// "username" (not "uid" like the other two dynamic-message modules).
 export function buildWithdrawIssueDynamicMessage({ brandName, fields, fieldMap, reporter }) {
   const lines = [`💸 <b>Withdraw Issue — ${escapeHtml(fieldMap.issueType || "-")}</b>`, ""];
   lines.push(`🎮 <b>Brand/Platform:</b> ${escapeHtml(brandCurrencyLabel(brandName))}`);
@@ -310,6 +319,7 @@ export function buildTicketMessage({ moduleId, brandId, meta, brand, fieldMap, f
   }
   if (moduleId === "risk_issue") return buildRiskIssueDynamicMessage({ brandName: brand.name, fields, fieldMap, reporter });
   if (moduleId === "account_issue") return buildAccountIssueDynamicMessage({ brandName: brand.name, fields, fieldMap, reporter });
+  if (moduleId === "bank_issue") return buildBankIssueDynamicMessage({ brandName: brand.name, fields, fieldMap, reporter });
   if (moduleId === "withdraw_issue") return buildWithdrawIssueDynamicMessage({ brandName: brand.name, fields, fieldMap, reporter });
   if (moduleId === "promotion_request" && promotionMessageTemplate[`${brandId}|${fieldMap.promotion}`]) {
     return buildPromotionRequestMessage(promotionMessageTemplate[`${brandId}|${fieldMap.promotion}`], { brandName: brand.name, fieldMap, reporter });
@@ -319,8 +329,8 @@ export function buildTicketMessage({ moduleId, brandId, meta, brand, fieldMap, f
 
 // Same "title + short field preview" logic submit.js uses when creating a
 // thread record — shared so editDetails() can recompute both after a
-// field edit and keep the sidebar's title/preview text in sync with what
-// actually got saved, instead of a stale copy from creation time.
+// field edit and keep the sidebar's title/preview text in sync with
+// what actually got saved, instead of a stale copy from creation time.
 export function buildTitleAndSummary({ meta, brand, fieldMap, fields }) {
   const title = fieldMap.issueType ? `${meta.name} — ${fieldMap.issueType}` : `${meta.name} — ${brand.name}`;
   const summary = fields

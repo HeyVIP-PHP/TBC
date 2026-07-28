@@ -4,7 +4,9 @@ import { uploadAttachmentToR2, screenshotUrl } from "../_shared/r2.js";
 import { createThread } from "../_shared/threads.js";
 import { verifyRequest, canSeeBrand, canSeeModule } from "../_shared/accounts.js";
 import { getRouteOverride } from "../_shared/routes.js";
-import { resolveColumnValues, resolveSheetLayout, formatDateDDMMYYYY, buildTicketMessage, buildTitleAndSummary } from "../_shared/messageBuilders.js";
+import {
+  resolveColumnValues, resolveSheetLayout, formatDateDDMMYYYY, buildTicketMessage, buildTitleAndSummary,
+} from "../_shared/messageBuilders.js";
 
 const VALID_MODULES = Object.keys(MODULE_META);
 
@@ -42,12 +44,14 @@ async function handleSubmit({ request, env }) {
   if (!VALID_MODULES.includes(moduleId)) {
     return json({ ok: false, error: `Unknown module "${moduleId}".` }, 400);
   }
-  // Same real-server-side-enforcement reasoning as the canSeeBrand check
-  // just below — an agent scoped away from a Topic (account.allowedModules)
-  // can't submit to it even by calling this endpoint directly, regardless
-  // of what the sidebar/form on the client hid or let through.
+  // Real enforcement, not just hiding it from the sidebar — an agent
+  // scoped away from a topic (account.allowedModules, set in the Agent
+  // Personal Profile modal) can't submit to it even by calling this
+  // endpoint directly, bypassing the Home page and app.js's own checks
+  // entirely. Checked before the brand lookup below on purpose — no
+  // reason to even validate brandId for a module this account can't use.
   if (!canSeeModule(account, moduleId)) {
-    return json({ ok: false, error: `You don't have access to submit ${MODULE_META[moduleId]?.name || moduleId} tickets.` }, 403);
+    return json({ ok: false, error: `Your account doesn't have access to the ${MODULE_META[moduleId]?.name || moduleId} topic.` }, 403);
   }
   const brand = BRANDS[brandId];
   if (!brand) {
@@ -65,32 +69,29 @@ async function handleSubmit({ request, env }) {
     return json({ ok: false, error: "Missing reporter or fields." }, 400);
   }
 
-  // Duplicate-submission guard — protects against the SAME click ending up
-  // as two Telegram messages / two Sheet rows / two thread records, no
-  // matter what actually caused the second POST (flaky mobile network
-  // silently retransmitting, a stray double-tap the button-disable in
-  // app.js's submit handler didn't quite catch in time, a Cloudflare edge
-  // retry, etc). `idempotencyKey` is a random ID app.js generates fresh
-  // for each individual submit attempt (see public/assets/app.js) — NOT
-  // tied to the form's contents, so re-submitting the exact same fields
-  // after a genuine failure still gets a fresh key and goes through.
-  //
-  // Best-effort, not a hard distributed lock: two requests landing on
-  // different edge colos in the same instant could both pass the get()
-  // below before either put() finishes. Given app.js already disables the
-  // button synchronously on click, the realistic remaining race window is
-  // extremely small — this closes the actual failure mode you were
-  // hitting, not a theoretical one.
+  // Dedupe: the same submit CLICK occasionally reaches the server twice
+  // (flaky mobile network retry, double-tap, an edge node retrying a
+  // request it thinks failed) — without this, that means two identical
+  // Telegram messages, two duplicate ticket records, and a Sheet write
+  // race that can under- or over-count rows. idempotencyKey is a fresh
+  // random ID app.js generates per submit click (not tied to form
+  // content), so resubmitting after a genuine failure still works fine —
+  // only an actual duplicate delivery of the same click gets short-circuited.
   if (idempotencyKey && env.THREADS_KV) {
     const dedupeKey = `submit_dedupe:${idempotencyKey}`;
     const already = await env.THREADS_KV.get(dedupeKey);
     if (already) {
+      // Already processed (or still being processed) — hand back the
+      // exact same result instead of doing everything a second time.
       return new Response(already, { status: 200, headers: { "Content-Type": "application/json" } });
     }
-    // Placeholder written immediately so a near-simultaneous duplicate
-    // sees SOMETHING rather than racing straight through too — overwritten
-    // with the real response (see the `return` at the very end of this
-    // function) once the actual Telegram/Sheet/thread work is done.
+    // Placeholder first — so a near-simultaneous duplicate request (the
+    // two-requests-racing case, not just "the first one finished and a
+    // retry came later") also gets caught immediately, before this
+    // request has even finished processing. 60s (not the originally
+    // planned 30s) because Cloudflare KV flat-out rejects any
+    // expirationTtl under 60 — this isn't a tunable choice, it's the
+    // platform's actual minimum.
     await env.THREADS_KV.put(dedupeKey, JSON.stringify({ ok: true, duplicate: true, note: "Original submission was still processing — this is not a second ticket." }), { expirationTtl: 60 });
   }
 
@@ -127,16 +128,8 @@ async function handleSubmit({ request, env }) {
   const screenshotLink = r2Links.join(", ");
 
   const text = buildTicketMessage({
-    moduleId,
-    brandId,
-    meta,
-    brand,
-    fieldMap,
-    fields,
-    reporter,
-    screenshotLink,
-    messageTemplate: MESSAGE_TEMPLATE,
-    promotionMessageTemplate: PROMOTION_MESSAGE_TEMPLATE,
+    moduleId, brandId, meta, brand, fieldMap, fields, reporter, screenshotLink,
+    messageTemplate: MESSAGE_TEMPLATE, promotionMessageTemplate: PROMOTION_MESSAGE_TEMPLATE,
   });
 
   // 2. Send to Telegram — photo(s)/document(s) with the info as the caption,
@@ -153,18 +146,17 @@ async function handleSubmit({ request, env }) {
     if (!fallback.ok) {
       return json({ ok: false, error: `Telegram send failed: ${fallback.error}` }, 502);
     }
-    tgResult = { messageId: fallback.messageId, messageIds: [fallback.messageId], attachmentLinks: [], attachmentFileIds: [] };
+    tgResult = { messageId: fallback.messageId, messageIds: [fallback.messageId], attachmentLinks: [], attachmentFileIds: [], attachmentNames: [] };
   }
   const attachmentLinks = tgResult.attachmentLinks;
 
-  // 2b. Optionally log to the brand's Google Sheet — moved BEFORE
-  //     createThread() below (used to run after it) so that, when this
-  //     write lands on a real trackable row, that exact row gets captured
-  //     into `sheetRef` and stored on the thread record. That's what lets
-  //     the dashboard's "📊 Sync to Sheet" edit action (see
-  //     functions/api/threads/[id].js) overwrite THIS row later instead
-  //     of appending a duplicate one. Doesn't fail the whole request if
-  //     the sheet write fails — Telegram already has the ticket.
+  // 2. Optionally log to the brand's Google Sheet (fire-and-await, but don't
+  //    fail the whole request if the sheet write fails — Telegram already has it).
+  // Runs BEFORE the thread record below on purpose: if this writes a real
+  // row, we want its {sheetId, tab, startColumn, columns, row} saved on
+  // the thread as `sheetRef`, so a later edit (functions/api/threads/[id].js
+  // editDetails) knows exactly which Sheet cell range to overwrite instead
+  // of appending a duplicate row.
   let sheetLogged = false;
   let sheetError = null;
   let sheetRef = null;
@@ -192,12 +184,11 @@ async function handleSubmit({ request, env }) {
             dateValue,
             values,
           });
-          // writeRowForDate() re-finds the matching-date row by scanning
-          // instead of returning a fixed row number (see its comment in
-          // googleSheets.js) — so Daily Report intentionally gets no
-          // sheetRef. Its 📊 edit action can still sync the Telegram
-          // message, just not this Sheet row (sheetHasRef comes back
-          // false for it — see threads/[id].js's editDetails action).
+          // No row-tracking here — writeRowForDate() may reuse an existing
+          // row shared with the other shift, and doesn't report a row
+          // number back. Daily Report tickets just don't support the
+          // Sheet-sync half of editDetails() — Telegram-only edits still
+          // work fine for them.
         } else {
           const layout = resolveSheetLayout(layoutEntry, fieldMap);
           if (layout) {
@@ -222,7 +213,7 @@ async function handleSubmit({ request, env }) {
     }
   }
 
-  // 2c. Create a TG Reply Threads record so agent replies to this exact
+  // 2b. Create a TG Reply Threads record so agent replies to this exact
   //     Telegram message can be tracked in the dashboard. Optional feature —
   //     skipped silently until THREADS_KV is bound (see wrangler.toml).
   let threadId = null;
@@ -245,9 +236,11 @@ async function handleSubmit({ request, env }) {
         rootText: text,
         hasMedia: Array.isArray(attachments) && attachments.length > 0,
         attachmentFileIds: tgResult.attachmentFileIds || [],
+        attachmentNames: tgResult.attachmentNames || [],
         summary,
         fieldMap,
         screenshotLink,
+        attachmentLinks,
         sheetRef,
       });
       threadId = thread.id;
@@ -267,17 +260,15 @@ async function handleSubmit({ request, env }) {
     attachmentErrors: attachmentErrors.length ? attachmentErrors : undefined,
     r2Errors: r2Errors.length ? r2Errors : undefined,
   };
-  // Overwrite the placeholder from the duplicate-submission guard above
-  // with the REAL result, so a duplicate request arriving even a moment
-  // late still gets back this exact ticket's info (not "still processing")
-  // instead of silently creating a second one. Longer TTL than the
-  // placeholder's 60s — 10 minutes is generous enough to cover any
-  // realistically-delayed retransmit while not lingering in KV forever.
   if (idempotencyKey && env.THREADS_KV) {
+    // Overwrite the 30s placeholder with the real result, now kept
+    // around for 10 minutes — long enough to cover any realistic delayed
+    // retry, short enough not to matter for KV's daily write quota.
     await env.THREADS_KV.put(`submit_dedupe:${idempotencyKey}`, JSON.stringify(finalResponse), { expirationTtl: 600 });
   }
   return json(finalResponse);
 }
+
 
 async function sendTelegramMessage({ botToken, route, text }) {
   const payload = {
@@ -316,27 +307,33 @@ async function sendTelegramWithAttachments({ botToken, route, text, attachments 
   if (!attachments.length) {
     const r = await sendTelegramMessage({ botToken, route, text });
     if (!r.ok) throw new Error(r.error);
-    return { messageId: r.messageId, messageIds: [r.messageId], attachmentLinks: [], attachmentFileIds: [] };
+    return { messageId: r.messageId, messageIds: [r.messageId], attachmentLinks: [], attachmentFileIds: [], attachmentNames: [] };
   }
 
   if (attachments.length === 1) {
-    const { messageId, fileId } = await sendSingleWithCaption({ botToken, route, text, attachment: attachments[0] });
-    return { messageId, messageIds: [messageId], attachmentLinks: [buildMessageLink(route, messageId)], attachmentFileIds: fileId ? [fileId] : [] };
+    const { messageId, fileId, name } = await sendSingleWithCaption({ botToken, route, text, attachment: attachments[0] });
+    return {
+      messageId,
+      messageIds: [messageId],
+      attachmentLinks: [buildMessageLink(route, messageId)],
+      attachmentFileIds: fileId ? [fileId] : [],
+      attachmentNames: fileId ? [name] : [],
+    };
   }
 
   const allImages = attachments.every((a) => looksLikeImage(a.type, a.name));
   if (allImages) {
     const sent = await sendMediaGroup({ botToken, route, text, attachments });
+    const withFileId = sent.filter((s) => s.fileId);
     return {
       messageId: sent[0].messageId,
-      // EVERY message_id in the album, not just the first — a media
-      // group is one message_id per photo, and anything that later
-      // needs to act on "the whole original ticket message" (most
-      // importantly recallRoot() in functions/api/threads/[id].js)
-      // needs all of them, not just the captioned first one.
+      // EVERY message_id in the album, not just the first/captioned one —
+      // recallRoot() (threads/[id].js) needs to delete all of them; see
+      // that file's comment for the bug this fixes.
       messageIds: sent.map((s) => s.messageId),
       attachmentLinks: sent.map((s) => buildMessageLink(route, s.messageId)),
-      attachmentFileIds: sent.map((s) => s.fileId).filter(Boolean),
+      attachmentFileIds: withFileId.map((s) => s.fileId),
+      attachmentNames: withFileId.map((s) => s.name),
     };
   }
 
@@ -348,11 +345,13 @@ async function sendTelegramWithAttachments({ botToken, route, text, attachments 
     const result = await sendSingleWithCaption({ botToken, route, text: i === 0 ? text : undefined, attachment: attachments[i] });
     sent.push(result);
   }
+  const withFileId = sent.filter((s) => s.fileId);
   return {
     messageId: sent[0].messageId,
     messageIds: sent.map((s) => s.messageId),
     attachmentLinks: sent.map((s) => buildMessageLink(route, s.messageId)),
-    attachmentFileIds: sent.map((s) => s.fileId).filter(Boolean),
+    attachmentFileIds: withFileId.map((s) => s.fileId),
+    attachmentNames: withFileId.map((s) => s.name),
   };
 }
 
@@ -380,7 +379,7 @@ async function sendSingleWithCaption({ botToken, route, text, attachment }) {
   const fileId = isImage
     ? data.result.photo?.[data.result.photo.length - 1]?.file_id || null
     : data.result.document?.file_id || null;
-  return { messageId: data.result.message_id, fileId };
+  return { messageId: data.result.message_id, fileId, name: name || null };
 }
 
 async function sendMediaGroup({ botToken, route, text, attachments }) {
@@ -407,9 +406,10 @@ async function sendMediaGroup({ botToken, route, text, attachments }) {
   const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMediaGroup`, { method: "POST", body: form });
   const data = await res.json();
   if (!data.ok) throw new Error(data.description || "unknown Telegram error");
-  return data.result.map((m) => ({
+  return data.result.map((m, i) => ({
     messageId: m.message_id,
     fileId: m.photo?.[m.photo.length - 1]?.file_id || null,
+    name: attachments[i]?.name || null,
   }));
 }
 

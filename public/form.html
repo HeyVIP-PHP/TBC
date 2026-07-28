@@ -13,7 +13,7 @@
   <header class="topbar">
     <div class="topbar-left">
       <img src="/assets/img/logo.webp" alt="HeyVIP" class="logo-img" />
-      <span class="wordmark">PKR CS TEAM - TBC</span>
+      <span class="wordmark">PHP CS TEAM - TBC</span>
     </div>
     <div class="topbar-right">
       <span class="clock" id="liveClock"></span>
@@ -22,10 +22,10 @@
     </div>
   </header>
 
-  <a href="/" class="back-pill" id="backPill">&larr; Back to Home</a>
+  <a href="/" class="back-pill">&larr; Back to Home</a>
 
-  <div class="form-page page-slide-in">
-    <div class="form-card">
+  <div class="form-page">
+    <div class="form-card page-morph-in" data-transition-root>
       <div class="form-header"><span class="icon" id="formIcon"></span><span id="formTitle">Loading…</span></div>
       <p class="form-hint" id="formHint"></p>
       <hr class="form-divider" />
@@ -66,17 +66,7 @@
   </div>
 
   <script src="/assets/schemas.js"></script>
+  <script src="/assets/page-transition.js"></script>
   <script src="/assets/app.js"></script>
-  <script>
-    // Mirrors the topic-click transition on index.html (see .page-slide-out
-    // in style.css): play the slide-out animation on the form card first,
-    // then do the real navigation back to "/" — separate static pages, so
-    // this setTimeout has to match the CSS animation's 0.2s duration.
-    document.getElementById("backPill").addEventListener("click", (e) => {
-      e.preventDefault();
-      document.querySelector(".form-page").classList.replace("page-slide-in", "page-slide-out");
-      setTimeout(() => { location.href = "/"; }, 200);
-    });
-  </script>
 </body>
 </html>

@@ -9,15 +9,8 @@
 // Rename / add your real brands here. The `id` must match the brand key
 // used in functions/_shared/routing.js on the server.
 const BRANDS = [
-  { id: "crickex", name: "Crickex" },
   { id: "betjili", name: "Betjili" },
-  { id: "mostplay", name: "Mostplay" },
-  { id: "jeetwin", name: "Jeetwin" },
-  { id: "sbj66", name: "Sbj66" },
-  { id: "heybaji", name: "Heybaji" },
-  { id: "superbaji", name: "Superbaji" },
-  { id: "kv8", name: "KV8" },
-  { id: "darazplay", name: "Darazplay" },
+  { id: "betvisa", name: "BetVisa" },
 ];
 
 // Every module gets the same attachment slot (screenshots/PDFs, shown as a
@@ -27,7 +20,7 @@ const DEFAULT_ATTACHMENTS = { max: 3, accept: "image/png,image/jpeg,application/
 
 // A field can declare `showIf: { field: "<otherFieldKey>", oneOf: [...values] }`
 // to only appear when that other field currently holds one of those values —
-// e.g. "Add Number" only shows up when Issue Type is "Add Mobile Number Verify".
+// e.g. "Add Number" only shows up when Issue Type is "Add Mobile Number".
 // It stays in the DOM (kept in field order) but is hidden + not required
 // until its condition is met, so add each issue type's extra fields inline
 // at the position they should appear.
@@ -86,9 +79,6 @@ const MODULES = [
         key: "issueType", label: "Issue Type", type: "select", required: true, emphasize: true,
         options: [
           "Register Number Verification",
-          "Add Mobile Number Verify",
-          "Add Number Remove",
-          "Registration Number Inputted Wrong",
           "Gmail Verification",
           "Gmail Remove",
           "Customer Email Change / Inactive / Lost",
@@ -100,34 +90,17 @@ const MODULES = [
       },
       { key: "uid", label: "UID", type: "text", required: true, placeholder: "Player UID...",
         showIf: { field: "issueType", oneOf: [
-          "Register Number Verification", "Add Mobile Number Verify", "Add Number Remove",
-          "Registration Number Inputted Wrong", "Gmail Verification", "Gmail Remove",
+          "Register Number Verification", "Gmail Verification", "Gmail Remove",
           "Customer Email Change / Inactive / Lost", "Forgot Password (OTP Limit Exceeded)", "KYC Issues",
           "Update Information",
         ] },
       },
       { key: "registerNumber", label: "Register Number", type: "text", required: false, placeholder: "Register number...",
         showIf: { field: "issueType", oneOf: [
-          "Register Number Verification", "Add Mobile Number Verify", "Add Number Remove",
+          "Register Number Verification",
           "Gmail Verification", "Gmail Remove", "Customer Email Change / Inactive / Lost",
           "Forgot Password (OTP Limit Exceeded)", "Forget Username & Gmail", "KYC Issues",
         ] },
-      },
-      { key: "registerWrongNumber", label: "Register Wrong Number", type: "text", required: false,
-        showIf: { field: "issueType", oneOf: ["Registration Number Inputted Wrong"] },
-      },
-      {
-        key: "addNumber", label: "Add Number", type: "text", required: false, placeholder: "Number to add...",
-        showIf: { field: "issueType", oneOf: ["Add Mobile Number Verify"] },
-      },
-      { key: "nid", label: "CNIC Card Number", type: "text", required: false, placeholder: "CNIC card number...",
-        showIf: { field: "issueType", oneOf: ["Add Mobile Number Verify"] },
-      },
-      { key: "removeNumber", label: "Remove Number", type: "text", required: false,
-        showIf: { field: "issueType", oneOf: ["Add Number Remove"] },
-      },
-      { key: "playerCorrectNumber", label: "Player Correct Number", type: "text", required: false,
-        showIf: { field: "issueType", oneOf: ["Registration Number Inputted Wrong"] },
       },
       { key: "gmail", label: "Gmail", type: "text", required: false, placeholder: "Gmail address...",
         showIf: { field: "issueType", oneOf: ["Gmail Verification", "Forgot Password (OTP Limit Exceeded)", "KYC Issues"] },
@@ -152,8 +125,8 @@ const MODULES = [
       { key: "fullName", label: "Full Name", type: "text", required: false,
         showIf: { field: "issueType", oneOf: ["KYC Issues"] },
       },
-      { key: "aadharPan", label: "CNIC Card Number", type: "text", required: false,
-        showIf: { field: "issueType", oneOf: ["Register Number Verification", "Add Number Remove", "KYC Issues"] },
+      { key: "aadharPan", label: "CNIC Number", type: "text", required: false,
+        showIf: { field: "issueType", oneOf: ["Register Number Verification", "KYC Issues"] },
       },
       {
         key: "updateInfoType", label: "Request", type: "select", required: true,
@@ -185,6 +158,65 @@ const MODULES = [
     ],
   },
   {
+    id: "bank_issue",
+    name: "Bank Issue",
+    icon: "🏦",
+    accent: "#38BDF8",
+    description: "Mobile number Update/Add/Change",
+    attachments: DEFAULT_ATTACHMENTS,
+    fields: [
+      {
+        key: "issueType", label: "Issue Type", type: "select", required: true, emphasize: true,
+        options: [
+          "Add Mobile Number",
+          "Remove Mobile Number",
+          "Registration Number Inputted Wrong",
+          "Change Mobile Number",
+        ],
+      },
+      { key: "uid", label: "UID", type: "text", required: true, placeholder: "Player UID..." },
+      // -- Add Mobile Number -- (moved from Account Issue, same fields/format)
+      { key: "registerNumber", label: "Register Number", type: "text", required: false, placeholder: "Register number...",
+        showIf: { field: "issueType", oneOf: ["Add Mobile Number", "Remove Mobile Number"] },
+      },
+      {
+        key: "addNumber", label: "Add Number", type: "text", required: false, placeholder: "Number to add...",
+        showIf: { field: "issueType", oneOf: ["Add Mobile Number"] },
+      },
+      { key: "nid", label: "CNIC Number", type: "text", required: false, placeholder: "CNIC number...",
+        showIf: { field: "issueType", oneOf: ["Add Mobile Number"] },
+      },
+      // -- Remove Mobile Number -- (moved from Account Issue, same fields/format)
+      { key: "removeNumber", label: "Remove Number", type: "text", required: false,
+        showIf: { field: "issueType", oneOf: ["Remove Mobile Number"] },
+      },
+      // -- Registration Number Inputted Wrong -- (moved from Account Issue, same fields/format)
+      { key: "registerWrongNumber", label: "Register Wrong Number", type: "text", required: false,
+        showIf: { field: "issueType", oneOf: ["Registration Number Inputted Wrong"] },
+      },
+      { key: "playerCorrectNumber", label: "Player Correct Number", type: "text", required: false,
+        showIf: { field: "issueType", oneOf: ["Registration Number Inputted Wrong"] },
+      },
+      // -- Change Mobile Number -- (new, exclusive to this type)
+      { key: "previousMobileNumber", label: "Previous Mobile Number (Remove)", type: "text", required: false,
+        showIf: { field: "issueType", oneOf: ["Change Mobile Number"] },
+      },
+      { key: "newMobileNumber", label: "New Mobile Number", type: "text", required: false,
+        showIf: { field: "issueType", oneOf: ["Change Mobile Number"] },
+      },
+      { key: "accountNumber", label: "Account Number", type: "text", required: false,
+        showIf: { field: "issueType", oneOf: ["Change Mobile Number"] },
+      },
+      { key: "accountName", label: "Account Name", type: "text", required: false,
+        showIf: { field: "issueType", oneOf: ["Change Mobile Number"] },
+      },
+      { key: "relationship", label: "Relationship", type: "text", required: false,
+        showIf: { field: "issueType", oneOf: ["Change Mobile Number"] },
+      },
+      { key: "remark", label: "Issue & Remark", type: "textarea", required: false, placeholder: "Additional remarks..." },
+    ],
+  },
+  {
     id: "withdraw_issue",
     name: "Withdraw Issue",
     icon: "💸",
@@ -207,10 +239,10 @@ const MODULES = [
       { key: "username", label: "Username", type: "text", required: true, placeholder: "Player username..." },
       { key: "tid", label: "TID", type: "text", required: true, placeholder: "Transaction ID..." },
       // -- Withdraw Amount Received Less -- (exclusive to this type)
-      { key: "submittedAmount", label: "Submitted Amount (Rs.)", type: "number", required: true, placeholder: "0.00",
+      { key: "submittedAmount", label: "Submitted Amount (₱)", type: "number", required: true, placeholder: "0.00",
         showIf: { field: "issueType", oneOf: ["Withdraw Amount Received Less"] },
       },
-      { key: "receivedAmount", label: "Received Amount (Rs.)", type: "number", required: true, placeholder: "0.00",
+      { key: "receivedAmount", label: "Received Amount (₱)", type: "number", required: true, placeholder: "0.00",
         showIf: { field: "issueType", oneOf: ["Withdraw Amount Received Less"] },
       },
       { key: "remark", label: "Remark", type: "textarea", required: false, placeholder: "Additional remarks..." },
@@ -290,7 +322,7 @@ const MODULES = [
         showIf: { field: "issueType", oneOf: ["KYC Issues"] },
       },
       {
-        key: "aadharPan", label: "CNIC Card Number", type: "text", required: false,
+        key: "aadharPan", label: "CNIC Number", type: "text", required: false,
         placeholder: "Type the number, or upload a screenshot below instead",
         showIf: { field: "issueType", oneOf: ["KYC Issues"] },
       },
@@ -300,7 +332,31 @@ const MODULES = [
       },
       {
         key: "issueDescription", label: "Issue Description", type: "textarea", required: false,
-        showIf: { field: "issueType", oneOf: ["Others Bonus Related Issue", "VIP Level Update Issue", "KYC Issues", "Remove Bank Account", "Verify Bank Detail", "Others Issues"] },
+        showIf: { field: "issueType", oneOf: ["Others Bonus Related Issue", "VIP Level Update Issue", "KYC Issues", "Remove Bank Account", "Others Issues"] },
+      },
+      {
+        key: "bankAccountNo", label: "Account NO", type: "text", required: true,
+        showIf: { field: "issueType", oneOf: ["Verify Bank Detail"] },
+      },
+      {
+        key: "bankAccountHolderName", label: "Account Holder Name", type: "text", required: true,
+        showIf: { field: "issueType", oneOf: ["Verify Bank Detail"] },
+      },
+      {
+        key: "bankIfscCode", label: "IFSC Code", type: "text", required: true,
+        showIf: { field: "issueType", oneOf: ["Verify Bank Detail"] },
+      },
+      {
+        key: "bankBranch", label: "Branch", type: "text", required: true,
+        showIf: { field: "issueType", oneOf: ["Verify Bank Detail"] },
+      },
+      {
+        key: "bankName", label: "Bank Name", type: "text", required: true,
+        showIf: { field: "issueType", oneOf: ["Verify Bank Detail"] },
+      },
+      {
+        key: "remark", label: "Remark", type: "textarea", required: false,
+        showIf: { field: "issueType", oneOf: ["Verify Bank Detail"] },
       },
     ],
   },
@@ -313,35 +369,12 @@ const MODULES = [
     description: "Bonus request",
     reporterLabel: "Processed by",
     attachments: DEFAULT_ATTACHMENTS,
-    // Brand+Promotion combos with a single fixed amount (no Tier/Deposits/
-    // Rank selector needed) — Amount auto-locks to this the moment both
-    // Brand and Promotion are picked. Keyed by "<brandId>|<promotion value>".
-    // Confirmed with the business owner this session (screenshot of the
-    // real reference Google Sheet + a full brand-by-brand rules list) —
-    // see PROMOTION_SHEET_CONFIG in functions/_shared/routing.js for the
-    // matching per-combo Sheet/tab this writes into.
-    //
-    // Not every combo below is a flat number — 3 of them (Betjili/Mostplay
-    // Birthday Bonus, Jeetwin Birthday Bonus, Darazplay Birthday Bonus)
-    // are tiered instead, handled by the "deposits"/"tier"/"playerRank"
-    // select fields further down (each has its own per-brand amount table
-    // and auto-fills Amount the same way once picked).
+    // Brand+Promotion combos with a single fixed amount (no Tier/Deposits
+    // selector needed) — Amount auto-locks to this the moment both are
+    // picked. Keyed by "<brandId>|<promotion value>".
     fixedAmounts: {
-      "crickex|Birthday Bonus": 1000,
-      "betjili|Facebook Review Free Bonus": 200,
-      "betjili|Rs 500 Free Cash On App Download-PKR": 500,
-      "mostplay|Facebook Review Free Bonus": 200,
-      "mostplay|Download & Claim": 200,
-      "jeetwin|Download JeetWin APP & Claim Cash": 300,
-      "heybaji|Birthday Bonus": 1000,
-      "heybaji|Download HeyBaji APP & Claim Cash": 299,
-      "superbaji|Birthday Bonus": 2000,
-      "superbaji|Download SuberBaji APP & Claim Cash": 200,
-      "sbj66|Birthday Bonus": 2000,
-      "sbj66|Download SBJ66 APP & Claim Cash": 199,
-      "kv8|Birthday Bonus": 1500,
-      "kv8|Download KV8 APP & Claim 199 Cash": 199,
-      "darazplay|Rs.200 Download DarazPlay App": 200,
+      "betjili|Free Bet Upon Registration 75": 75,
+      "betjili|₱100 Free Cash On App Download": 100,
     },
     fields: [
       {
@@ -349,82 +382,56 @@ const MODULES = [
         // Options depend on the selected Brand — see optionsByBrand below.
         // Brands/promotions not listed here yet just show no options until added.
         optionsByBrand: {
-          crickex: ["Birthday Bonus"],
-          betjili: ["Birthday Bonus", "Facebook Review Free Bonus", "Rs 500 Free Cash On App Download-PKR"],
-          mostplay: ["Birthday Bonus", "Facebook Review Free Bonus", "Download & Claim"],
-          jeetwin: ["Birthday Bonus", "Download JeetWin APP & Claim Cash"],
-          heybaji: ["Birthday Bonus", "Download HeyBaji APP & Claim Cash"],
-          superbaji: ["Birthday Bonus", "Download SuberBaji APP & Claim Cash"],
-          sbj66: ["Birthday Bonus", "Download SBJ66 APP & Claim Cash"],
-          kv8: ["Birthday Bonus", "Download KV8 APP & Claim 199 Cash"],
-          darazplay: ["Birthday Bonus", "Rs.200 Download DarazPlay App"],
+          betjili: ["Birthday Bonus", "Free Bet Upon Registration 75", "₱100 Free Cash On App Download"],
+          betvisa: ["Birthday Bonus"],
         },
       },
       { key: "date", label: "Date", type: "date", required: true, defaultToday: true },
       { key: "username", label: "Username", type: "text", required: true, placeholder: "Player username..." },
       {
-        key: "tid", label: "TID", type: "text", required: true, placeholder: "e.g. CXPKRBD0029",
+        key: "tid", label: "TID", type: "text", required: true, placeholder: "e.g. BJLPHPB003 / BVPHPBB004",
         generate: true, // shows a button that fetches the next TID from the sheet
       },
       {
-        // Betjili's and Mostplay's Birthday Bonus both use a "Number of
-        // Deposits" tier, but with two DIFFERENT amount tables — same
-        // field, brand-specific options (optionsByBrand), same pattern
-        // "promotion" itself uses above.
-        key: "deposits", label: "Number of Deposits", type: "select", required: false,
+        key: "nid", label: "NID No", type: "text", required: false,
+        showIf: { field: "promotion", oneOf: ["Birthday Bonus"] },
+      },
+      {
+        key: "tier", label: "Tier Level", type: "select", required: false,
         showIf: [
           { field: "promotion", oneOf: ["Birthday Bonus"] },
-          { field: "brand", oneOf: ["betjili", "mostplay"] },
+          { field: "brand", oneOf: ["betvisa"] },
         ],
+        // Selecting a tier auto-fills + locks the Amount field below.
         autoFillsInto: "amount",
         optionsByBrand: {
-          betjili: [
-            { value: "10 Deposits", amount: 3000 },
-            { value: "20 Deposits", amount: 6000 },
-            { value: "30 Deposits", amount: 9000 },
-            { value: "40 Deposits", amount: 12000 },
-            { value: "50 Deposits", amount: 15000 },
-          ],
-          mostplay: [
-            { value: "10 Deposits", amount: 1000 },
-            { value: "20 Deposits", amount: 1500 },
-            { value: "30 Deposits", amount: 2000 },
+          betvisa: [
+            { value: "Bronze", amount: 250 },
+            { value: "Silver", amount: 600 },
+            { value: "Gold", amount: 1000 },
+            { value: "Platinum", amount: 1800 },
+            { value: "Diamond", amount: 2800 },
+            { value: "Legend", amount: 4000 },
           ],
         },
       },
       {
-        // Jeetwin-only tier selector for its Birthday Bonus.
-        key: "tier", label: "Tier Level", type: "select", required: false,
+        key: "deposits", label: "Number of Deposits", type: "select", required: false,
         showIf: [
           { field: "promotion", oneOf: ["Birthday Bonus"] },
-          { field: "brand", oneOf: ["jeetwin"] },
+          { field: "brand", oneOf: ["betjili"] },
         ],
+        // Selecting a deposit count auto-fills + locks the Amount field below.
         autoFillsInto: "amount",
-        options: [
-          { value: "Bronze", amount: 1000 },
-          { value: "Silver", amount: 1000 },
-          { value: "Gold", amount: 2000 },
-          { value: "Platinum", amount: 3000 },
-          { value: "Diamond", amount: 4000 },
-          { value: "Legend", amount: 5000 },
-        ],
-      },
-      {
-        // Darazplay-only rank selector for its Birthday Bonus — same
-        // auto-fill mechanism as Tier Level/Number of Deposits above,
-        // just a different field name matching what Darazplay actually
-        // calls these tiers.
-        key: "playerRank", label: "Player Rank", type: "select", required: false,
-        showIf: [
-          { field: "promotion", oneOf: ["Birthday Bonus"] },
-          { field: "brand", oneOf: ["darazplay"] },
-        ],
-        autoFillsInto: "amount",
-        options: [
-          { value: "Beginner/Player", amount: 1000 },
-          { value: "Pro-Player/Expert/Master", amount: 1500 },
-          { value: "Above Grand master", amount: 2500 },
-        ],
+        optionsByBrand: {
+          betjili: [
+            { value: "10 Deposits", amount: 500 },
+            { value: "20 Deposits", amount: 1000 },
+            { value: "30 Deposits", amount: 1500 },
+            { value: "40 Deposits", amount: 2000 },
+            { value: "50 Deposits", amount: 2500 },
+          ],
+        },
       },
       { key: "amount", label: "Amount", type: "number", required: true, placeholder: "e.g. 200.00" },
     ],

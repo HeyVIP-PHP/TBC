@@ -416,35 +416,43 @@ a { color: inherit; text-decoration: none; }
 .agent-profile-status-text.is-active { color: #1a9c6e; }
 .agent-profile-status-text.is-locked { color: var(--required); }
 .agent-profile-module-list { display: flex; flex-direction: column; gap: 2px; }
-.agent-profile-admin-section-list { display: flex; flex-direction: column; gap: 2px; }
-.agent-profile-collapsible { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
-.agent-profile-collapsible-header {
-  width: 100%; display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
-  padding: 0; margin: 0 0 10px; background: none; border: none; cursor: pointer; font-family: inherit; text-align: left;
-}
-.agent-profile-collapsible-header:hover .agent-profile-section-label-lg { color: var(--wordmark); }
-.agent-profile-section-label-lg {
-  font-size: 12px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase;
-  color: var(--ink); display: block;
-}
-.agent-profile-section-hint {
-  display: block; font-size: 11px; font-weight: 600; letter-spacing: 0; text-transform: none;
-  color: var(--ink-soft); margin-top: 2px;
-}
-.agent-profile-chev { color: var(--ink-soft); font-size: 13px; flex-shrink: 0; transition: transform 0.15s ease; }
-.agent-profile-collapsible.is-open .agent-profile-chev { transform: rotate(90deg); }
-.agent-profile-collapsible-body { padding: 0; }
-.agent-profile-divider { border: none; border-top: 1px solid var(--border); margin: 10px 0; }
-.agent-profile-edit-level-row {
-  display: flex; align-items: center; gap: 14px; margin: 0 0 6px 26px;
-  font-size: 12px; color: var(--ink-soft);
-}
-.agent-profile-edit-level-row label { display: flex; align-items: center; gap: 5px; cursor: pointer; }
 .agent-profile-module-check {
   display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 4px 2px;
   color: var(--ink);
 }
 .agent-profile-module-check input[disabled] { cursor: not-allowed; }
+
+/* View-only / Can-Edit radio pair, rendered under whitelistIp/tgRoutes/
+   agentProfile checkboxes only (see EDITABLE_ADMIN_SECTIONS in
+   index.html) — indented under its parent checkbox, small/quiet since
+   it's a secondary choice. Disabled state (parent checkbox unchecked,
+   or viewer can't edit admin sections at all) just dims it rather than
+   hiding it, so the option is still visible even before it's usable. */
+.agent-profile-edit-level-row {
+  display: flex; align-items: center; gap: 14px; margin: 0 0 6px 26px;
+  font-size: 12px; color: var(--ink-soft);
+}
+.agent-profile-edit-level-row label { display: flex; align-items: center; gap: 5px; cursor: pointer; }
+
+/* Collapsible section header — Topic access + Account management access
+   share this exact toggle/chevron mechanic (see wireCollapse() in
+   index.html). Collapsed by default; click to expand. */
+.agent-profile-collapse-toggle {
+  width: 100%; display: flex; align-items: center; justify-content: space-between;
+  background: none; border: none; padding: 0; margin: 0 0 8px; cursor: pointer;
+  font-size: 11px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase;
+  color: var(--ink-soft); font-family: inherit;
+}
+.agent-profile-collapse-toggle.is-restricted { color: var(--required); }
+.agent-profile-collapse-chevron { font-size: 12px; transition: transform 0.15s ease; flex-shrink: 0; }
+.agent-profile-collapse-toggle[aria-expanded="true"] .agent-profile-collapse-chevron { transform: rotate(90deg); }
+.agent-profile-collapse-body { display: none; }
+.agent-profile-collapse-body.is-open { display: flex; flex-direction: column; gap: 2px; }
+.agent-profile-admin-note { font-size: 11px; color: var(--ink-soft); margin: 2px 0 0; }
+.agent-profile-delegate-row {
+  display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink);
+  margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border);
+}
 
 /* ---- TG Group / Channel (live-editable Telegram routing) ---- */
 .tgroute-layout { display: flex; gap: 14px; max-height: 78vh; }
@@ -860,22 +868,24 @@ a { color: inherit; text-decoration: none; }
 .thread-detail-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
 .thread-detail-title { display: flex; align-items: center; gap: 10px; font-family: var(--font-display); font-size: 19px; font-weight: 600; }
 .thread-detail-sub { font-size: 12.5px; color: var(--ink-soft); margin-top: 4px; }
-.thread-detail-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.thread-detail-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; flex-wrap: wrap; }
 .status-chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px; font-size: 12px; font-weight: 700; border: none; cursor: pointer; transition: transform 0.12s ease; }
 .status-chip.unsolved { background: rgba(239, 74, 114, 0.16); color: #ef4a72; }
 .status-chip.solved { background: rgba(52, 211, 153, 0.16); color: #1a9c6e; }
 .status-chip:hover { transform: translateY(-1px); }
 .icon-btn { width: 32px; height: 32px; border-radius: 10px; border: 1px solid var(--border); background: var(--card-bg); color: var(--required); font-size: 13px; cursor: pointer; }
 .icon-btn:hover { background: rgba(239, 74, 114, 0.1); }
-.icon-btn.spinning { color: var(--required); animation: spin 0.8s linear infinite; }
-/* Icon + text label variant (e.g. thread-detail-actions toolbar) — same
-   pill family as .icon-btn but auto width, with a short caption next to
-   the emoji instead of an icon-only square. Color goes back to --ink
-   (neutral) since these aren't all "danger" actions like the plain
-   icon-btn's red tint implies. */
-.icon-btn.labeled { width: auto; height: auto; padding: 7px 12px; display: inline-flex; align-items: center; gap: 6px; color: var(--ink); font-size: 12px; font-weight: 700; white-space: nowrap; }
-.icon-btn.labeled:hover { background: var(--field-bg); }
-.icon-btn.labeled.spinning { color: var(--ink); }
+.icon-btn.spinning { color: var(--required); }
+.icon-btn.spinning .icon-spin-target { display: inline-block; animation: spin 0.8s linear infinite; }
+/* Modifier for the thread-detail action row (Edit/Forward/Recall/Delete/
+   Refresh) — icon-only .icon-btn is a fixed 32x32 square elsewhere (lock
+   toggle, etc.), but CS agents asked for text labels here since the
+   icons alone weren't memorable enough. Overrides width to auto and lays
+   icon+text out horizontally; everywhere else keeps the plain square. */
+.icon-btn-labeled {
+  width: auto; height: 32px; padding: 0 12px; display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12.5px; font-weight: 700; white-space: nowrap;
+}
 @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
 .threads-topline { display: flex; align-items: center; justify-content: flex-end; gap: 14px; padding-right: 24px; }
@@ -1191,6 +1201,21 @@ h1 {
 }
 .field textarea { resize: vertical; min-height: 90px; }
 
+/* Withdraw Issue: duplicate-TID guard */
+.tid-warning {
+  margin-left: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--required);
+}
+.tid-warning.checking { color: var(--ink-soft); font-weight: 500; font-style: italic; }
+
+.field input.field-error {
+  border-color: var(--required);
+  background: color-mix(in srgb, var(--field-bg) 85%, var(--required) 15%);
+}
+.field input.field-error:focus { border-color: var(--required); }
+
 /* Highlighted "what kind of issue" box */
 .field-emphasize {
   border: 1.5px solid var(--border);
@@ -1294,17 +1319,19 @@ h1 {
 .status-msg.ok { color: #1a9c6e; }
 .status-msg.err { color: #e0577a; }
 
-/* ---- Page transition: Home <-> Form navigation ("slide" style, matches
-   transition-preview.html option 2) ----
-   Home (index.html) applies these to .hub-layout (sidebar + main content,
-   header/brand-row stay put); Form (form.html) applies these to
-   .form-page (topbar/back-pill stay put). See app.js/index.html inline
-   script for the click-intercept + setTimeout(navigate) wiring — CSS
-   alone can't delay a real cross-page navigation. */
-.page-slide-out { animation: pageSlideOut 0.2s ease forwards; }
-.page-slide-in { animation: pageSlideIn 0.28s cubic-bezier(.22, .9, .34, 1) forwards; }
-@keyframes pageSlideOut { to { opacity: 0; transform: translateX(-24px) scale(0.98); } }
-@keyframes pageSlideIn { from { opacity: 0; transform: translateX(24px); } to { opacity: 1; transform: translateX(0); } }
+/* ---- Page transition ("morph": scale + fade), wired up by
+   assets/page-transition.js. Applied to whichever element on the page
+   carries [data-transition-root] — .hub-main on index.html, .form-card
+   on form.html. Entrance plays automatically (the *-in class is written
+   directly into the HTML so there's no flash before it kicks in); exit
+   is triggered by JS right before an internal link navigates away. */
+.page-morph-in { animation: pageMorphIn 0.3s cubic-bezier(.22, .9, .34, 1) both; }
+.page-morph-out { animation: pageMorphOut 0.22s ease forwards; }
+@keyframes pageMorphIn { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: scale(1); } }
+@keyframes pageMorphOut { to { opacity: 0; transform: scale(1.04); } }
+@media (prefers-reduced-motion: reduce) {
+  .page-morph-in, .page-morph-out { animation: none; }
+}
 
 /* ---- "Edit fields — syncs Telegram + Sheet" modal, threads.html only.
    Field rows themselves reuse the existing .field/label/input/select/
@@ -1335,10 +1362,9 @@ h1 {
 .edit-details-status.err { color: #e0577a; }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
-/* ---- "Forwarded from/to" reference cards (threads.html) — same idea as
-   the quoted "Original ticket" card already used in reply threads, just
-   for cross-Topic links instead of cross-message ones. Clickable, jumps
-   straight to the linked ticket via openThread(). */
+/* ---- "↗️ Forwarded from/to" reference cards, threads.html only —
+   clickable, jumps to the linked ticket (see [data-goto-thread]
+   wiring in wireConversationButtons()). */
 .forward-link-card {
   background: rgba(255, 255, 255, 0.03);
   border: 1px dashed var(--panel-border);
@@ -1351,22 +1377,3 @@ h1 {
 }
 .forward-link-card:hover { border-color: var(--accent-gold); background: rgba(255, 255, 255, 0.05); }
 .forward-link-time { color: var(--ink-soft); font-size: 11.5px; }
-
-/* ---- Withdraw Issue: duplicate-TID inline warning (public/assets/app.js) ---- */
-.tid-warning {
-  margin-left: 8px;
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--required);
-}
-.tid-warning.checking { color: var(--ink-soft); font-weight: 500; font-style: italic; }
-
-/* Withdraw Issue: TID input itself, not just the label warning — see
-   setTidState() in app.js, which is the single place that toggles this
-   class alongside the warning text and Submit's disabled state, so all
-   three always agree with each other. */
-.field input.field-error {
-  border-color: var(--required);
-  background: color-mix(in srgb, var(--field-bg) 85%, var(--required) 15%);
-}
-.field input.field-error:focus { border-color: var(--required); }

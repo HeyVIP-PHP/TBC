@@ -57,7 +57,23 @@ export async function onRequestPost({ request, env }) {
 async function handleUpdate(env, update) {
   if (!env.THREADS_KV) return;
   const msg = update.message;
-  if (!msg || msg.from?.is_bot) return;
+  if (!msg) return;
+  // This used to reject ANY bot account's message (`msg.from?.is_bot`),
+  // meant to stop our OWN bot's outgoing sends from looping back in as a
+  // fake "reply" — but Telegram's webhook never actually delivers a
+  // bot's own sendMessage/sendPhoto calls back to itself as an incoming
+  // update in the first place, so that filter was never doing the job it
+  // was meant for. What it WAS doing, as a side effect, was silently
+  // dropping every reply from any OTHER legitimate bot in the group
+  // (e.g. an internal automation bot posting "✅ DONE") — those never
+  // showed up here even though they're genuinely useful replies. Fixed
+  // to only ignore messages that come from OUR OWN bot specifically —
+  // a bot's numeric Telegram user id is the part of its token before
+  // the ":" (e.g. "123456789:AbC..." → id 123456789), so this needs no
+  // extra API call to determine. Kept as a defensive check (harmless
+  // either way, given the reasoning above) rather than removed outright.
+  const ownBotId = (env.TELEGRAM_BOT_TOKEN || "").split(":")[0];
+  if (ownBotId && String(msg.from?.id) === ownBotId) return;
   const hasContent = msg.text || msg.caption || msg.photo || msg.document || msg.video || msg.voice || msg.sticker;
   if (!hasContent) return; // Nothing worth recording (join/leave/pin service messages, etc.)
 

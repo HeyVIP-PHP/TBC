@@ -238,7 +238,19 @@ function columnLetter(index) {
  * trailing number, keeping the same prefix and zero-padding width.
  * "BVXXXBB1019" -> "BVXXXBB1020". Used for the TID "generate next" button.
  */
-export async function getNextSequenceValue(env, sheetId, tab, column) {
+/**
+ * `desiredPrefix`, if given, overrides whatever prefix the matched row
+ * happens to have — needed when several different prefixes share one
+ * column (e.g. Betjili's 3 promotions all writing TIDs into the same "BJ"
+ * tab: "BJLPHPB003" and "BJLPHPF002" and "BJLPHPA001" interleaved in
+ * whatever order they were submitted). The NUMBER always comes from the
+ * highest one found anywhere in the column regardless of its prefix —
+ * only the returned prefix changes based on what's being generated for.
+ * Without `desiredPrefix`, falls back to the old behavior (reuse
+ * whichever prefix the highest-numbered row had) — still correct for a
+ * tab that only ever has one prefix in it.
+ */
+export async function getNextSequenceValue(env, sheetId, tab, column, desiredPrefix) {
   const token = await getAccessToken(env);
   const range = `${tab}!${column}2:${column}100000`;
   const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(range)}`;
@@ -249,20 +261,30 @@ export async function getNextSequenceValue(env, sheetId, tab, column) {
 
   let lastValue = null;
   let lastRowNumber = 1; // header row
+  let maxNum = null;
+  let maxDigits = 0;
+  let maxPrefix = "";
   rows.forEach((row, i) => {
-    if (row[0]) {
-      lastValue = row[0];
-      lastRowNumber = i + 2; // range starts at row 2
+    if (!row[0]) return;
+    lastValue = row[0];
+    lastRowNumber = i + 2; // range starts at row 2
+    const match = String(row[0]).match(/^(.*?)(\d+)$/);
+    if (!match) return;
+    const [, prefix, numStr] = match;
+    const n = parseInt(numStr, 10);
+    // Ties keep the widest digit count seen, so zero-padding never shrinks.
+    if (maxNum === null || n > maxNum || (n === maxNum && numStr.length > maxDigits)) {
+      maxNum = n;
+      maxDigits = numStr.length;
+      maxPrefix = prefix;
     }
   });
 
   if (!lastValue) return { next: null, lastRowNumber, error: "No existing rows found to base the next value on." };
+  if (maxNum === null) return { next: null, lastRowNumber, error: `Could not find a trailing number in "${lastValue}".` };
 
-  const match = lastValue.match(/^(.*?)(\d+)$/);
-  if (!match) return { next: null, lastRowNumber, error: `Could not find a trailing number in "${lastValue}".` };
-
-  const [, prefix, numStr] = match;
-  const nextNum = (parseInt(numStr, 10) + 1).toString().padStart(numStr.length, "0");
+  const nextNum = (maxNum + 1).toString().padStart(maxDigits, "0");
+  const prefix = desiredPrefix != null ? desiredPrefix : maxPrefix;
   return { next: `${prefix}${nextNum}`, lastRowNumber, previous: lastValue };
 }
 
