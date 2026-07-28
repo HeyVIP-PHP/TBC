@@ -4,32 +4,37 @@
  *     Requires rank >= senior (Senior needs this to pick a target for
  *     assisted password resets). Owner accounts are always omitted,
  *     except an owner viewing the list sees their own row.
- *   POST { action:"save", username, password?, role?, officeId?, allowedBrands?, allowedModules?, allowedAdminSections?, canManageAdminAccess?, fullName?, pid? }
- *     What's allowed depends on the caller's rank AND what's actually
- *     changing — see the permission matrix below. Any field omitted from
- *     the body keeps its existing value (saveAccount uses patch/merge
- *     semantics). role:"owner" is rejected outright — see
- *     OWNER_ROLE_SETUP.md for the only way to actually get an owner
- *     account (a direct KV write, not through this endpoint at all).
+ *   POST { action:"save", username, password?, role?, officeId?, allowedBrands?, allowedModules?, allowedAdminSections?, adminSectionEditAccess?, canManageAdminAccess?, fullName?, pid? }
+ *     What's allowed depends on the caller's Can-Edit("agentProfile")
+ *     status AND what's actually changing — see the permission matrix
+ *     below. Any field omitted from the body keeps its existing value
+ *     (saveAccount uses patch/merge semantics). role:"owner" is rejected
+ *     outright — see OWNER_ROLE_SETUP.md for the only way to actually get
+ *     an owner account (a direct KV write, not through this endpoint at
+ *     all).
  *
- *     allowedAdminSections / canManageAdminAccess ("Account Management
- *     Access", see canSeeAdminSection() in _shared/accounts.js) have
- *     their OWN rules, separate from the role/office/brands/modules
- *     matrix below:
+ *     allowedAdminSections / adminSectionEditAccess / canManageAdminAccess
+ *     ("Account Management Access", see canSeeAdminSection() /
+ *     canEditAdminSection() in _shared/accounts.js) have their OWN rules,
+ *     separate from the role/office/brands/modules matrix below:
  *       - canManageAdminAccess can ONLY ever be changed by the Owner.
- *       - allowedAdminSections can be changed by the Owner (any target),
- *         or by anyone with canManageAdminAccess:true — but only for a
- *         target ranked strictly below them, same as everything else
- *         (they can't touch their own allowedAdminSections).
+ *       - allowedAdminSections / adminSectionEditAccess can be changed by
+ *         the Owner (any target), or by anyone with
+ *         canManageAdminAccess:true — but only for a target ranked
+ *         strictly below them, same as everything else (they can't touch
+ *         their own allowedAdminSections/adminSectionEditAccess).
  *   POST { action:"delete", username }   -> requires rank >= admin, and
  *     scoped the same way as create/reset below.
- *   POST { action:"lock"|"unlock", username, reason? } -> rank >=
- *     superadmin AND strictly above the target's rank (so SuperAdmins
- *     can no longer lock each other — only Owner can lock a SuperAdmin).
- *     Manual override in either direction for the auto-lock feature in
- *     api/auth/login.js (5 consecutive wrong passwords, or 5 different
- *     unrecognized IPs within an hour, both lock the account
- *     automatically) — see that file's header for the full writeup.
+ *   POST { action:"lock"|"unlock", username, reason? } -> requires
+ *     Can-Edit on "agentProfile" (see canEditAdminSection() — this
+ *     COMPLETELY REPLACES the old rank>=superadmin floor, explicit
+ *     business-owner decision) AND strictly outranking the target (so
+ *     same-rank accounts still can't lock each other regardless of who
+ *     has Can-Edit). Manual override in either direction for the
+ *     auto-lock feature in api/auth/login.js (5 consecutive wrong
+ *     passwords, or 5 different unrecognized IPs within an hour, both
+ *     lock the account automatically) — see that file's header for the
+ *     full writeup.
  *
  * Permission matrix (see OWNER_ROLE_SETUP.md for the full design
  * writeup) — ONE rule, not a hand-written allow-list per tier:
@@ -41,17 +46,23 @@
  *   governs creating an account with a given role, an assisted
  *   password-only reset targeting an existing account, deleting an
  *   account, and locking/unlocking an account (that last one ALSO still
- *   requires rank >= superadmin on top of outranking the target).
+ *   requires Can-Edit("agentProfile") on top of outranking the target).
  *   - Editing role / officeId / allowedBrands / allowedModules on an
- *     EXISTING account: rank >= superadmin AND outranks the target —
- *     EXCEPT the one-time SuperAdmin self-promotion bootstrap (an
- *     admin-or-above promoting THEIR OWN account to "superadmin", only
- *     while no superadmin exists anywhere yet).
- *   - Editing fullName / pid (profile fields) on an EXISTING account:
- *     rank >= admin, AND (it's their own account OR they outrank the
- *     target).
+ *     EXISTING account: Can-Edit("agentProfile") AND outranks the
+ *     target — NOT a rank floor anymore (was rank>=superadmin; explicit
+ *     business-owner decision to replace it with the per-account
+ *     Can-Edit checkbox, see canEditAdminSection()) — EXCEPT the
+ *     one-time SuperAdmin self-promotion bootstrap (an admin-or-above
+ *     promoting THEIR OWN account to "superadmin", only while no
+ *     superadmin exists anywhere yet).
+ *   - Editing fullName / pid (profile fields) on your OWN account: still
+ *     just requires rank >= admin (unrelated to Account Management
+ *     Access — basic self-service, unchanged).
+ *   - Editing fullName / pid on SOMEONE ELSE'S account: Can-Edit
+ *     ("agentProfile") AND outranks the target — same replacement as
+ *     role/office/brands/modules above.
  */
-import { listAccounts, saveAccount, deleteAccount, getAccount, authenticateStaff, anySuperAdminExists, setAccountLocked, ROLE_RANK, rankOf, canSeeAdminSection, canManageOthersAdminAccess } from "../../_shared/accounts.js";
+import { listAccounts, saveAccount, deleteAccount, getAccount, authenticateStaff, anySuperAdminExists, setAccountLocked, ROLE_RANK, rankOf, canSeeAdminSection, canEditAdminSection, canManageOthersAdminAccess } from "../../_shared/accounts.js";
 
 // actor can only ever touch a STRICTLY lower rank — same rank can't
 // manage same rank (two SuperAdmins can't touch each other; only Owner
@@ -140,6 +151,13 @@ async function handlePost({ request, env }) {
   if (body.action === "save" && body.allowedAdminSections !== undefined && !canManageOthersAdminAccess(auth.account)) {
     return json({ ok: false, error: "You don't have permission to change Account Management Access." }, 403);
   }
+  // Same delegation gate for the View/Edit sub-choice (adminSectionEditAccess)
+  // — granting Can-Edit on whitelistIp/tgRoutes/agentProfile is just as
+  // sensitive as granting visibility, so it needs the same "actor has
+  // delegation at all" check up front.
+  if (body.action === "save" && body.adminSectionEditAccess !== undefined && !canManageOthersAdminAccess(auth.account)) {
+    return json({ ok: false, error: "You don't have permission to change Account Management Access." }, 403);
+  }
 
   if (body.action === "save") {
     if (!body.username) return json({ ok: false, error: "Username is required." }, 400);
@@ -179,8 +197,17 @@ async function handlePost({ request, env }) {
         (body.allowedBrands !== undefined && JSON.stringify(body.allowedBrands) !== JSON.stringify(existingTarget.allowedBrands ?? [])) ||
         (body.allowedModules !== undefined && JSON.stringify(body.allowedModules) !== JSON.stringify(existingTarget.allowedModules ?? "all"));
       const adminSectionsChanging = body.allowedAdminSections !== undefined && JSON.stringify(body.allowedAdminSections) !== JSON.stringify(existingTarget.allowedAdminSections ?? []);
+      const adminSectionEditAccessChanging = body.adminSectionEditAccess !== undefined && JSON.stringify(body.adminSectionEditAccess) !== JSON.stringify(existingTarget.adminSectionEditAccess ?? []);
       const passwordChanging = !!body.password;
 
+      // roleChanging/accessChanging (role, office, brands, Topic Access)
+      // now gated by canEditAdminSection(..., "agentProfile") instead of
+      // a hard rank>=superadmin floor — Can-Edit on Agent Profile is a
+      // per-account grant the Owner controls directly (see
+      // EDITABLE_ADMIN_SECTIONS / canEditAdminSection() in
+      // _shared/accounts.js), NOT tied to SuperAdmin rank anymore. The
+      // "must strictly outrank the target" rule (canManage) is untouched
+      // — that's a separate, still-active protection.
       if (roleChanging || accessChanging) {
         const isSelfPromotionToSuperAdmin =
           isSelf &&
@@ -189,17 +216,18 @@ async function handlePost({ request, env }) {
           actorRank >= ROLE_RANK.admin;
         const superAdminAlreadyExists = await anySuperAdminExists(env);
 
-        const hasAuthority = actorRank >= ROLE_RANK.superadmin && canManage(actorRank, targetRank);
+        const hasAuthority = canEditAdminSection(auth.account, "agentProfile") && canManage(actorRank, targetRank);
         if (!hasAuthority && !(isSelfPromotionToSuperAdmin && !superAdminAlreadyExists)) {
           return json({ ok: false, error: "You can only change role, office, or access for accounts ranked below your own." }, 403);
         }
       }
-      // allowedAdminSections has its own authority rule (checked for
-      // "does the actor have delegation at all" further up already) — here
-      // we only need the per-TARGET half: the Owner can touch anyone, a
-      // delegated non-Owner can only touch a strictly-lower-ranked target
-      // (never themselves — canManage(x,x) is false).
-      if (adminSectionsChanging && auth.account?.role !== "owner" && !canManage(actorRank, targetRank)) {
+      // allowedAdminSections/adminSectionEditAccess have their own
+      // authority rule (checked for "does the actor have delegation at
+      // all" further up already) — here we only need the per-TARGET
+      // half: the Owner can touch anyone, a delegated non-Owner can only
+      // touch a strictly-lower-ranked target (never themselves —
+      // canManage(x,x) is false).
+      if ((adminSectionsChanging || adminSectionEditAccessChanging) && auth.account?.role !== "owner" && !canManage(actorRank, targetRank)) {
         return json({ ok: false, error: "You can only change Account Management Access for accounts ranked below your own." }, 403);
       }
       // Agent Profile edits targeting someone ELSE (not the actor's own
@@ -209,8 +237,18 @@ async function handlePost({ request, env }) {
       if ((profileChanging || roleChanging || accessChanging) && !isSelf && !canSeeAdminSection(auth.account, "agentProfile")) {
         return json({ ok: false, error: "You don't have access to Agent Profile." }, 403);
       }
-      if (profileChanging && !(actorRank >= ROLE_RANK.admin && (isSelf || canManage(actorRank, targetRank)))) {
-        return json({ ok: false, error: "You can only edit profile fields for your own account, or accounts ranked below your own." }, 403);
+      // Editing your OWN fullName/pid still just needs the pre-existing
+      // admin-rank floor (unrelated to the Account Management Access
+      // system — this is basic self-service, not an admin action).
+      // Editing SOMEONE ELSE'S profile fields now requires Can-Edit on
+      // "agentProfile" (not rank), same replacement as roleChanging/
+      // accessChanging above, plus still needing to outrank the target.
+      if (profileChanging) {
+        const selfOk = isSelf && actorRank >= ROLE_RANK.admin;
+        const othersOk = !isSelf && canEditAdminSection(auth.account, "agentProfile") && canManage(actorRank, targetRank);
+        if (!selfOk && !othersOk) {
+          return json({ ok: false, error: "You can only edit profile fields for your own account, or accounts ranked below your own." }, 403);
+        }
       }
       if (passwordChanging && !roleChanging && !accessChanging) {
         // Password-only change on someone else's account (an assisted reset).
@@ -230,6 +268,7 @@ async function handlePost({ request, env }) {
         allowedBrands: body.allowedBrands !== undefined ? body.allowedBrands : undefined,
         allowedModules: body.allowedModules !== undefined ? body.allowedModules : undefined,
         allowedAdminSections: body.allowedAdminSections !== undefined ? body.allowedAdminSections : undefined,
+        adminSectionEditAccess: body.adminSectionEditAccess !== undefined ? body.adminSectionEditAccess : undefined,
         canManageAdminAccess: body.canManageAdminAccess !== undefined ? body.canManageAdminAccess : undefined,
         fullName: body.fullName !== undefined ? body.fullName : undefined,
         pid: body.pid !== undefined ? body.pid : undefined,
@@ -253,18 +292,20 @@ async function handlePost({ request, env }) {
   }
 
   if (body.action === "lock" || body.action === "unlock") {
-    // Manual lock/unlock — rank >= superadmin AND must outrank the
-    // target (so two SuperAdmins can no longer lock each other — that
-    // was a real gap before Owner existed; only Owner can lock a
-    // SuperAdmin now). Requested directly by the business owner
-    // alongside the auto-lock triggers in api/auth/login.js — see that
-    // file for what actually causes an automatic lock; this is just the
-    // manual override either direction.
+    // Manual lock/unlock — Can-Edit on "agentProfile" (see
+    // canEditAdminSection() in _shared/accounts.js — replaces the old
+    // rank>=superadmin floor, same as roleChanging/accessChanging
+    // above) AND must outrank the target (so two accounts of equal rank
+    // still can't lock each other — only someone who genuinely outranks
+    // the target can, regardless of who has Can-Edit). Requested
+    // directly by the business owner alongside the auto-lock triggers in
+    // api/auth/login.js — see that file for what actually causes an
+    // automatic lock; this is just the manual override either direction.
     if (!body.username) return json({ ok: false, error: "Missing username." }, 400);
     const target = await getAccount(env, body.username);
     if (isHiddenTarget(target, actorRank)) return json({ ok: false, error: "Account not found." }, 404);
     if (!target) return json({ ok: false, error: "Account not found." }, 404);
-    if (!(actorRank >= ROLE_RANK.superadmin && canManage(actorRank, rankOf(target.role)))) {
+    if (!(canEditAdminSection(auth.account, "agentProfile") && canManage(actorRank, rankOf(target.role)))) {
       return json({ ok: false, error: "You can only lock or unlock accounts ranked below your own." }, 403);
     }
     const locked = body.action === "lock";

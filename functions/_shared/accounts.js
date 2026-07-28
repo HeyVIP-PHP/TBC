@@ -296,7 +296,7 @@ function stripSecret(account) {
 // `passwordChangedBy` is only meaningful when `password` is also given —
 // the username of whoever triggered the change (their own, for
 // self-service; the admin's, for an admin-driven reset).
-export async function saveAccount(env, { username, password, passwordChangedBy, role, officeId, allowedBrands, allowedModules, allowedAdminSections, canManageAdminAccess, fullName, pid }) {
+export async function saveAccount(env, { username, password, passwordChangedBy, role, officeId, allowedBrands, allowedModules, allowedAdminSections, adminSectionEditAccess, canManageAdminAccess, fullName, pid }) {
   const key = username.toLowerCase();
   const existing = await getAccount(env, key);
   let salt = existing?.salt;
@@ -321,6 +321,27 @@ export async function saveAccount(env, { username, password, passwordChangedBy, 
   }
   if (!salt || !hash) throw new Error("A password is required for a new account.");
 
+  // Resolved role for THIS save, computed once so both the `role` field
+  // below and the adminSectionEditAccess default (right after it) agree
+  // on the same value — see ASSIGNABLE_ROLES note below for why "owner"
+  // can never come out of this.
+  const finalRole = role !== undefined ? (ASSIGNABLE_ROLES.includes(role) ? role : (existing?.role || "agent")) : (existing?.role || "agent");
+
+  // Default Can-Edit set for a NEW account, or any pre-existing account
+  // that has never had adminSectionEditAccess explicitly touched yet —
+  // mirrors what rank ALONE used to determine before View/Edit became a
+  // per-account Owner choice: SuperAdmin+ could edit whitelistIp/
+  // tgRoutes/agentProfile outright, everyone else was view-only (or, for
+  // tgRoutes, couldn't see it at all — that's a separate gate via
+  // allowedAdminSections, untouched here). This exists purely so
+  // switching this feature on doesn't silently downgrade every existing
+  // SuperAdmin to view-only the moment it ships — the Owner doesn't have
+  // to manually re-grant Can-Edit to accounts that already effectively
+  // had it. The instant the Owner explicitly sets this field (even to an
+  // empty array, revoking everything), that explicit value wins forever
+  // after — this default only ever fills in an untouched field.
+  const defaultAdminSectionEditAccess = rankOf(finalRole) >= ROLE_RANK.superadmin ? "all" : [];
+
   const account = {
     username: key,
     salt,
@@ -334,7 +355,7 @@ export async function saveAccount(env, { username, password, passwordChangedBy, 
     // (including functions/api/admin/accounts.js) also checks earlier and
     // rejects role:"owner" outright, but THIS is the line that makes it
     // structurally impossible even if some future caller forgets to.
-    role: role !== undefined ? (ASSIGNABLE_ROLES.includes(role) ? role : (existing?.role || "agent")) : (existing?.role || "agent"),
+    role: finalRole,
     officeId: officeId !== undefined ? (officeId || null) : (existing?.officeId ?? null),
     allowedBrands: allowedBrands !== undefined
       ? (allowedBrands === "all" ? "all" : (Array.isArray(allowedBrands) ? allowedBrands : []))
@@ -357,6 +378,14 @@ export async function saveAccount(env, { username, password, passwordChangedBy, 
     allowedAdminSections: allowedAdminSections !== undefined
       ? (allowedAdminSections === "all" ? "all" : (Array.isArray(allowedAdminSections) ? allowedAdminSections : []))
       : (existing?.allowedAdminSections ?? []),
+    // View-vs-Edit for whitelistIp/tgRoutes/agentProfile (see
+    // EDITABLE_ADMIN_SECTIONS/canEditAdminSection() above). Explicit
+    // values always win; an untouched field falls back to
+    // defaultAdminSectionEditAccess (rank-based) computed above, NOT to
+    // a flat [] — see that comment for why.
+    adminSectionEditAccess: adminSectionEditAccess !== undefined
+      ? (adminSectionEditAccess === "all" ? "all" : (Array.isArray(adminSectionEditAccess) ? adminSectionEditAccess : []))
+      : (existing?.adminSectionEditAccess !== undefined ? existing.adminSectionEditAccess : defaultAdminSectionEditAccess),
     // Whether this account can edit OTHER accounts' allowedAdminSections.
     // Only ever set true by the Owner — see canManageOthersAdminAccess()
     // and the server-side guard in functions/api/admin/accounts.js (this
@@ -543,6 +572,41 @@ export function canSeeAdminSection(account, sectionId) {
   if (account.role === "owner") return true;
   if (account.allowedAdminSections === "all") return true;
   return Array.isArray(account.allowedAdminSections) && account.allowedAdminSections.includes(sectionId);
+}
+
+// View-vs-Edit split, for the 3 sections where "seeing it" and "changing
+// it" are meaningfully different actions (whitelistIp: seeing the IP
+// list vs adding/removing IPs; tgRoutes: seeing routing vs changing
+// where tickets deliver; agentProfile: seeing another account's details
+// vs actually editing role/office/brands/lock state). "createAccount"
+// has no view-only mode — creating an account IS the whole action — so
+// it's deliberately excluded from this list and untouched by
+// canEditAdminSection() below.
+//
+// DESIGN DECISION (explicit business-owner call, replacing the earlier
+// rank-based split): this COMPLETELY REPLACES the old "Admin can view,
+// only SuperAdmin can edit" rank floor for these 3 sections — an Admin-
+// rank account CAN be granted Can-Edit on e.g. whitelistIp now, and a
+// SuperAdmin CAN be left at View-only if the Owner doesn't grant edit.
+// Rank no longer plays any role in view-vs-edit for these sections; the
+// Owner's checkbox is the only gate. (The separate "actor must outrank
+// the TARGET account" rule for agentProfile edits — e.g. can't edit a
+// fellow SuperAdmin's role — is a different, still-active protection;
+// see functions/api/admin/accounts.js.)
+export const EDITABLE_ADMIN_SECTIONS = ["whitelistIp", "tgRoutes", "agentProfile"];
+
+// Whether `account` can EDIT (not just view) a given section. Requires
+// view access first (can't edit something you can't even see), then
+// checks the separate `adminSectionEditAccess` field — same "all" | array
+// | deny-by-default shape as allowedAdminSections, and set only by the
+// Owner or a delegated canManageAdminAccess:true account, exactly like
+// allowedAdminSections (see functions/api/admin/accounts.js).
+export function canEditAdminSection(account, sectionId) {
+  if (!account) return true; // bootstrap mode
+  if (account.role === "owner") return true;
+  if (!canSeeAdminSection(account, sectionId)) return false;
+  if (account.adminSectionEditAccess === "all") return true;
+  return Array.isArray(account.adminSectionEditAccess) && account.adminSectionEditAccess.includes(sectionId);
 }
 
 // Whether `account` is allowed to EDIT another account's

@@ -189,7 +189,7 @@ async function handleLogin({ request, env, waitUntil }) {
   return json({
     ok: true,
     token,
-    account: { username: account.username, role: account.role, allowedBrands: account.allowedBrands, allowedModules: account.allowedModules, allowedAdminSections: account.allowedAdminSections, canManageAdminAccess: account.canManageAdminAccess, officeId: account.officeId },
+    account: { username: account.username, role: account.role, allowedBrands: account.allowedBrands, allowedModules: account.allowedModules, allowedAdminSections: account.allowedAdminSections, adminSectionEditAccess: account.adminSectionEditAccess, canManageAdminAccess: account.canManageAdminAccess, officeId: account.officeId },
   });
 }
 

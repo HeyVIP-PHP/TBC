@@ -8,22 +8,27 @@
  *        this page); `false` means it's still showing the hardcoded
  *        default from _shared/routing.js. Also includes `securityAlerts`
  *        (see below) — same shape, but not tied to any brand.
- *     SuperAdmin-only.
+ *     Gated purely by the "tgRoutes" Account Management Access section —
+ *     rank plays NO role here anymore (explicit business-owner decision;
+ *     this used to be SuperAdmin-only with no view tier at all — now an
+ *     account of any rank can be granted View-only via the checkbox
+ *     alone, see canSeeAdminSection() in _shared/accounts.js).
  *
  *   POST { action:"save", brandId, moduleId, chatId, topicId } -> store an
  *     override in THREADS_KV. Takes effect on the very next form
- *     submission for that brand+module — no redeploy needed.
- *     SuperAdmin-only.
+ *     submission for that brand+module — no redeploy needed. Requires
+ *     Can-Edit on "tgRoutes" (see canEditAdminSection()) — same
+ *     replacement as GET, not a rank floor.
  *
  *   POST { action:"reset", brandId, moduleId } -> delete the override,
- *     reverting that brand+module back to the hardcoded default.
- *     SuperAdmin-only.
+ *     reverting that brand+module back to the hardcoded default. Same
+ *     Can-Edit gate as save.
  *
  * SECURITY ALERTS ROW — not a real brand/module, just reuses the exact
  * same KV-override machinery (_shared/routes.js) under the reserved
  * pseudo id pair brandId="_security", moduleId="alerts" (not a valid
- * brand id, so it can never collide with a real brand). Lets a
- * SuperAdmin change where the login-security Telegram alerts
+ * brand id, so it can never collide with a real brand). Lets anyone with
+ * Can-Edit on "tgRoutes" change where the login-security Telegram alerts
  * (functions/api/auth/login.js — unrecognized-IP warnings, account
  * auto-lock notices) go, live from the browser, instead of needing a
  * Cloudflare secret + redeploy. Falls back to the SECURITY_ALERTS_CHAT_ID
@@ -31,16 +36,11 @@
  * — same "KV override, env/code default underneath" layering as every
  * other row on this page.
  *
- * Same tier as Whitelist IP (functions/api/admin/offices.js) — but unlike
- * that endpoint, this one is SuperAdmin-only for GET too, not
- * Admin-view/SuperAdmin-edit, since routing controls where every ticket
- * actually gets delivered.
- *
  * See functions/_shared/routes.js for the KV layer, and
  * functions/api/submit.js for where the override is actually consulted
  * at submission time.
  */
-import { authenticateStaff, ROLE_RANK, canSeeAdminSection } from "../../_shared/accounts.js";
+import { authenticateStaff, ROLE_RANK, canSeeAdminSection, canEditAdminSection } from "../../_shared/accounts.js";
 import { getAllRouteOverrides, saveRouteOverride, deleteRouteOverride, getRouteOverride } from "../../_shared/routes.js";
 import { BRANDS, MODULE_META } from "../../_shared/routing.js";
 
@@ -57,8 +57,13 @@ export async function onRequestGet(context) {
 
 async function handleGet({ request, env }) {
   if (!env.THREADS_KV) return json({ ok: false, error: "THREADS_KV is not bound yet." }, 500);
-  const auth = await authenticateStaff(request, env, ROLE_RANK.superadmin);
-  if (!auth.ok) return json({ ok: false, error: "SuperAdmin required." }, 403);
+  // Visibility is now purely the "tgRoutes" checkbox — this COMPLETELY
+  // REPLACES the old SuperAdmin-only floor (explicit business-owner
+  // decision, same change as Whitelist IP/Agent Profile). Base staff-
+  // auth floor is Senior (the lowest rank any of these 3 sections can
+  // ever be granted at — see public/index.html sidebar gating).
+  const auth = await authenticateStaff(request, env, ROLE_RANK.senior);
+  if (!auth.ok) return json({ ok: false, error: "Not authorized." }, 401);
   if (!canSeeAdminSection(auth.account, "tgRoutes")) return json({ ok: false, error: "You don't have access to TG Group / Channel." }, 403);
 
   const brandIds = Object.keys(BRANDS);
@@ -100,9 +105,12 @@ export async function onRequestPost(context) {
 
 async function handlePost({ request, env }) {
   if (!env.THREADS_KV) return json({ ok: false, error: "THREADS_KV is not bound yet." }, 500);
-  const auth = await authenticateStaff(request, env, ROLE_RANK.superadmin);
-  if (!auth.ok) return json({ ok: false, error: "SuperAdmin required." }, 403);
-  if (!canSeeAdminSection(auth.account, "tgRoutes")) return json({ ok: false, error: "You don't have access to TG Group / Channel." }, 403);
+  // Same rank-independent model as the GET above — saving/resetting a
+  // route now requires Can-Edit on "tgRoutes" (see canEditAdminSection()
+  // in _shared/accounts.js), not a rank floor.
+  const auth = await authenticateStaff(request, env, ROLE_RANK.senior);
+  if (!auth.ok) return json({ ok: false, error: "Not authorized." }, 401);
+  if (!canEditAdminSection(auth.account, "tgRoutes")) return json({ ok: false, error: "You don't have Can-Edit access to TG Group / Channel." }, 403);
 
   let body;
   try {

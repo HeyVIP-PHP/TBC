@@ -422,6 +422,21 @@ a { color: inherit; text-decoration: none; }
 }
 .agent-profile-module-check input[disabled] { cursor: not-allowed; }
 
+/* View-only / Can-Edit radio pair, rendered under whitelistIp/tgRoutes/
+   agentProfile checkboxes only (see EDITABLE_ADMIN_SECTIONS in
+   index.html) — indented under its parent checkbox, small/quiet since
+   it's a secondary choice. Disabled state (parent checkbox unchecked,
+   or viewer can't edit admin sections at all) just dims it rather than
+   hiding it, so the option is still visible even before it's usable. */
+.agent-profile-edit-level-row {
+  display: flex; align-items: center; gap: 14px; margin: 0 0 6px 26px;
+  font-size: 12px; color: var(--ink-soft);
+}
+.agent-profile-edit-level-row label { display: flex; align-items: center; gap: 5px; cursor: pointer; }
+.agent-profile-edit-level-row input[disabled] { cursor: not-allowed; }
+.agent-profile-edit-level-row input[disabled] + label,
+.agent-profile-edit-level-row:has(input[disabled]) { opacity: 0.55; }
+
 /* Collapsible section header — Topic access + Account management access
    share this exact toggle/chevron mechanic (see wireCollapse() in
    index.html). Collapsed by default; click to expand. */
