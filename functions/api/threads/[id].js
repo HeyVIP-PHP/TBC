@@ -253,7 +253,7 @@ async function handleThreadAction({ request, env, params }) {
     let sheetError = null;
     if (thread.sheetRef) {
       try {
-        const values = resolveColumnValues(thread.sheetRef.columns, { fieldMap, brand, reporter, screenshotLink, attachmentLinks: thread.attachmentLinks || [] });
+        const values = resolveColumnValues(thread.sheetRef.columns, { fieldMap, brand, reporter, screenshotLink, attachmentLinks: [] });
         await updateRowByColumns(env, thread.sheetRef.sheetId, thread.sheetRef.tab, thread.sheetRef.startColumn, thread.sheetRef.row, values);
         sheetSynced = true;
       } catch (e) {
@@ -270,14 +270,16 @@ async function handleThreadAction({ request, env, params }) {
     if (!env.TELEGRAM_BOT_TOKEN) return json({ ok: false, error: "Server is missing TELEGRAM_BOT_TOKEN." }, 500);
 
     const thread = existingThread;
-    // A ticket submitted (or forwarded — see functions/api/forward.js)
-    // with 2+ attachments becomes a Telegram album — one message_id PER
-    // photo, only the first one carrying the caption. This used to only
-    // ever delete thread.rootMessageId (the first/captioned one), so
-    // recalling a multi-photo ticket left every other photo sitting in
-    // the group forever. rootMessageIds (falls back to the single
-    // rootMessageId for tickets created before this existed) is every
-    // message_id in the original send — delete all of them.
+    // A ticket sent as a multi-photo Telegram album has one message_id
+    // PER PHOTO, only the first of which is `rootMessageId` — deleting
+    // just that one used to leave the rest of the album sitting in the
+    // group untouched. rootMessageIds (added alongside "Generate to
+    // another Topic") has every one of them; threads from before that
+    // existed fall back to the single rootMessageId, same as before.
+    // Deletes run in parallel and a FAILURE ON ANY ONE of them still
+    // fails the whole action (rather than silently reporting success
+    // while some photos remain) — an agent clicking Recall needs to
+    // know if it didn't fully work.
     const idsToDelete = thread.rootMessageIds && thread.rootMessageIds.length ? thread.rootMessageIds : [thread.rootMessageId];
     const results = await Promise.all(idsToDelete.map((mid) => callTelegram(env, "deleteMessage", { chat_id: thread.chatId, message_id: mid })));
     const firstFailure = results.find((r) => !r.ok);

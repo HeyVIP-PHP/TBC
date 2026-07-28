@@ -1,4 +1,4 @@
-import { PROMOTION_SHEET_CONFIG, PROMOTION_TID_PREFIX } from "../_shared/routing.js";
+import { PROMOTION_SHEET_CONFIG } from "../_shared/routing.js";
 import { getNextSequenceValue } from "../_shared/googleSheets.js";
 import { verifyRequest } from "../_shared/accounts.js";
 
@@ -33,8 +33,7 @@ async function handleNextTid({ request, env }) {
   }
 
   try {
-    const desiredPrefix = PROMOTION_TID_PREFIX[`${brandId}|${promotion}`];
-    const result = await getNextSequenceValue(env, config.sheetId, config.tab, config.tidColumn || config.startColumn, desiredPrefix);
+    const result = await getNextSequenceValue(env, config.sheetId, config.tab, config.tidColumn || config.startColumn);
     if (!result.next) {
       return json({ ok: false, error: result.error || "Could not determine the next value." }, 500);
     }

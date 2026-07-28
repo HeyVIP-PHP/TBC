@@ -8,8 +8,8 @@
 <script src="/assets/theme.js"></script>
 <script src="/assets/starfield.js" defer></script>
 <script src="/assets/authguard.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/twemoji.min.js"></script>
 <script src="/assets/schemas.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/twemoji.min.js"></script>
 </head>
 <body class="threads-page">
   <!-- Attachment lightbox — populated live by viewAttachment() below.
@@ -22,7 +22,7 @@
   <header class="topbar">
     <div class="topbar-left">
       <img src="/assets/img/logo.webp" alt="HeyVIP" class="logo-img" />
-      <span class="wordmark">PHP CS TEAM - TBC</span>
+      <span class="wordmark">PKR CS TEAM - TBC</span>
     </div>
     <div class="topbar-right">
       <span class="clock" id="liveClock"></span>
@@ -87,6 +87,9 @@
       // section to an agent/senior who'd get nothing useful out of it.
       // Rank-based (not a literal "admin" string match) so SuperAdmin
       // sees it too — matches functions/_shared/accounts.js ROLE_RANK.
+      // Includes "owner" (2026-07) for the same reason described in
+      // index.html's copy of this same constant — otherwise an Owner
+      // session would silently compute as rank 0 here via `?? 0` below.
       const ROLE_RANK = { agent: 0, senior: 1, admin: 2, superadmin: 3, owner: 4 };
       const isAdmin = (ROLE_RANK[auth.role] ?? 0) >= ROLE_RANK.admin;
       document.getElementById("recallSection").style.display = isAdmin ? "" : "none";
@@ -394,6 +397,9 @@
       }
     }
 
+    // The header bar only (icon/title/status/action buttons) — this is
+    // the part that stays visually frozen at the top of the panel,
+    // never scrolls, regardless of ticket detail or conversation length.
     function buildHeaderHTML(t) {
       return `
         <div class="thread-detail-header">
@@ -403,24 +409,22 @@
           </div>
           <div class="thread-detail-actions">
             <button class="status-chip ${t.solved ? "solved" : "unsolved"}" id="solveBtn">${t.solved ? "✅ Solved" : "❌ Not Solved"}</button>
-            ${!t.rootRecalled && (!t.fieldMap || !t.brandId) ? '<button class="icon-btn icon-btn-labeled" id="editRootBtn" title="Edit the original Telegram message (plain text — this ticket predates field-level editing)">✏️ Edit</button>' : ""}
-            ${!t.rootRecalled && t.fieldMap && t.brandId ? '<button class="icon-btn icon-btn-labeled" id="editDetailsBtn" title="Edit fields — syncs the Telegram message + the Sheet row (if any)">✏️ Edit</button>' : ""}
-            ${t.fieldMap && t.brandId ? '<button class="icon-btn icon-btn-labeled" id="forwardBtn" title="Generate a new ticket in another Topic, pre-filled from this one">↗️ Forward</button>' : ""}
-            ${!t.rootRecalled ? '<button class="icon-btn icon-btn-labeled" id="recallRootBtn" title="Recall (delete) the original Telegram message">↩️ Recall</button>' : ""}
-            <button class="icon-btn icon-btn-labeled" id="deleteBtn" title="Delete this tracking record (Telegram + Sheet are untouched)">🗑 Delete</button>
-            <button class="icon-btn icon-btn-labeled" id="refreshBtn" title="Refresh this thread"><span class="icon-spin-target">🔄</span> Refresh</button>
+            ${!t.rootRecalled && (!t.fieldMap || !t.brandId) ? '<button class="icon-btn labeled" id="editRootBtn" title="Edit the original Telegram message (plain text — this ticket predates field-level editing)">✏️ Edit</button>' : ""}
+            ${!t.rootRecalled && t.fieldMap && t.brandId ? '<button class="icon-btn labeled" id="editDetailsBtn" title="Edit fields — syncs the Telegram message + the Sheet row (if any)">📊 Edit</button>' : ""}
+            ${t.fieldMap && t.brandId ? '<button class="icon-btn labeled" id="forwardBtn" title="Generate a new ticket in another Topic, pre-filled from this one">↗️ Forward</button>' : ""}
+            ${!t.rootRecalled ? '<button class="icon-btn labeled" id="recallRootBtn" title="Recall (delete) the original Telegram message">↩️ Recall</button>' : ""}
+            <button class="icon-btn labeled" id="deleteBtn" title="Delete this tracking record (Telegram + Sheet are untouched)">🗑 Delete</button>
+            <button class="icon-btn labeled" id="refreshBtn" title="Refresh this thread">🔄 Refresh</button>
           </div>
         </div>
         <hr class="thread-divider" />
       `;
     }
 
-    // Everything that USED to be fixed at the top along with the header
-    // (rootRecalled notice, the summary/attachments card) now scrolls
-    // together with the conversation instead — only the header itself
-    // (icon/title/Solved/✏️↩️🗑🔄) stays pinned. See renderDetail() and
-    // updateThreadContent(), which prepend this to the scroll area's
-    // innerHTML rather than the fixed one.
+    // The ticket detail card (recalled notice + summary/rootText +
+    // attachments) — this now scrolls together with the conversation
+    // instead of staying pinned, since only the header bar above should
+    // stay frozen.
     function buildSummaryHTML(t) {
       return `
         ${t.rootRecalled ? `
@@ -438,17 +442,13 @@
           // undefined for older ones, so this cleanly renders nothing
           // rather than a broken button.
           const fileIds = t.attachmentFileIds || [];
-          const fileNames = t.attachmentNames || []; // parallel to fileIds — see attachmentNames comment in _shared/threads.js
           const attachmentButtons = fileIds.length ? `
             <div class="thread-summary-attachments">
-              ${fileIds.map((fid, i) => {
-                const name = fileNames[i] || `ticket-attachment-${i + 1}`;
-                return `
-                <div class="inline-attach-slot" data-attachment-file="${escapeAttr(fid)}" data-attachment-name="${escapeAttr(name)}">
+              ${fileIds.map((fid, i) => `
+                <div class="inline-attach-slot" data-attachment-file="${escapeAttr(fid)}" data-attachment-name="ticket-attachment-${i + 1}">
                   <div class="inline-attach-loading">Loading attachment…</div>
                 </div>
-              `;
-              }).join("")}
+              `).join("")}
             </div>` : "";
 
           if (t.rootEdited) {
@@ -539,6 +539,9 @@
     }
 
     function wireConversationButtons() {
+      document.querySelectorAll("[data-goto-thread]").forEach((card) => {
+        card.addEventListener("click", () => openThread(card.dataset.gotoThread));
+      });
       document.querySelectorAll("[data-edit-reply]").forEach((btn) => {
         btn.addEventListener("click", () => editReply(btn.dataset.editReply, btn.dataset.currentText));
       });
@@ -547,9 +550,6 @@
       });
       document.querySelectorAll("[data-reply-target]").forEach((btn) => {
         btn.addEventListener("click", () => setReplyTarget(btn.dataset.replyTarget, btn.dataset.replyFrom, btn.dataset.replyText));
-      });
-      document.querySelectorAll("[data-goto-thread]").forEach((card) => {
-        card.addEventListener("click", () => openThread(card.dataset.gotoThread));
       });
     }
 
@@ -877,31 +877,19 @@
       });
     }
 
-    async function recallRoot() {
-      if (!confirm("Recall the original ticket message from Telegram? This removes it from the group. Your tracking record, the Sheet row, and this conversation stay.")) return;
-      const res = await postAction({ action: "recallRoot" });
-      if (!res.ok) return alert(res.error || "Recall failed.");
-      selectedThread = res.thread;
-      updateThreadContent(selectedThread);
-      patchLocalThread(selectedThread);
-      loadList();
-    }
-
-    // "↗️ Generate to another Topic" — creates a brand-new ticket in a
-    // DIFFERENT module, pre-filled from this one. Two-stage UI: pick the
-    // target Topic first (nothing else makes sense to show before that's
-    // chosen, since every module has different fields), THEN the fields
-    // for that module render below, pre-filled wherever the source
-    // ticket happens to have a same-named field (uid/number/email/etc —
-    // whatever matches), left blank otherwise. Brand is carried over
-    // read-only, never editable here — see functions/api/forward.js's
-    // header comment for why. Posts to a completely separate endpoint
-    // (/api/forward), not postAction()'s /api/threads/<id> — this
-    // creates an unrelated SECOND thread, it doesn't modify this one.
+    // "Generate to another Topic" (forwarding) — see functions/api/
+    // forward.js for the full write-up. Two-stage modal: pick a target
+    // Topic first, THEN its full field form appears, pre-filled
+    // wherever a field key happens to match something on the source
+    // ticket (UID/Number/Email/Remark, etc.) — everything ELSE (most
+    // often Issue Type) starts blank. Every field is editable, INCLUDING
+    // pre-filled ones (see point 1 of the design discussion — carried
+    // values might not be exactly right for the new Topic). Brand is the
+    // one exception: shown read-only, always inherited from the source
+    // ticket, never re-typed here.
     function openForwardModal() {
       const source = selectedThread;
       const otherModules = (window.MODULES || []).filter((m) => m.id !== source.module);
-      if (!otherModules.length) return alert("There are no other Topics to forward this to.");
 
       const overlay = document.createElement("div");
       overlay.className = "edit-details-overlay";
@@ -909,25 +897,22 @@
         <div class="edit-details-modal">
           <button type="button" class="modal-close-btn" id="fwdClose" title="Close" aria-label="Close">✕</button>
           <div class="edit-details-title">↗️ Generate to another Topic</div>
-          <div class="edit-details-sub">Creates a brand-new ticket, pre-filled from this one — sends to Telegram and (if that Topic logs to a Sheet) writes a row, same as submitting normally.</div>
-
-          <div class="edit-details-fields">
-            <div class="field">
-              <label>Target Topic <span class="required">*</span></label>
-              <select id="fwdModule">
-                <option value="">— Select a Topic —</option>
-                ${otherModules.map((m) => `<option value="${escapeAttr(m.id)}">${m.icon || ""} ${escapeHtml(m.name)}</option>`).join("")}
-              </select>
-            </div>
-            <div class="field"><label>Brand / Platform</label><input type="text" value="${escapeAttr(source.brand || "")}" disabled /></div>
-            <div class="field"><label>Reporter</label><input type="text" id="fwdReporter" value="${escapeAttr((getAuth() && getAuth().username) || "")}" autocomplete="off" /></div>
+          <div class="edit-details-sub">Creates a brand-new ticket in the Topic you pick — new Telegram message, new Sheet row (if that Topic logs to one) — pre-filled from this ticket, same as submitting it fresh.</div>
+          <div class="field">
+            <label>Send to Topic</label>
+            <select id="fwdModule">
+              <option value="">— Select a Topic —</option>
+              ${otherModules.map((m) => `<option value="${escapeAttr(m.id)}">${m.icon || ""} ${escapeHtml(m.name)}</option>`).join("")}
+            </select>
           </div>
-
           <div id="fwdFieldsWrap" style="display:none;">
+            <div class="field"><label>Brand</label><input type="text" value="${escapeAttr(source.brand)}" disabled /></div>
+            <div class="field"><label>Reporter / PIC <span class="required">*</span></label><input type="text" id="fwdReporter" value="${escapeAttr(getAuth()?.username || "")}" /></div>
             <div class="edit-details-fields" id="fwdFields"></div>
-
-            <div class="field">
-              <span class="attach-label">Additional Screenshots (optional)</span>
+            <p class="agent-profile-section-label" style="margin-top:4px;">Attachments carried over</p>
+            <div class="thread-summary-attachments" id="fwdCarriedAttachments"></div>
+            <div class="field" style="margin-top:10px;">
+              <label>Add another attachment (optional — e.g. this Topic's group needs a photo the original one didn't)</label>
               <div class="dropzone" id="fwdDropzone" tabindex="0">
                 <div class="dz-icon">📎</div>
                 <p class="dz-main">Click or drag files here</p>
@@ -938,64 +923,57 @@
               <input type="file" id="fwdNewFile" multiple hidden />
             </div>
           </div>
-
           <div class="edit-details-status" id="fwdStatus"></div>
           <div class="edit-details-actions">
-            <button type="button" class="icon-btn" id="fwdCancel" style="width:auto; height:auto; padding:14px 22px; font-size:14px; font-weight:800; display:flex; align-items:center; justify-content:center;">Cancel</button>
-            <button type="button" class="btn-submit" id="fwdSend" style="width:auto; padding:10px 22px;">Generate &amp; Send</button>
+            <button type="button" id="fwdCancel" style="width:auto; padding:14px 22px; font-size:14px; font-weight:800; border-radius:12px; border:1px solid var(--required); background:transparent; color:var(--required); cursor:pointer;">Cancel</button>
+            <button type="button" class="btn-submit" id="fwdSubmit" style="width:auto; padding:14px 22px;" disabled>Generate &amp; Send</button>
           </div>
         </div>
       `;
       document.body.appendChild(overlay);
 
-      function close() {
-        window.removeEventListener("paste", onPaste); // see the dropzone section below for why this matters
-        overlay.remove();
-      }
+      function close() { window.removeEventListener("paste", onWindowPaste); overlay.remove(); }
       overlay.querySelector("#fwdClose").addEventListener("click", close);
       overlay.querySelector("#fwdCancel").addEventListener("click", close);
       overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
 
-      // ---- Dynamic fields for whichever Topic gets picked ----
       const fieldsWrap = overlay.querySelector("#fwdFieldsWrap");
       const fieldsContainer = overlay.querySelector("#fwdFields");
-      let targetModule = null;
+      const submitBtn = overlay.querySelector("#fwdSubmit");
+      const statusEl = overlay.querySelector("#fwdStatus");
+      const newFileListEl = overlay.querySelector("#fwdFileList");
       let fieldEls = {};
+      let targetModule = null;
+      const newFiles = []; // File objects, converted to base64 only at submit time
 
-      function conditionMet(showIf) {
-        const conditions = Array.isArray(showIf) ? showIf : [showIf];
-        return conditions.every((c) => {
-          if (c.field === "brand") return c.oneOf.includes(source.brandId); // brand is fixed to the source ticket's own, never editable here
-          const driver = fieldEls[c.field];
-          return driver && c.oneOf.includes(driver.control.value);
-        });
-      }
-      function refreshVisibility() {
-        targetModule.fields.forEach((f) => {
-          if (!f.showIf) return;
-          fieldEls[f.key].wrap.style.display = conditionMet(f.showIf) ? "" : "none";
-        });
-      }
+      // Show the source ticket's own attachments as the "carried over"
+      // preview — reuses the EXACT SAME inline-attach-slot markup +
+      // loadInlineAttachments() the ticket detail view itself uses
+      // (defined below), not a re-implementation.
+      const carriedFileIds = source.attachmentFileIds || [];
+      const carriedWrap = overlay.querySelector("#fwdCarriedAttachments");
+      carriedWrap.innerHTML = carriedFileIds.length
+        ? carriedFileIds.map((fid, i) => `<div class="inline-attach-slot" data-attachment-file="${escapeAttr(fid)}" data-attachment-name="carried-${i + 1}"><div class="inline-attach-loading">Loading…</div></div>`).join("")
+        : `<p style="font-size:12.5px; color:var(--ink-soft); margin:4px 0 0;">This ticket has no attachments to carry over.</p>`;
+      loadInlineAttachments();
 
       overlay.querySelector("#fwdModule").addEventListener("change", (e) => {
-        const moduleId = e.target.value;
-        targetModule = otherModules.find((m) => m.id === moduleId) || null;
-        fieldsContainer.innerHTML = "";
+        targetModule = otherModules.find((m) => m.id === e.target.value) || null;
         fieldEls = {};
+        fieldsContainer.innerHTML = "";
         if (!targetModule) {
           fieldsWrap.style.display = "none";
+          submitBtn.disabled = true;
           return;
         }
         fieldsWrap.style.display = "";
+        submitBtn.disabled = false;
 
+        const sourceFieldMap = source.fieldMap || {};
         targetModule.fields.forEach((f) => {
           const wrap = document.createElement("div");
           wrap.className = "field";
-          // Pre-fill from the SOURCE ticket wherever the same field key
-          // exists there too (uid/number/email/username/etc, whatever
-          // this target module happens to share with the source one) —
-          // still fully editable, this is a starting point, not a lock.
-          const value = source.fieldMap && source.fieldMap[f.key] != null ? source.fieldMap[f.key] : "";
+          const value = sourceFieldMap[f.key] != null ? sourceFieldMap[f.key] : "";
           let controlHtml;
           if (f.type === "textarea") {
             controlHtml = `<textarea name="${escapeAttr(f.key)}">${escapeHtml(value)}</textarea>`;
@@ -1015,6 +993,23 @@
           fieldEls[f.key] = { wrap, control: wrap.querySelector("input,select,textarea") };
         });
 
+        // Same AND-of-conditions showIf logic openEditDetailsModal above
+        // uses — re-implemented locally here too, same reasoning (no
+        // brand-select/attachment/reporter concepts to entangle with).
+        function conditionMet(showIf) {
+          const conditions = Array.isArray(showIf) ? showIf : [showIf];
+          return conditions.every((c) => {
+            if (c.field === "brand") return c.oneOf.includes(source.brandId);
+            const driver = fieldEls[c.field];
+            return driver && c.oneOf.includes(driver.control.value);
+          });
+        }
+        function refreshVisibility() {
+          targetModule.fields.forEach((f) => {
+            if (!f.showIf) return;
+            fieldEls[f.key].wrap.style.display = conditionMet(f.showIf) ? "" : "none";
+          });
+        }
         targetModule.fields.forEach((f) => {
           if (fieldEls[f.key].control.tagName === "SELECT") {
             fieldEls[f.key].control.addEventListener("change", refreshVisibility);
@@ -1023,71 +1018,73 @@
         refreshVisibility();
       });
 
-      // ---- Dropzone for additional attachments — same click/drag/paste
-      // behavior as the main submission form (public/assets/app.js),
-      // just scoped to this modal's own file list instead of a page-load
-      // one. Max 3 / 20MB each, matching that form's own defaults (this
-      // modal doesn't know the TARGET module's own attachment limits
-      // ahead of time the way app.js does, since those aren't loaded
-      // until a Topic is picked — 3/20MB is a reasonable universal cap).
-      const dropzone = overlay.querySelector("#fwdDropzone");
-      const fileInput = overlay.querySelector("#fwdNewFile");
-      const fileListEl = overlay.querySelector("#fwdFileList");
-      const maxFiles = 3;
-      const maxSizeMB = 20;
-      let newFiles = [];
+      // Same dropzone behavior (click / drag&drop / paste, with a
+      // removable chip list) the submission form itself uses — see
+      // public/assets/app.js's own copy of this same logic. Re-
+      // implemented locally rather than shared since this one has to be
+      // scoped to just this modal (the paste listener in particular
+      // must NOT fire while some other part of the page has focus, and
+      // must be torn down again on close()).
+      const fwdDropzone = overlay.querySelector("#fwdDropzone");
+      const fwdFileInput = overlay.querySelector("#fwdNewFile");
+      const FWD_MAX_FILES = 3;
+      const FWD_MAX_SIZE_MB = 20;
 
-      function renderFileList() {
-        fileListEl.innerHTML = newFiles
+      function renderNewFileList() {
+        newFileListEl.innerHTML = newFiles
           .map((f, i) => `<div class="file-chip"><span class="name">${escapeHtml(f.name)}</span><button type="button" data-i="${i}">&times;</button></div>`)
           .join("");
-        fileListEl.querySelectorAll("button").forEach((btn) => {
+        newFileListEl.querySelectorAll("button").forEach((btn) => {
           btn.addEventListener("click", () => {
             newFiles.splice(Number(btn.dataset.i), 1);
-            renderFileList();
+            renderNewFileList();
           });
         });
       }
-      function addFiles(list) {
+
+      function addNewFiles(list) {
         const rejected = [];
         for (const f of list) {
-          if (newFiles.length >= maxFiles) break;
-          if (f.size > maxSizeMB * 1024 * 1024) {
+          if (newFiles.length >= FWD_MAX_FILES) break;
+          if (f.size > FWD_MAX_SIZE_MB * 1024 * 1024) {
             rejected.push(f.name);
             continue;
           }
           newFiles.push(f);
         }
-        renderFileList();
-        const statusEl = overlay.querySelector("#fwdStatus");
+        renderNewFileList();
         if (rejected.length) {
-          statusEl.textContent = `Skipped (over ${maxSizeMB}MB): ${rejected.join(", ")}`;
+          statusEl.textContent = `Skipped (over ${FWD_MAX_SIZE_MB}MB): ${rejected.join(", ")}`;
           statusEl.className = "edit-details-status err";
         }
       }
-      dropzone.addEventListener("click", () => fileInput.click());
-      dropzone.addEventListener("keydown", (e) => {
-        if (e.key === "Enter" || e.key === " ") fileInput.click();
+
+      fwdDropzone.addEventListener("click", () => fwdFileInput.click());
+      fwdDropzone.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") fwdFileInput.click();
       });
-      fileInput.addEventListener("change", () => addFiles(fileInput.files));
+      fwdFileInput.addEventListener("change", () => {
+        addNewFiles(fwdFileInput.files);
+        fwdFileInput.value = ""; // lets the same file (or more) be picked again
+      });
       ["dragenter", "dragover"].forEach((evt) =>
-        dropzone.addEventListener(evt, (e) => { e.preventDefault(); dropzone.classList.add("drag-over"); })
+        fwdDropzone.addEventListener(evt, (e) => { e.preventDefault(); fwdDropzone.classList.add("drag-over"); })
       );
       ["dragleave", "drop"].forEach((evt) =>
-        dropzone.addEventListener(evt, (e) => { e.preventDefault(); dropzone.classList.remove("drag-over"); })
+        fwdDropzone.addEventListener(evt, (e) => { e.preventDefault(); fwdDropzone.classList.remove("drag-over"); })
       );
-      dropzone.addEventListener("drop", (e) => addFiles(e.dataTransfer.files));
-      // Scoped to only fire while THIS modal is open — a page-global
-      // paste listener (like app.js's, which lives for the page's whole
-      // lifetime because the form IS the page) would otherwise keep
-      // intercepting paste anywhere on threads.html forever, including
-      // after this modal closes. Removed in close() above.
-      function onPaste(e) {
+      fwdDropzone.addEventListener("drop", (e) => addNewFiles(e.dataTransfer.files));
+
+      // Scoped to while THIS modal is open only — added here, removed
+      // again in close() below — so pasting elsewhere on the page (e.g.
+      // the reply box) is never intercepted by a modal that isn't even
+      // visible anymore.
+      function onWindowPaste(e) {
         const items = Array.from(e.clipboardData.items).filter((i) => i.kind === "file");
         if (!items.length) return;
-        addFiles(items.map((i) => i.getAsFile()).filter(Boolean));
+        addNewFiles(items.map((i) => i.getAsFile()).filter(Boolean));
       }
-      window.addEventListener("paste", onPaste);
+      window.addEventListener("paste", onWindowPaste);
 
       function fileToDataUrl(file) {
         return new Promise((resolve, reject) => {
@@ -1098,19 +1095,17 @@
         });
       }
 
-      overlay.querySelector("#fwdSend").addEventListener("click", async () => {
-        const statusEl = overlay.querySelector("#fwdStatus");
-        if (!targetModule) {
-          statusEl.textContent = "Pick a target Topic first.";
-          statusEl.className = "edit-details-status err";
-          return;
-        }
+      submitBtn.addEventListener("click", async () => {
+        if (!targetModule) return;
         const reporter = overlay.querySelector("#fwdReporter").value.trim();
         if (!reporter) {
-          statusEl.textContent = "Reporter can't be empty.";
+          statusEl.textContent = "Reporter / PIC is required.";
           statusEl.className = "edit-details-status err";
           return;
         }
+        const fields = targetModule.fields
+          .filter((f) => !f.showIf || fieldEls[f.key].wrap.style.display !== "none")
+          .map((f) => ({ key: f.key, label: f.label, value: (fieldEls[f.key].control.value || "").trim() }));
         const missingRequired = targetModule.fields.find((f) =>
           f.required && (!f.showIf || fieldEls[f.key].wrap.style.display !== "none") && !fieldEls[f.key].control.value.trim()
         );
@@ -1119,51 +1114,78 @@
           statusEl.className = "edit-details-status err";
           return;
         }
-
-        const fields = targetModule.fields
-          .filter((f) => !f.showIf || fieldEls[f.key].wrap.style.display !== "none")
-          .map((f) => ({ key: f.key, label: f.label, value: (fieldEls[f.key].control.value || "").trim() }));
         const fieldMap = Object.fromEntries(fields.map((f) => [f.key, f.value]));
 
-        const sendBtn = overlay.querySelector("#fwdSend");
-        sendBtn.disabled = true;
-        sendBtn.textContent = "Generating…";
+        submitBtn.disabled = true;
+        submitBtn.textContent = "Sending…";
         statusEl.textContent = "";
         statusEl.className = "edit-details-status";
 
-        const newAttachments = await Promise.all(
-          newFiles.map(async (f) => ({ name: f.name, type: f.type, dataUrl: await fileToDataUrl(f) }))
-        );
-
-        const res = await authFetch("/api/forward", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sourceThreadId: source.id, targetModule: targetModule.id, fields, fieldMap, reporter, newAttachments }),
-        }).then((r) => r.json());
-
-        if (!res.ok) {
-          statusEl.textContent = res.error || "Forwarding failed.";
+        let newAttachments;
+        try {
+          newAttachments = await Promise.all(newFiles.map(async (file) => ({
+            name: file.name, type: file.type, dataUrl: await fileToDataUrl(file),
+          })));
+        } catch {
+          statusEl.textContent = "Couldn't read one of the new attachments.";
           statusEl.className = "edit-details-status err";
-          sendBtn.disabled = false;
-          sendBtn.textContent = "Generate & Send";
+          submitBtn.disabled = false;
+          submitBtn.textContent = "Generate & Send";
           return;
         }
 
-        // Reflect the new backlink on THIS (source) ticket locally,
-        // without a full reload — matches the shape addForwardedToLink()
-        // actually saved server-side.
-        selectedThread.forwardedTo = [
-          ...(selectedThread.forwardedTo || []),
-          { threadId: res.thread.id, module: targetModule.id, moduleName: targetModule.name, title: res.thread.title, at: new Date().toISOString() },
-        ];
+        let res;
+        try {
+          const r = await authFetch("/api/forward", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ sourceThreadId: source.id, targetModule: targetModule.id, fields, fieldMap, reporter, newAttachments }),
+          });
+          res = await r.json();
+        } catch {
+          statusEl.textContent = "Network error — check your connection and try again.";
+          statusEl.className = "edit-details-status err";
+          submitBtn.disabled = false;
+          submitBtn.textContent = "Generate & Send";
+          return;
+        }
+
+        if (!res.ok) {
+          statusEl.textContent = res.error || "Forward failed.";
+          statusEl.className = "edit-details-status err";
+          submitBtn.disabled = false;
+          submitBtn.textContent = "Generate & Send";
+          return;
+        }
+        if (res.sheetAttempted && !res.sheetLogged) {
+          alert("Ticket was generated and sent to Telegram, but the Sheet row couldn't be written:\n" + (res.sheetError || "unknown error"));
+        }
+
+        // Reflect the new "↗️ Forwarded to..." reference on the ORIGINAL
+        // ticket immediately (matches what addForwardedToLink() just
+        // saved server-side) — patched locally rather than re-fetched,
+        // same pattern editRoot()/recallRoot() already use elsewhere on
+        // this page.
+        selectedThread = {
+          ...source,
+          forwardedTo: [...(source.forwardedTo || []), { threadId: res.thread.id, module: targetModule.id, moduleName: targetModule.name, title: res.thread.title, at: new Date().toISOString() }],
+        };
+        updateThreadContent(selectedThread);
         patchLocalThread(selectedThread);
         loadList();
-        if (res.sheetAttempted && !res.sheetLogged) {
-          alert("Sent to Telegram, but the Sheet write failed:\n" + (res.sheetError || "unknown error"));
-        }
-        window.removeEventListener("paste", onPaste);
-        openThread(res.thread.id); // jump straight to the newly-created ticket
+        close();
+        openThread(res.thread.id); // jump straight to the newly generated ticket
       });
+    }
+
+    async function recallRoot() {
+      if (!confirm("Recall the original ticket message from Telegram? This removes it from the group. Your tracking record, the Sheet row, and this conversation stay.")) return;
+      const res = await postAction({ action: "recallRoot" });
+      if (!res.ok) return alert(res.error || "Recall failed.");
+      selectedThread = res.thread;
+      updateThreadContent(selectedThread);
+      patchLocalThread(selectedThread);
+      loadList();
     }
 
     async function editReply(messageId, currentText) {
@@ -1206,6 +1228,13 @@
     }
 
     // ---- Attachment lightbox ----
+    //
+    // Fetches the real bytes live from /api/attachment/<fileId> only at
+    // the moment someone clicks — nothing is pre-fetched or cached
+    // beyond the browser's own in-memory object URL for as long as the
+    // lightbox stays open (revoked on close, see closeAttachLightbox()).
+    // Non-image files (PDF, etc.) just trigger a normal browser download
+    // instead of trying to preview inline.
     const attachLightbox = document.getElementById("attachLightbox");
     const attachLightboxBody = document.getElementById("attachLightboxBody");
 
@@ -1252,12 +1281,34 @@
         slot.setAttribute("data-filled", "1"); // mark now so a poll landing mid-fetch doesn't double-trigger
         getAttachmentUrl(fileId, name).then(({ url, type }) => {
           if (!document.body.contains(slot)) return; // a newer poll already replaced this DOM before we resolved
-          if (type.startsWith("image/")) {
-            slot.innerHTML = `<img src="${url}" alt="${escapeAttr(name)}" class="inline-attach-media" />`;
-          } else if (type.startsWith("video/")) {
+          if (type.startsWith("video/")) {
             slot.innerHTML = `<video src="${url}" controls class="inline-attach-media"></video>`;
+          } else if (type.startsWith("image/")) {
+            slot.innerHTML = `<img src="${url}" alt="${escapeAttr(name)}" class="inline-attach-media" />`;
           } else {
-            slot.innerHTML = `<a href="${url}" download="${escapeAttr(name)}" class="inline-attach-file">📎 ${escapeHtml(name)} — click to download</a>`;
+            // Content-Type couldn't be confirmed as image/video (common
+            // for ticket-level attachments — see the comment on the
+            // "ticket-attachment-N" placeholder name a few lines up,
+            // which has no real extension to guess from, and Telegram
+            // itself doesn't always set a specific Content-Type either).
+            // Rather than give up and show a download link for what
+            // might genuinely be a perfectly normal photo, optimistically
+            // try rendering it as an <img> anyway — a browser decodes
+            // <img> from the ACTUAL file bytes, not the declared MIME
+            // type, so this still displays correctly even when `type`
+            // was wrong/generic. Only truly falls back to the download
+            // link if the browser actually fails to decode it as an
+            // image (this file genuinely isn't one).
+            const img = document.createElement("img");
+            img.alt = name;
+            img.className = "inline-attach-media";
+            img.addEventListener("error", () => {
+              if (!document.body.contains(slot)) return;
+              slot.innerHTML = `<a href="${url}" download="${escapeAttr(name)}" class="inline-attach-file">📎 ${escapeHtml(name)} — click to download</a>`;
+            }, { once: true });
+            slot.innerHTML = "";
+            slot.appendChild(img);
+            img.src = url; // set last so the error listener above is already attached
           }
           // Clicking an inline image/video also opens the fullscreen
           // lightbox, for a closer look — small bonus on top of what
@@ -1276,21 +1327,33 @@
       attachLightboxBody.innerHTML = `<div class="attach-lightbox-status">Loading…</div>`;
       try {
         const { url, type } = await getAttachmentUrl(fileId, name);
-        if (type.startsWith("image/")) {
-          attachLightboxBody.innerHTML = `<img src="${url}" alt="${escapeAttr(name || "attachment")}" />`;
-        } else if (type.startsWith("video/")) {
+        if (type.startsWith("video/")) {
           attachLightboxBody.innerHTML = `<video src="${url}" controls autoplay playsinline></video>`;
+        } else if (type.startsWith("image/")) {
+          attachLightboxBody.innerHTML = `<img src="${url}" alt="${escapeAttr(name || "attachment")}" />`;
         } else {
-          // Not an image or video (PDF/doc/etc.) — hand it off as a
-          // normal download instead of pretending we can preview it
-          // inline.
-          const a = document.createElement("a");
-          a.href = url;
-          a.download = name || "attachment";
-          document.body.appendChild(a);
-          a.click();
-          a.remove();
-          attachLightboxBody.innerHTML = `<div class="attach-lightbox-status">Downloaded — this file type can't be previewed here.</div>`;
+          // Content-Type wasn't confirmed as image/video — same situation
+          // as loadInlineAttachments() above (see its comment on the
+          // "ticket-attachment-N" placeholder name having no real
+          // extension). Try rendering as an <img> anyway before assuming
+          // it's a genuinely non-previewable file — a browser decodes
+          // <img> from the actual bytes, not the declared MIME type.
+          const img = document.createElement("img");
+          img.alt = name || "attachment";
+          img.addEventListener("error", () => {
+            // Really isn't an image — hand it off as a normal download
+            // instead of pretending we can preview it inline.
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = name || "attachment";
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            attachLightboxBody.innerHTML = `<div class="attach-lightbox-status">Downloaded — this file type can't be previewed here.</div>`;
+          }, { once: true });
+          attachLightboxBody.innerHTML = "";
+          attachLightboxBody.appendChild(img);
+          img.src = url; // set last so the error listener above is already attached
         }
       } catch (e) {
         attachLightboxBody.innerHTML = `<div class="attach-lightbox-status attach-lightbox-error">${escapeHtml(String((e && e.message) || "Couldn't load this attachment."))}</div>`;

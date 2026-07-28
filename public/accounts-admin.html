@@ -64,7 +64,7 @@
   <header class="topbar">
     <div class="topbar-left">
       <img src="/assets/img/logo.webp" alt="HeyVIP" class="logo-img" />
-      <span class="wordmark">PHP CS TEAM - TBC</span>
+      <span class="wordmark">PKR CS TEAM - TBC</span>
     </div>
     <div class="topbar-right">
       <span class="clock" id="liveClock"></span>
@@ -259,7 +259,10 @@
         // SuperAdmin's role string is literally "superadmin", so a literal
         // compare here would lock SuperAdmin out of their own admin page.
         // Same class of bug threads.html's Recall Chat History section and
-        // /api/deletion-log both had; fixed here the same way.
+        // /api/deletion-log both had; fixed here the same way. Includes
+        // "owner" (2026-07) for the same reason — an Owner logging into
+        // THIS page needs to compute as admin-or-above too, not silently
+        // fall back to rank 0 via `?? 0` below.
         const ROLE_RANK = { agent: 0, senior: 1, admin: 2, superadmin: 3, owner: 4 };
         if ((ROLE_RANK[data.account.role] ?? 0) < ROLE_RANK.admin) { err.textContent = "This account isn't an admin."; err.style.display = "block"; return; }
         setAuth({ username: data.account.username, token: data.token, role: data.account.role, allowedBrands: data.account.allowedBrands, allowedModules: data.account.allowedModules });

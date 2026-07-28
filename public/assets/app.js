@@ -18,18 +18,16 @@
     return;
   }
 
-  // Topic Access — catches someone typing/bookmarking a form.html?module=...
-  // URL directly for a topic their account isn't allowed to use, since the
-  // Home page sidebar hiding it (see index.html) only stops the NORMAL
-  // click path, not a direct URL visit. This is still just the frontend
-  // half of the check — the real enforcement is server-side in
-  // functions/api/submit.js, which rejects the actual submission
-  // regardless of what this page does; this is purely so a blocked agent
-  // gets a clear message immediately instead of filling out a form only
-  // to have Submit fail at the very end.
+  // Real enforcement, not just hiding it from the sidebar — an agent
+  // scoped away from this Topic (account.allowedModules, see
+  // authguard.js's filterAllowedModules) who directly types/pastes this
+  // module's URL still gets blocked here, before the form even renders.
+  // submit.js has the actual server-side check that matters (this is
+  // just a friendlier "Not available" message instead of a raw 403 after
+  // filling out the whole form).
   if (window.AgentAuth && window.AgentAuth.filterAllowedModules([module]).length === 0) {
     titleEl.textContent = "Not available";
-    hintEl.textContent = "Your account doesn't have access to this topic. Contact a SuperAdmin if you think this is wrong.";
+    hintEl.textContent = "You don't have access to this Topic. Contact a SuperAdmin if you think this is a mistake.";
     formCard.querySelector("form").style.display = "none";
     return;
   }
@@ -103,57 +101,64 @@
   });
 
   // ---- Withdraw Issue: duplicate-TID guard ----
-  // Checks the brand's "Withdraw Issue" Sheet (not KV, which gets purged
-  // over time) for a TID that was already submitted. Runs onBlur (early
-  // warning) and again right before submit (final guard, in case the
-  // field was edited back to a flagged value without a fresh blur).
-  let tidDuplicateInfo = null; // { date, pic } when the current TID value is a duplicate, else null
-  let checkTidNow = null;      // only set for withdraw_issue; submit handler reads this
-  let tidCheckSeq = 0;         // guards against a stale response overwriting a newer one
-
+  // See functions/api/check-tid.js for the full write-up. Two check
+  // points: onBlur (early warning — see the listener below) and again
+  // right before actually submitting (final guard below, in the submit
+  // handler) — a fresh check right before submit covers the agent never
+  // blurring the field, or pasting a new value and hitting Submit
+  // without tabbing away first.
+  let tidDuplicateInfo = null; // { date, pic } while the CURRENT tid value is a known duplicate, else null
+  let checkTidNow = null; // set below only for the Withdraw Issue module; read by the submit handler further down
+  let tidCheckSeq = 0; // ignores a stale response if the agent kept typing/re-checking before an earlier check came back
   if (module.id === "withdraw_issue" && fieldEls.tid) {
     const tidLabel = fieldEls.tid.wrap.querySelector("label");
     const tidWarning = document.createElement("span");
     tidWarning.className = "tid-warning";
+    tidWarning.id = "tidWarning";
     tidLabel.appendChild(tidWarning);
-    const submitBtnEl = document.getElementById("submitBtn");
+    const submitBtn = document.getElementById("submitBtn");
 
-    // One function owns all three states together (warning text / red
-    // input border / submit button disabled) so they can never drift
-    // out of sync with each other.
+    // One place that sets ALL of: the warning text, the TID input's red
+    // border, and whether Submit is clickable — so these three things
+    // can never drift out of sync with each other (e.g. a red border
+    // left on-screen after the warning text was cleared).
     function setTidState(state, text) {
       tidWarning.textContent = text || "";
       tidWarning.className = "tid-warning" + (state ? ` ${state}` : "");
       fieldEls.tid.control.classList.toggle("field-error", state === "found");
       if (state === "found") {
-        submitBtnEl.disabled = true;
-        submitBtnEl.title = "This TID was already submitted — change it before continuing.";
-      } else if (submitBtnEl.title) {
-        submitBtnEl.disabled = false;
-        submitBtnEl.title = "";
+        submitBtn.disabled = true;
+        submitBtn.title = "This TID was already submitted — change it before continuing.";
+      } else if (submitBtn.title) {
+        // Only clear OUR disabled-reason, never a disabled state some
+        // other part of the page set for its own reason (e.g. mid-submit).
+        submitBtn.disabled = false;
+        submitBtn.title = "";
       }
     }
 
     async function checkTid(showChecking) {
-      const brandValue = brandSelect.value;
-      const tidValue = fieldEls.tid.control.value.trim();
+      const brandId = brandSelect.value;
+      const tid = fieldEls.tid.control.value.trim();
       tidDuplicateInfo = null;
-      if (!brandValue || !tidValue) { setTidState(null, ""); return null; }
-
+      if (!brandId || !tid) {
+        setTidState(null, "");
+        return null;
+      }
       const seq = ++tidCheckSeq;
       if (showChecking) setTidState("checking", "checking…");
-
       let data;
       try {
-        const res = await window.AgentAuth.authFetch(`/api/check-tid?brand=${encodeURIComponent(brandValue)}&tid=${encodeURIComponent(tidValue)}`);
+        const res = await window.AgentAuth.authFetch(`/api/check-tid?brand=${encodeURIComponent(brandId)}&tid=${encodeURIComponent(tid)}`);
         data = await res.json();
       } catch {
         data = { ok: false };
       }
-
-      if (seq !== tidCheckSeq) return null; // a newer check already superseded this one
-      if (!data.ok) { setTidState(null, ""); return null; }
-
+      if (seq !== tidCheckSeq) return null; // a newer check superseded this one — ignore
+      if (!data.ok) {
+        setTidState(null, "");
+        return null;
+      }
       if (data.found) {
         tidDuplicateInfo = { date: data.date, pic: data.pic };
         const parts = [data.date, data.pic].filter(Boolean).join(" by ");
@@ -163,12 +168,19 @@
       }
       return tidDuplicateInfo;
     }
-
     checkTidNow = checkTid;
     fieldEls.tid.control.addEventListener("blur", () => checkTid(true));
-    // Retyping clears the warning immediately — no need to wait for another blur.
-    fieldEls.tid.control.addEventListener("input", () => { if (tidDuplicateInfo) setTidState(null, ""); });
-    // Switching brands invalidates any prior result (it was checked against the old brand's sheet).
+    // Typing again after a duplicate was flagged clears the red border/
+    // disabled Submit right away, rather than leaving them stuck until
+    // the NEXT blur — the agent shouldn't have to click away just to see
+    // that Submit is usable again after fixing the value.
+    fieldEls.tid.control.addEventListener("input", () => {
+      if (tidDuplicateInfo) setTidState(null, "");
+    });
+    // Brand changing invalidates whatever the TID field last checked
+    // against (it was checking the OLD brand's sheet) — clear it rather
+    // than leave a stale warning that no longer means anything until the
+    // agent touches the TID field again.
     brandSelect.addEventListener("change", () => setTidState(null, ""));
   }
 
@@ -197,7 +209,7 @@
   }
 
   // Locks the Amount field in priority order: (1) a fixed brand+promotion
-  // combo with no selector needed (e.g. Betjili Birthday Bonus), then (2)
+  // combo with no selector needed (e.g. Crickex Birthday Bonus), then (2)
   // whichever visible field has autoFillsInto set (Tier Level / Number of
   // Deposits) and a value with a matching data-amount. Falls back to
   // unlocked + cleared if neither applies.
@@ -418,6 +430,12 @@
     btn.textContent = "Submitting…";
 
     try {
+      // Withdraw Issue: final duplicate-TID guard, right before actually
+      // submitting — re-checks the CURRENT tid value even if the field
+      // was never blurred (pasted + hit Submit directly) or was changed
+      // back to a previously-flagged value without a fresh blur. See
+      // functions/api/check-tid.js for why this reads the Sheet, and the
+      // field-setup block above for the onBlur early-warning half of this.
       if (checkTidNow) {
         await checkTidNow(true);
         if (tidDuplicateInfo) {
@@ -441,12 +459,15 @@
         reporter: formData.get("reporter"),
         fields,
         attachments,
-        // A fresh random ID per submit CLICK (not tied to form content, so
-        // resubmitting after a failure still works fine) — lets the
-        // server recognize "this exact click's request landed twice"
-        // (flaky network retry / double-tap / edge-node retry) and only
-        // process it once. See functions/api/submit.js's idempotencyKey
-        // handling for the other half of this.
+        // A fresh random ID per submit ATTEMPT (not per form/ticket) — lets
+        // the server (see submit.js) recognize "this exact click's request
+        // arrived twice" (flaky mobile network retransmit, a double-tap
+        // the button-disable below didn't quite catch, etc) and only ever
+        // create one Telegram message / Sheet row / thread record for it,
+        // instead of two identical tickets. crypto.randomUUID() isn't
+        // available on very old browsers/insecure contexts — falls back to
+        // Math.random() in that case, which is fine here since this only
+        // needs to be unique per click, not cryptographically unguessable.
         idempotencyKey: (crypto.randomUUID && crypto.randomUUID()) || `${Date.now()}-${Math.random().toString(36).slice(2)}`,
       };
 
@@ -473,8 +494,13 @@
       status.textContent = err.message || "Something went wrong. Try again.";
       status.className = "status-msg err";
     } finally {
-      // Only re-enable if the TID isn't (still) flagged as a duplicate —
-      // otherwise this would silently undo the "found" state's button-disable.
+      // Don't blindly re-enable — if the TID check above is still
+      // flagging a duplicate (the catch just above fired specifically
+      // because of that), setTidState() already put Submit into its own
+      // disabled state with its own reason; stepping on that here would
+      // make the button clickable again while the red border/warning
+      // are still showing, which is exactly the inconsistent state
+      // setTidState() exists to prevent.
       if (!tidDuplicateInfo) btn.disabled = false;
       document.getElementById("submitLabel").textContent = `Submit ${module.name}`;
     }

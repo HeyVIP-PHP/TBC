@@ -193,14 +193,18 @@ async function sweepExpired(env, list) {
   return keep;
 }
 
-export async function createThread(env, { module: moduleId, moduleName, icon, accent, brand, brandId, title, submitter, chatId, topicId, rootMessageId, rootMessageIds, rootText, hasMedia, attachmentFileIds, attachmentNames, summary, fieldMap, screenshotLink, attachmentLinks, sheetRef, forwardedFrom }) {
+export async function createThread(env, { module: moduleId, moduleName, icon, accent, brand, brandId, title, submitter, chatId, topicId, rootMessageId, rootMessageIds, rootText, hasMedia, attachmentFileIds, summary, fieldMap, screenshotLink, sheetRef, forwardedFrom }) {
   const now = new Date().toISOString();
-  // Almost always just [rootMessageId] — only differs when Telegram split
-  // the attachments into a multi-photo album (sendMediaGroup), where
-  // every photo gets its OWN message_id and only the first one carries
-  // the caption/text. Needed so recallRoot() (threads/[id].js) can
-  // delete every message in the album, not just the captioned one — see
-  // that file's comment for the bug this fixes.
+  // A ticket sent as a multi-photo Telegram album (sendMediaGroup) gets
+  // ONE message_id per photo, only the FIRST of which carries the
+  // caption/text and is what `rootMessageId` points at. Everything that
+  // acts on "the original ticket message" needs to know about ALL of
+  // them, not just that first one — most importantly recallRoot() (see
+  // functions/api/threads/[id].js), which used to only delete the first
+  // photo from Telegram, silently leaving the rest behind. Falls back to
+  // a single-element array when the caller only passes rootMessageId
+  // (single-attachment or text-only tickets, where there's only one
+  // message anyway).
   const allRootIds = rootMessageIds && rootMessageIds.length ? rootMessageIds : [rootMessageId];
   const thread = {
     id: newId(),
@@ -209,7 +213,7 @@ export async function createThread(env, { module: moduleId, moduleName, icon, ac
     icon,
     accent,
     brand,
-    // routing.js's BRANDS key (e.g. "betjili") — display name alone
+    // routing.js's BRANDS key (e.g. "crickex") — display name alone
     // (`brand` above) isn't enough to re-look-up BRANDS[...] later, and
     // editDetails() (see functions/api/threads/[id].js) needs the real
     // brand object to rebuild the message/Sheet row correctly.
@@ -221,8 +225,10 @@ export async function createThread(env, { module: moduleId, moduleName, icon, ac
     chatId: String(chatId),
     topicId: topicId ?? null,
     rootMessageId,
-    // Every message_id in this ticket's original send — see the comment
-    // on `allRootIds` above for why this can be more than one.
+    // Every Telegram message_id belonging to the ORIGINAL submission —
+    // see the comment above allRootIds. Threads from before this field
+    // existed simply don't have it; recallRoot() falls back to
+    // [thread.rootMessageId] for those, same net effect as before.
     rootMessageIds: allRootIds,
     rootText: rootText || "",
     rootEdited: false,
@@ -233,13 +239,11 @@ export async function createThread(env, { module: moduleId, moduleName, icon, ac
     // captured at ticket-creation time instead of reply time. Empty array
     // for text-only tickets, or if the module doesn't collect attachments.
     attachmentFileIds: attachmentFileIds || [],
-    // Real uploaded filename per attachment above (same index), used for
-    // MIME-type guessing when previewing — see attachment-name-lookup
-    // comment on the frontend's rendering of this. Threads created before
-    // this field existed just have an empty array here; the frontend
-    // falls back to a generic placeholder name for those old records.
-    attachmentNames: attachmentNames || [],
     rootRecalled: false,
+    // Includes every id in allRootIds (not just rootMessageId) so
+    // purgeThread()'s cleanup below removes a msgid: pointer for EVERY
+    // photo in the album, not just the first — matches the msgid: KV
+    // writes a few lines down.
     msgIds: [...allRootIds],
     summary: summary || [],
     messages: [],
@@ -254,16 +258,6 @@ export async function createThread(env, { module: moduleId, moduleName, icon, ac
     // edited the old way, just not the Sheet-syncing kind of edit.
     fieldMap: fieldMap || null,
     screenshotLink: screenshotLink || "",
-    // Telegram deep-link(s) (https://t.me/c/...) to the attachment(s) as
-    // actually sent — the fallback resolveColumnValues() uses for a
-    // Sheet's "Screenshot Link" column whenever this module doesn't have
-    // R2 uploads enabled (SCREENSHOT_R2_ENABLED in routing.js), Promotion
-    // Request being the main example. Without saving this here too,
-    // editDetails() had nothing to fall back to on a later edit and
-    // would blank that column out to "-" even though the original
-    // submission wrote a real link — see the 2026-07-26 fix for the bug
-    // this caused.
-    attachmentLinks: attachmentLinks || [],
     // { sheetId, tab, startColumn, columns, row } — null if this
     // submission never wrote a (trackable) Sheet row. See submit.js's
     // comment on `sheetRef` for why it's captured at write time instead
@@ -271,22 +265,20 @@ export async function createThread(env, { module: moduleId, moduleName, icon, ac
     // could change after the fact; the row this ticket ACTUALLY landed
     // on never does).
     sheetRef: sheetRef || null,
-    // Bidirectional forwarding traceability (functions/api/forward.js —
-    // "↗️ Generate to another Topic"). forwardedFrom is set once, here,
-    // at creation, if this ticket WAS generated by forwarding another
-    // one. forwardedTo starts empty and gets appended to later (see
-    // addForwardedToLink below) each time SOMEONE ELSE forwards FROM
-    // this ticket — a single source ticket can be forwarded to more than
-    // one target Topic over time, hence an array.
+    // "Generate to another Topic" (forwarding) — see functions/api/forward.js.
+    // forwardedFrom is set ONCE at creation time on the NEW ticket, points
+    // back at the ticket it was generated from. forwardedTo lives on the
+    // ORIGINAL ticket instead and can grow (one ticket could in principle
+    // be forwarded to more than one other Topic over time), appended via
+    // addForwardedToLink() below rather than passed in here.
     forwardedFrom: forwardedFrom || null,
     forwardedTo: [],
   };
   await Promise.all([
     saveThread(env, thread),
-    // One msgid: pointer per message in the album, not just the first —
-    // same reasoning as allRootIds/msgIds above; a reply or lookup by
-    // ANY photo in a multi-photo submission needs to resolve back to
-    // this thread, not just the first one.
+    // One msgid: pointer per photo in the album (not just the first) —
+    // so a reply to ANY of them (not only the first/captioned one) still
+    // correctly resolves back to this thread via the webhook.
     ...allRootIds.map((mid) => env.THREADS_KV.put(`msgid:${thread.chatId}:${mid}`, thread.id)),
   ]);
   await patchListCache(env, thread); // instant sidebar visibility — see that function's comment for why
@@ -376,16 +368,26 @@ async function scanThreadsFromKV(env) {
 // calls to at most ~144/day even under continuous nonstop polling all
 // day — comfortable headroom under 1,000, and also keeps the *write*
 // side (saving the cache) well under the SEPARATE 1,000 writes/day
-// budget, which every ticket submit/reply/solve-toggle also draws from.
+// budget, which every ticket submit/reply/solve-toggle also draws from
+// (this write-budget side is the part that was originally
+// under-accounted-for at a faster 2-minute interval — see the
+// standalone cron-worker's wrangler.toml for the full writeup).
 //
-// Trade-off, stated plainly: a brand-new ticket, or a solved/reopened
-// status change, can now take up to ~2 minutes to show up in the
-// sidebar for other agents (an already-open conversation stays fully
-// real-time regardless — that's a direct-by-ID get(), never affected by
-// any of this). Given the alternative was the whole sidebar hard-failing
-// once the daily list() quota ran out, this is a straightforward trade
-// in the sidebar's favor, same reasoning as the write-contention fix
-// before it.
+// Trade-off, stated plainly: this 10-minute window is no longer what
+// controls how fast a NEW ticket or a solved/reopened toggle shows up —
+// those are now patched into the cache instantly the moment they happen
+// (see patchListCache() and its call sites in createThread(),
+// appendMessage(), setSolved(), softDeleteThread() below), completely
+// decoupled from this interval. What this window actually still governs
+// is much lower-stakes: how often a full "health check" re-scan runs to
+// heal any drift the instant-patches might have missed (e.g. a patch
+// that failed mid-write) and to catch anything that changed OUTSIDE
+// this app's own code paths. A live CS team seeing their own actions
+// reflected instantly was the actual requirement; this background
+// consistency sweep not running for up to 10 minutes is a genuinely
+// low-stakes trade, unlike the original "your new ticket might not show
+// up for 10 minutes" framing this comment used to have (business owner
+// was right to push back hard on that version).
 //
 // Resilience: if a real scan fails (e.g. the daily list() quota is
 // ALREADY exhausted for the day when this runs), fall back to whatever
@@ -440,7 +442,7 @@ async function tryReserveScanSlot(env) {
     await env.THREADS_KV.put(SCAN_COUNTER_KEY, JSON.stringify(counter));
   } catch {
     // If we can't even persist the counter, err on the side of caution
-    // and still allow this one scan through — the 10-minute throttle is
+    // and still allow this one scan through — the 2-minute throttle is
     // still there as a backup limiter either way.
   }
   return true;
@@ -532,23 +534,6 @@ async function getFreshOrCachedEntries(env) {
     if (cached) return cached.entries; // stale beats broken
     throw err;
   }
-}
-
-// Called by the standalone cron-worker (see /cron-worker in the repo
-// root) on its schedule — forces a real scan + cache write regardless of
-// how fresh the existing cache still is, so the sidebar stays warm even
-// when nobody's actively polling it. Still goes through
-// tryReserveScanSlot() like every other real scan, so cron-triggered
-// scans count against the same DAILY_SCAN_LIMIT budget (144/day at the
-// recommended 10-minute Cron Trigger interval — nowhere near the 800
-// ceiling on its own, but this keeps the accounting honest if the
-// interval is ever tightened).
-export async function refreshThreadListCache(env) {
-  const allowed = await tryReserveScanSlot(env);
-  if (!allowed) return { refreshed: false, reason: "daily-scan-limit-reached" };
-  const entries = await scanThreadsFromKV(env);
-  await env.THREADS_KV.put(LIST_CACHE_KEY, JSON.stringify({ generatedAt: Date.now(), entries }));
-  return { refreshed: true, count: entries.length };
 }
 
 // Sidebar list — served from the cache above almost all the time; only
@@ -650,14 +635,13 @@ export async function updateThreadDetails(env, threadId, { fieldMap, rootText, t
   return thread;
 }
 
-// Appends one entry to the ORIGINAL ticket's forwardedTo list — called
-// on the SOURCE thread right after a new ticket is successfully created
-// by forwarding it (functions/api/forward.js). Doesn't touch
-// lastActivity/patchListCache on purpose: gaining a "forwarded to"
-// backlink isn't the kind of update that should bump this ticket back
-// to the top of an activity-sorted sidebar or otherwise look like
-// something just happened ON this ticket — nothing about ITS own
-// conversation changed, only a reference to it was added elsewhere.
+// Appends one entry to the ORIGINAL ticket's forwardedTo array, right
+// after the new (forwarded) ticket was successfully created in
+// functions/api/forward.js — so the original shows "↗️ Forwarded to
+// Account Issue" alongside whatever else it already has, and that link
+// is clickable to jump straight to the new ticket. Doesn't call
+// patchListCache() — forwardedTo isn't part of the sidebar's summary/
+// title, so there's nothing there that would go stale.
 export async function addForwardedToLink(env, threadId, link) {
   const thread = await getThread(env, threadId);
   if (!thread) return null;
@@ -665,6 +649,7 @@ export async function addForwardedToLink(env, threadId, link) {
   await saveThread(env, thread);
   return thread;
 }
+
 
 // ---- Deletion history — every "delete/recall" action, kept separately
 // from thread storage so it survives even after a thread itself is gone.

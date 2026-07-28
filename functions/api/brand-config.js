@@ -19,16 +19,41 @@
  * through the POST endpoint, an existing default logo is left alone (not
  * overwritten with nothing).
  *
- * PHP market (2026-07-23): only Betjili and BetVisa remain — Crickex/
- * Mostplay/Jeetway removed from DEFAULT_LOGOS along with everywhere else
- * in the codebase. Their old logo files are still sitting in
- * public/assets/img/brands/ (harmless, just unreferenced now).
+ * Jeetway's logo is its live-chat bubble icon (confirmed by the business
+ * owner) — small source image (60×60), upscaled to match the others;
+ * looks fine at the 24px pill size this actually renders at.
  */
 import { verifyRequest } from "../_shared/accounts.js";
 
+// PKR market: 3 of the 9 brands (Crickex/Betjili/Mostplay) are the same
+// actual brand/logo as the INR build this was forked from — confirmed by
+// the business owner — so their existing PNGs were kept and re-mapped
+// here. The other 6 (jeetwin/sbj66/heybaji/superbaji/kv8/darazplay) have
+// no logo file yet; the old betvisa.png/jeetway.png files were deleted
+// entirely since those brands don't exist in this deployment. readConfig()
+// below already handles a brand with no logoUrl gracefully (falls back to
+// initials + a color), so the missing 6 aren't blocking anything. To add a
+// real logo for one of them: drop the image at
+// public/assets/img/brands/<brandId>.png and add a line here, e.g.
+// jeetwin: "/assets/img/brands/jeetwin.png".
+// PKR market: 3 of the 9 brands (Crickex/Betjili/Mostplay) are the same
+// actual brand/logo as the INR build this was forked from — confirmed by
+// the business owner — so their existing PNGs were kept and re-mapped
+// here. The other 6 (Jeetwin/Sbj66/Heybaji/Superbaji/KV8/Darazplay) now
+// have their own real logo files too, provided directly by the business
+// owner. readConfig() below already handles a brand with no logoUrl
+// gracefully (falls back to initials + a color), so this was never a
+// hard blocker — but all 9 brands now have real logos either way.
 const DEFAULT_LOGOS = {
+  crickex: "/assets/img/brands/crickex.png",
   betjili: "/assets/img/brands/betjili.png",
-  betvisa: "/assets/img/brands/betvisa.png",
+  mostplay: "/assets/img/brands/mostplay.png",
+  jeetwin: "/assets/img/brands/jeetwin.png",
+  sbj66: "/assets/img/brands/sbj66.png",
+  heybaji: "/assets/img/brands/heybaji.png",
+  superbaji: "/assets/img/brands/superbaji.png",
+  kv8: "/assets/img/brands/kv8.png",
+  darazplay: "/assets/img/brands/darazplay.png",
 };
 
 export async function onRequestGet(context) {

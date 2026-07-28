@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>PHP CS Team - TBC</title>
+<title>PKR CS Team - TBC</title>
 <link rel="stylesheet" href="/assets/style.css" />
 <script src="/assets/theme.js"></script>
 <script src="/assets/starfield.js" defer></script>
@@ -13,7 +13,7 @@
   <header class="topbar">
     <div class="topbar-left">
       <img src="/assets/img/logo.webp" alt="HeyVIP" class="logo-img" />
-      <span class="wordmark">PHP CS TEAM - TBC</span>
+      <span class="wordmark">PKR CS TEAM - TBC</span>
     </div>
     <div class="topbar-right">
       <span class="clock" id="liveClock"></span>
@@ -63,7 +63,7 @@
     </div>
   </div>
 
-  <div class="hub-layout">
+  <div class="hub-layout page-slide-in">
     <aside class="sidebar">
       <div class="sidebar-header"><span class="dot"></span> ISSUE SUBMISSION</div>
       <a href="/" class="sidebar-item active" style="--item-accent:#7c6cf0;">
@@ -87,12 +87,12 @@
       <div class="sidebar-subitems" id="acctMgmtSubitems">
         <div class="sidebar-subitem" id="subCreateAccount" style="display:none;"><span class="sub-icon">➕</span> Create Account</div>
         <div class="sidebar-subitem" id="subWhitelistIp" style="display:none;"><span class="sub-icon">🌐</span> Whitelist IP</div>
-        <div class="sidebar-subitem" id="subTgRoutes" style="display:none;"><span class="sub-icon">📤</span> TG Group / Channel</div>
+        <div class="sidebar-subitem" id="subTgRoutes" style="display:none;"><span class="sub-icon">📡</span> TG Group / Channel</div>
         <div class="sidebar-subitem" id="subResetPassword"><span class="sub-icon">🔑</span> Reset Password</div>
         <div class="sidebar-subitem" id="subAgentProfile" style="display:none;"><span class="sub-icon">🪪</span> Agent Profile</div>
       </div>
     </aside>
-    <main class="hub-main page-morph-in" data-transition-root>
+    <main class="hub-main">
       <div class="inner">
         <div class="tool-cards">
           <a href="/threads.html" class="tool-card" id="threadsCard" style="--tool-accent:#38bdf8;">
@@ -116,7 +116,6 @@
   </div>
 
   <script src="/assets/schemas.js"></script>
-  <script src="/assets/page-transition.js"></script>
   <script>
     window.initThemeToggle();
     window.initClock();
@@ -302,64 +301,96 @@
         </div>
         <span class="arrow">&rarr;</span>
       `;
+      // Play the slide-out transition on the sidebar+content area first,
+      // THEN do the real navigation — this is a full page load (form.html
+      // is a separate static page, not an SPA route), so CSS alone can't
+      // delay it; the setTimeout below has to match the CSS animation's
+      // duration (0.2s, see .page-slide-out in style.css).
+      a.addEventListener("click", (e) => {
+        e.preventDefault();
+        const dest = a.href;
+        document.querySelector(".hub-layout").classList.add("page-slide-out");
+        setTimeout(() => { location.href = dest; }, 200);
+      });
       list.appendChild(a);
     });
 
     // ---- Account Management (sidebar dropdown + 4 focused modals) ----
     // Rank matches functions/_shared/accounts.js ROLE_RANK exactly — keep
-    // these in sync if that ever changes.
+    // these in sync if that ever changes. Includes "owner" (2026-07) so
+    // an Owner session correctly computes isSenior/isAdmin/isSuperAdmin
+    // as true below and gets full access to this tooling — omitting it
+    // here would make an Owner's rank silently fall back to agent (0)
+    // via the `?? ROLE_RANK.agent` below, hiding Account Management
+    // from them entirely. Note this constant existing in page source is
+    // NOT the same leak as the thing that's actually required to stay
+    // hidden (see listAccounts() in _shared/accounts.js) — this only
+    // reveals that the CODE supports a tier called "owner", never who
+    // holds it or whether one currently exists.
     const ROLE_RANK = { agent: 0, senior: 1, admin: 2, superadmin: 3, owner: 4 };
     const authInfo = window.AgentAuth.getAuth();
     const myRank = ROLE_RANK[authInfo?.role] ?? ROLE_RANK.agent;
-    const isSenior = myRank >= ROLE_RANK.senior;   // sees Create Account, and Reset Password gains an account-picker
-    // isAdmin/isSuperAdmin no longer gate Whitelist IP / TG Group·Channel
-    // / Agent Profile (view OR edit) — that's now entirely per-account via
-    // canSeeAdminSection()/canEditAdminSection() below, rank-independent.
-    // Kept around only in case a future section still wants a rank floor.
+    const isSenior = myRank >= ROLE_RANK.senior;   // gains an account-picker on Reset Password
     const isAdmin = myRank >= ROLE_RANK.admin;
     const isSuperAdmin = myRank >= ROLE_RANK.superadmin;
 
-    // Account Management Access — additive per-account gate on top of the
-    // rank floor above, mirrors canSeeAdminSection() in
-    // functions/_shared/accounts.js exactly. Only the Owner is
-    // unconditionally unrestricted; everyone else (including SuperAdmin)
-    // is DENIED by default — sees nothing here until the Owner explicitly
-    // checks a section for them (opposite of Topic Access above, which
-    // defaults to allowed). This is purely the UI-hiding half — every
-    // corresponding server endpoint (offices.js, routes.js, accounts.js)
-    // enforces the same check independently, so hiding the sidebar item
-    // is a convenience, not the actual security boundary.
-    function canSeeAdminSection(sectionId) {
-      if (!authInfo) return false;
-      if (authInfo.role === "owner") return true;
-      if (authInfo.allowedAdminSections === "all") return true;
-      return Array.isArray(authInfo.allowedAdminSections) && authInfo.allowedAdminSections.includes(sectionId);
+    // ---- Account Management Access (2026-07) — client-side mirror of
+    // functions/_shared/accounts.js canSeeAdminSection()/
+    // canEditAdminSection(). This REPLACES the old flat rank-only gate
+    // (Admin sees Whitelist IP/Agent Profile view-only, SuperAdmin edits;
+    // TG Group/Channel was SuperAdmin-only with no view tier at all) —
+    // visibility and edit rights for these 4 sections now come from a
+    // rank-tiered DEFAULT (see defaultSectionsForRank/defaultEditForRank
+    // below) unless an Owner has explicitly customized a specific
+    // account's checkboxes. This is UI convenience only; the server
+    // independently re-checks every one of these on every request (see
+    // functions/api/admin/*.js) — a person editing localStorage by hand
+    // gains nothing.
+    const ADMIN_SECTIONS_LIST = [
+      { id: "createAccount", name: "Create Account", icon: "➕" },
+      { id: "whitelistIp", name: "Whitelist IP", icon: "🌐" },
+      { id: "tgRoutes", name: "TG Group / Channel", icon: "📡" },
+      { id: "agentProfile", name: "Agent Profile", icon: "🪪" },
+    ];
+    const EDITABLE_ADMIN_SECTIONS = ["whitelistIp", "tgRoutes", "agentProfile"];
+    // Must match defaultSectionsForRank()/defaultEditForRank() in
+    // functions/_shared/accounts.js exactly:
+    //   agent -> nothing, senior -> createAccount, admin -> +whitelistIp
+    //   (view only), superadmin -> everything, fully editable.
+    function defaultSectionsForRank(rank) {
+      if (rank >= ROLE_RANK.superadmin) return "all";
+      if (rank >= ROLE_RANK.admin) return ["createAccount", "whitelistIp"];
+      if (rank >= ROLE_RANK.senior) return ["createAccount"];
+      return [];
     }
-    // View-vs-Edit for whitelistIp / tgRoutes / agentProfile — mirrors
-    // canEditAdminSection() in _shared/accounts.js exactly. This
-    // COMPLETELY REPLACES the old rank-based split (Admin=view,
-    // SuperAdmin=edit for whitelistIp/agentProfile; SuperAdmin-only for
-    // tgRoutes) — explicit business-owner decision. Rank plays no role
-    // here anymore; the Owner's per-account Can-Edit checkbox is the
-    // only gate, for every rank including SuperAdmin. "createAccount"
-    // has no view-only mode (creating an account IS the action), so
-    // there's no equivalent for it.
-    function canEditAdminSection(sectionId) {
-      if (!authInfo) return false;
-      if (authInfo.role === "owner") return true;
-      if (!canSeeAdminSection(sectionId)) return false;
-      if (authInfo.adminSectionEditAccess === "all") return true;
-      return Array.isArray(authInfo.adminSectionEditAccess) && authInfo.adminSectionEditAccess.includes(sectionId);
+    function defaultEditForRank(rank) {
+      return rank >= ROLE_RANK.superadmin ? "all" : [];
     }
-    // Whether this viewer can edit OTHER accounts' Account Management
-    // Access at all (Owner, or explicitly delegated) — used further down
-    // by openAgentProfileModal() to decide whether to render that block.
-    const canDelegateAdminAccess = authInfo?.role === "owner" || !!authInfo?.canManageAdminAccess;
+    // Generic form — takes an arbitrary account object, used both for
+    // "me" (authInfo) and for rendering someone ELSE's checkboxes in the
+    // Agent Profile modal (see openAgentProfileModal).
+    function accountCanSeeAdminSection(acc, sectionId) {
+      if (!acc) return false;
+      if (acc.role === "owner") return true;
+      const sections = acc.allowedAdminSections !== undefined ? acc.allowedAdminSections : defaultSectionsForRank(ROLE_RANK[acc.role] ?? 0);
+      if (sections === "all") return true;
+      return Array.isArray(sections) && sections.includes(sectionId);
+    }
+    function accountCanEditAdminSection(acc, sectionId) {
+      if (!acc) return false;
+      if (acc.role === "owner") return true;
+      if (!accountCanSeeAdminSection(acc, sectionId)) return false;
+      const edit = acc.adminSectionEditAccess !== undefined ? acc.adminSectionEditAccess : defaultEditForRank(ROLE_RANK[acc.role] ?? 0);
+      if (edit === "all") return true;
+      return Array.isArray(edit) && edit.includes(sectionId);
+    }
+    function canSeeAdminSection(sectionId) { return accountCanSeeAdminSection(authInfo, sectionId); }
+    function canEditAdminSection(sectionId) { return accountCanEditAdminSection(authInfo, sectionId); }
+    function canManageOthersAdminAccess() {
+      return authInfo?.role === "owner" || !!authInfo?.canManageAdminAccess;
+    }
 
-    document.getElementById("subCreateAccount").style.display = isSenior && canSeeAdminSection("createAccount") ? "flex" : "none";
-    // whitelistIp / tgRoutes / agentProfile visibility is now purely the
-    // per-account checkbox — no rank floor at all (see
-    // canEditAdminSection() above for the matching Can-Edit replacement).
+    document.getElementById("subCreateAccount").style.display = canSeeAdminSection("createAccount") ? "flex" : "none";
     document.getElementById("subWhitelistIp").style.display = canSeeAdminSection("whitelistIp") ? "flex" : "none";
     document.getElementById("subTgRoutes").style.display = canSeeAdminSection("tgRoutes") ? "flex" : "none";
     document.getElementById("subAgentProfile").style.display = canSeeAdminSection("agentProfile") ? "flex" : "none";
@@ -438,14 +469,15 @@
         acctOffices = data.ok ? data.offices : [];
         const officeOptions = acctOffices.map((o) => `<option value="${o.id}">${acctEsc(o.name)}</option>`).join("");
         const brandPills = (window.BRANDS || []).map((b) => `<div class="brand-toggle-pill" data-brand="${acctEsc(b.name)}">${acctEsc(b.name).toUpperCase()}</div>`).join("");
-        // Server now enforces "strictly outranks the target" (see
-        // functions/api/admin/accounts.js canManage()), not a
-        // hand-written per-tier allow-list — mirror that here so the
-        // dropdown only ever offers a choice the server will accept.
-        // "owner" never appears: ROLE_RANK has it, but it's excluded on
-        // purpose (nobody can create an owner account through the UI —
-        // see OWNER_ROLE_SETUP.md).
-        const manageScope = Object.keys(ROLE_RANK).filter((r) => r !== "owner" && ROLE_RANK[r] < myRank);
+        // Manage scope is now "strictly below my own rank" (2026-07
+        // redesign, matches the server's canManage() in
+        // functions/api/admin/accounts.js) — a SuperAdmin can create
+        // Agent/Senior/Admin accounts, but NOT another SuperAdmin (only
+        // Owner outranks SuperAdmin, and Owner accounts don't go through
+        // this UI at all). Server enforces this too; this just keeps the
+        // dropdown from offering a choice that would get rejected.
+        const ALL_ASSIGNABLE_ROLES = ["agent", "senior", "admin", "superadmin"];
+        const manageScope = ALL_ASSIGNABLE_ROLES.filter((r) => ROLE_RANK[r] < myRank);
         const roleOptions = manageScope.map((r) => `<option value="${r}">${r}</option>`).join("");
         acctBody.innerHTML = `
           <div class="field"><label>Username</label><input type="text" id="am_username" autocomplete="off" /></div>
@@ -467,8 +499,6 @@
         const data = await res.json();
         acctOffices = data.ok ? data.offices : [];
         const officeOptions = acctOffices.map((o) => `<option value="${o.id}">${acctEsc(o.name)}</option>`).join("");
-        // Can-Edit on "whitelistIp" now decides editability — replaces the
-        // old isSuperAdmin check (see canEditAdminSection() above).
         const canEditWhitelist = canEditAdminSection("whitelistIp");
         const ro = canEditWhitelist ? "" : "disabled";
         acctBody.innerHTML = `
@@ -489,17 +519,21 @@
         acctTitle.textContent = "Reset Password";
         const res = await window.AgentAuth.authFetch("/api/admin/accounts");
         const data = await res.json();
-        // Same "strictly outranks the target, or it's your own account"
-        // rule the server enforces (functions/api/admin/accounts.js) —
-        // no more hand-written per-tier allow-list.
-        const myUsername = authInfo?.username;
-        acctAccounts = data.ok ? data.accounts.filter((a) => a.username === myUsername || ROLE_RANK[a.role] < myRank) : [];
+        // Eligible targets: strictly below my own rank, OR myself (an
+        // assisted reset of your own account is really just "I forgot
+        // to use the self-service change-password flow" — server allows
+        // it too, see the `isSelf` check in functions/api/admin/
+        // accounts.js). Same "strictly below" rule as everywhere else in
+        // this 2026-07 redesign — a SuperAdmin resetting ANOTHER
+        // SuperAdmin's password is no longer possible here (only Owner
+        // can, and Owner accounts don't surface in this list at all).
+        acctAccounts = data.ok ? data.accounts.filter((a) => a.username === authInfo?.username || ROLE_RANK[a.role] < myRank) : [];
         const accountOptions = acctAccounts.map((a) => `<option value="${acctEsc(a.username)}">${acctEsc(a.username)} (${acctEsc(a.role)})</option>`).join("");
         acctBody.innerHTML = `
           <div class="field"><label>Account</label><select id="am_reset_account">${accountOptions || '<option value="">— no eligible accounts —</option>'}</select></div>
           <div class="field"><label>New Password</label><input type="password" id="am_reset_newpass" autocomplete="new-password" /></div>
           <div class="field"><label>Confirm New Password</label><input type="password" id="am_reset_confirm" autocomplete="new-password" /></div>
-          <p class="edit-modal-note">You can reset your own password, or one for any account ranked below your own — the old password isn't needed.</p>`;
+          <p class="edit-modal-note">You can reset a password for yourself, or any account ranked below your own — the old password isn't needed.</p>`;
       }
 
       if (mode === "reset" && !isSenior) {
@@ -555,6 +589,12 @@
       if (!acctRoutesData) return;
       const { brands, modules, routes, securityAlerts } = acctRoutesData;
       const isSecuritySelected = acctRoutesSelectedBrand === SECURITY_ROW_ID;
+      // TG Group/Channel never had a view-only tier before — it was
+      // SuperAdmin-or-nothing. Now, like every other Account Management
+      // Access section, an account can see this page without being able
+      // to change it.
+      const canEditRoutes = canEditAdminSection("tgRoutes");
+      const roAttr = canEditRoutes ? "" : "disabled";
 
       const brandListHtml = brands.map((b) => `
         <div class="tgroute-brand${b.id === acctRoutesSelectedBrand ? " selected" : ""}" data-brand="${acctEsc(b.id)}">${acctEsc(b.name)}</div>
@@ -564,10 +604,6 @@
 
       if (isSecuritySelected) {
         const r = securityAlerts || { chatId: "", topicId: null, isOverride: false };
-        // Can-Edit on "tgRoutes" now decides editability here too — no
-        // more SuperAdmin-only floor (see canEditAdminSection() above).
-        const canEditRoutes = canEditAdminSection("tgRoutes");
-        const roAttr = canEditRoutes ? "" : "disabled";
         acctBody.innerHTML = `
           <div class="tgroute-layout">
             <div class="tgroute-brands">${brandListHtml}</div>
@@ -577,19 +613,19 @@
                   <span class="route-tag${r.isOverride ? " custom" : ""}">${r.isOverride ? "custom" : "default"}</span>
                 </div>
                 <div class="tgroute-fields">
-                  <input type="text" class="tgroute-chatid" placeholder="Chat ID e.g. -1001234567890" value="${acctEsc(r.chatId)}" autocomplete="off" ${roAttr} />
-                  <input type="text" class="tgroute-topicid" placeholder="Topic ID (optional)" value="${r.topicId ?? ""}" autocomplete="off" ${roAttr} />
-                  <div class="tgroute-row-actions">
-                    ${canEditRoutes ? '<button type="button" class="tgroute-action-btn tgroute-save">Save</button>' : ""}
-                    ${canEditRoutes && r.isOverride ? '<button type="button" class="tgroute-action-btn tgroute-action-secondary tgroute-reset">Reset</button>' : ""}
-                  </div>
+                  <input type="text" class="tgroute-chatid" placeholder="Chat ID e.g. -1001234567890" value="${acctEsc(r.chatId)}" ${roAttr} autocomplete="off" />
+                  <input type="text" class="tgroute-topicid" placeholder="Topic ID (optional)" value="${r.topicId ?? ""}" ${roAttr} autocomplete="off" />
+                  ${canEditRoutes ? `<div class="tgroute-row-actions">
+                    <button type="button" class="tgroute-action-btn tgroute-save">Save</button>
+                    ${r.isOverride ? '<button type="button" class="tgroute-action-btn tgroute-action-secondary tgroute-reset">Reset</button>' : ""}
+                  </div>` : ""}
                 </div>
               </div>
             </div>
           </div>
           <hr class="tgroute-divider" />
           ${canEditRoutes ? "" : '<p class="edit-modal-note">View only.</p>'}
-          <p class="edit-modal-note tgroute-footnote">This isn't a brand — it's where login sends a Telegram alert on every failed login attempt (wrong password, unrecognized IP, or no office assigned), or when an account gets auto-locked (5 combined failures within an hour). Login stays blocked exactly the same either way; this only controls where the heads-up message goes. "default" is whatever's set in the SECURITY_ALERTS_CHAT_ID Cloudflare secret (empty = no alerts sent yet).</p>`;
+          <p class="edit-modal-note tgroute-footnote">This isn't a brand — it's where login sends a Telegram alert when a correct password is used from an IP that isn't office-whitelisted, or when an account gets auto-locked (5 wrong passwords, or 5 different unrecognized IPs in an hour). Login stays blocked exactly the same either way; this only controls where the heads-up message goes. "default" is whatever's set in the SECURITY_ALERTS_CHAT_ID Cloudflare secret (empty = no alerts sent yet).</p>`;
         acctBody.querySelectorAll(".tgroute-brand").forEach((el) => {
           el.addEventListener("click", () => {
             acctRoutesSelectedBrand = el.dataset.brand;
@@ -606,8 +642,6 @@
         return;
       }
 
-      const canEditRoutes = canEditAdminSection("tgRoutes");
-      const roAttr = canEditRoutes ? "" : "disabled";
       const moduleRowsHtml = modules.map((m) => {
         const key = `${acctRoutesSelectedBrand}|${m.id}`;
         const r = routes[key] || { chatId: "", topicId: null, isOverride: false };
@@ -617,12 +651,12 @@
               <span class="route-tag${r.isOverride ? " custom" : ""}">${r.isOverride ? "custom" : "default"}</span>
             </div>
             <div class="tgroute-fields">
-              <input type="text" class="tgroute-chatid" placeholder="Chat ID e.g. -1001234567890" value="${acctEsc(r.chatId)}" autocomplete="off" ${roAttr} />
-              <input type="text" class="tgroute-topicid" placeholder="Topic ID (optional)" value="${r.topicId ?? ""}" autocomplete="off" ${roAttr} />
-              <div class="tgroute-row-actions">
-                ${canEditRoutes ? '<button type="button" class="tgroute-action-btn tgroute-save">Save</button>' : ""}
-                ${canEditRoutes && r.isOverride ? '<button type="button" class="tgroute-action-btn tgroute-action-secondary tgroute-reset">Reset</button>' : ""}
-              </div>
+              <input type="text" class="tgroute-chatid" placeholder="Chat ID e.g. -1001234567890" value="${acctEsc(r.chatId)}" ${roAttr} autocomplete="off" />
+              <input type="text" class="tgroute-topicid" placeholder="Topic ID (optional)" value="${r.topicId ?? ""}" ${roAttr} autocomplete="off" />
+              ${canEditRoutes ? `<div class="tgroute-row-actions">
+                <button type="button" class="tgroute-action-btn tgroute-save">Save</button>
+                ${r.isOverride ? '<button type="button" class="tgroute-action-btn tgroute-action-secondary tgroute-reset">Reset</button>' : ""}
+              </div>` : ""}
             </div>
           </div>`;
       }).join("");
@@ -721,43 +755,37 @@
       }
 
       const rows = visibleAccounts.map((a) => {
-        // Office / IP — SuperAdmin can log in from anywhere with no office
-        // bound (intentional); every other role now REQUIRES one to log in
-        // at all (see _shared/accounts.js officeIpCheckPasses()), so a
-        // non-Owner/non-SuperAdmin account with no office is flagged as
-        // broken, not just "unrestricted".
+        // Office / IP — every role in THIS table now requires one to log
+        // in at all, EXCEPT Owner (see _shared/accounts.js
+        // officeIpCheckPasses()). Owner accounts normally never appear
+        // in this table at all (server-side filter in listAccounts()) —
+        // the one exception is an owner viewing their OWN row (see
+        // viewerUsername in listAccounts()), which is the only way `a`
+        // could ever actually be role "owner" here.
         const office = a.officeId ? acctOfficesById[a.officeId] : null;
-        let officeCell;
-        if (office) {
-          officeCell = acctEsc(office.name);
-        } else if (a.role === "owner") {
-          officeCell = `<span class="office-none">— no office (unrestricted, OK for Owner)</span>`;
-        } else {
-          // SuperAdmin is no longer exempt — it now requires an Office +
-          // IP whitelist to log in too (see OWNER_ROLE_SETUP.md §1.5),
-          // so a SuperAdmin with no office genuinely can't log in, same
-          // warning as any other role.
-          officeCell = `<span class="office-missing">⚠️ No office — can't log in</span>`;
-        }
+        const officeCell = office
+          ? acctEsc(office.name)
+          : (a.role === "owner"
+              ? `<span class="office-none">— no office (unrestricted, OK for Owner)</span>`
+              : `<span class="office-missing">⚠️ No office — can't log in</span>`);
         const statusCell = a.locked
           ? `<span class="office-missing" title="${acctEsc(a.lockedReason || "Locked")}">🔒 Locked</span>`
           : `<span style="color:var(--ink-soft);">Active</span>`;
         const brandsCell = a.allowedBrands === "all" ? "All" : ((a.allowedBrands || []).join(", ") || "—");
-        // Lock/unlock is a per-TARGET action — Can-Edit on "agentProfile"
-        // (see canEditAdminSection() above, replacing the old isSuperAdmin
-        // floor) AND must still outrank this specific row's account.
-        const canEditThisAccount = canEditAdminSection("agentProfile") && myRank > (ROLE_RANK[a.role] ?? 0);
-        const lockBtn = canEditThisAccount
+        // Can-Edit(agentProfile) AND strictly outranking THIS row's
+        // account — matches the server's lock/unlock check exactly. This
+        // replaces the old flat `isSuperAdmin` check — an Admin CAN now
+        // be granted this, a SuperAdmin CAN be left without it.
+        const lockBtn = (canEditAdminSection("agentProfile") && myRank > (ROLE_RANK[a.role] ?? 0))
           ? (a.locked
               ? `<button type="button" class="row-btn" data-unlock="${acctEsc(a.username)}" title="Unlock this account">🔓</button>`
               : `<button type="button" class="row-btn" data-lock="${acctEsc(a.username)}" title="Lock this account">🔒</button>`)
           : "";
         // Username itself is the entry point into the Agent Personal
-        // Profile popup now (see openAgentProfileModal below) — anyone
-        // who can reach this table at all already has canSeeAdminSection
-        // ("agentProfile") true (that's how they got here), so the popup
-        // is always reachable; whether it opens editable or read-only is
-        // decided per-target inside openAgentProfileModal() itself.
+        // Profile popup — this whole table already only renders for
+        // accounts with canSeeAdminSection("agentProfile"), so everyone
+        // reaching this row can open the popup (it renders read-only
+        // fields inside if they lack Can-Edit — see openAgentProfileModal).
         const usernameCell = canSeeAdminSection("agentProfile")
           ? `<button type="button" class="link-btn" data-open-profile="${acctEsc(a.username)}">${acctEsc(a.username)}</button>`
           : acctEsc(a.username);
@@ -817,42 +845,34 @@
     // functions/api/admin/accounts.js — this is just the UI reflecting
     // it, the server checks independently regardless of what this modal
     // does or doesn't disable):
-    //   - Full Name / Agent PSD: Admin and SuperAdmin can edit.
-    //   - Role / Status(lock) / Office / Brands / Topic Access:
-    //     SuperAdmin only — Admin sees them as read-only.
+    //   - Full Name / Agent PSD: rank >= admin AND (editing yourself OR
+    //     strictly outranking the target).
+    //   - Role / Status(lock) / Office / Brands / Topic Access: rank >=
+    //     superadmin AND strictly outranking the target — e.g. a
+    //     SuperAdmin can no longer edit another SuperAdmin's role/access
+    //     (2026-07 redesign), only accounts strictly below their own
+    //     rank. `canManageAccess` below computes this per-target instead
+    //     of the old flat "isSuperAdmin" check, so the UI doesn't offer
+    //     edits the server will reject.
     const AGENT_PROFILE_MODULE_LIST = window.MODULES || [];
-    // Must match ADMIN_SECTIONS in functions/_shared/accounts.js exactly —
-    // add new ids to both places together if another admin page ever
-    // needs this same per-account gating.
-    const ADMIN_SECTIONS_LIST = [
-      { id: "createAccount", icon: "➕", name: "Create Account" },
-      { id: "whitelistIp", icon: "🌐", name: "Whitelist IP" },
-      { id: "tgRoutes", icon: "📤", name: "TG Group / Channel" },
-      { id: "agentProfile", icon: "🪪", name: "Agent Profile" },
-    ];
-
-    // The 3 sections where View vs Edit is a meaningful, separately
-    // grantable choice — mirrors EDITABLE_ADMIN_SECTIONS in
-    // _shared/accounts.js exactly. "createAccount" isn't here: creating
-    // an account IS the action, there's no view-only version of it.
-    const EDITABLE_ADMIN_SECTIONS = ["whitelistIp", "tgRoutes", "agentProfile"];
 
     function openAgentProfileModal(username) {
       const a = acctAccounts.find((acc) => acc.username === username);
       if (!a) return;
 
-      // Per-TARGET permission, not a global rank flag — the same viewer
-      // might outrank one account (agent/senior/admin) but not another
-      // (a fellow SuperAdmin, or themselves), so this has to be
-      // recomputed for whichever specific account this popup is open
-      // for. Can-Edit on "agentProfile" (see canEditAdminSection()
-      // above) COMPLETELY REPLACES the old isSuperAdmin floor — mirrors
-      // the server's own hasAuthority check in
-      // functions/api/admin/accounts.js exactly; the server enforces
-      // this independently regardless of what this modal does or
-      // doesn't disable.
-      const targetRank = ROLE_RANK[a.role] ?? ROLE_RANK.agent;
+      const targetRank = ROLE_RANK[a.role] ?? 0;
+      const isSelfProfile = authInfo?.username === a.username;
+      // role/office/brands/topic-access/lock — now gated by
+      // Can-Edit(agentProfile) instead of the old flat `isSuperAdmin`.
       const canManageAccess = canEditAdminSection("agentProfile") && myRank > targetRank;
+      // fullName/pid — self-edit stays a basic admin-rank privilege
+      // (unrelated to Account Management Access, matches the server);
+      // editing SOMEONE ELSE'S profile fields needs Can-Edit(agentProfile).
+      const canEditProfileFields = (isSelfProfile && isAdmin) || (!isSelfProfile && canEditAdminSection("agentProfile") && myRank > targetRank);
+      // Only an Owner (or a delegate granted canManageAdminAccess) may
+      // change what OTHER accounts can see/edit in the admin area —
+      // matches canManageOthersAdminAccess() server-side.
+      const canManageThisAccountsAdminAccess = canManageOthersAdminAccess() && myRank > targetRank;
 
       const overlay = document.createElement("div");
       overlay.className = "edit-details-overlay";
@@ -860,14 +880,12 @@
 
       const office = a.officeId ? acctOfficesById[a.officeId] : null;
       const officeOptions = acctOffices.map((o) => `<option value="${o.id}" ${o.id === a.officeId ? "selected" : ""}>${acctEsc(o.name)}</option>`).join("");
-      // Only roles strictly below the viewer's own rank — same rule the
-      // create-account dropdown uses, and same reasoning: don't offer a
-      // choice the server will reject anyway. Always includes the
-      // target's CURRENT role too (even if it wouldn't otherwise qualify)
-      // so the dropdown doesn't silently change their role just by
-      // opening this popup.
-      const roleOptions = Object.keys(ROLE_RANK)
-        .filter((r) => r !== "owner" && (ROLE_RANK[r] < myRank || r === a.role))
+      // Only roles strictly below MY OWN rank — same reasoning as
+      // manageScope in the Create Account form above; if I can't outrank
+      // the target at THEIR current role, I have no business seeing
+      // "promote them further past what I could ever set" as an option.
+      const roleOptions = ["agent", "senior", "admin", "superadmin"]
+        .filter((r) => ROLE_RANK[r] < myRank)
         .map((r) => `<option value="${r}" ${r === a.role ? "selected" : ""}>${r}</option>`).join("");
       const pwBy = a.lastPasswordChange
         ? `${timeAgoLocal(a.lastPasswordChange.at)} by ${acctEsc(a.lastPasswordChange.by)}`
@@ -881,69 +899,29 @@
           ${m.icon || ""} ${acctEsc(m.name)}
         </label>`).join("");
 
-      // ---- Account Management Access — only rendered at all for a
-      // viewer who can delegate (Owner, or explicitly granted
-      // canManageAdminAccess) — everyone else never sees this block
-      // exists, matching "hidden unless the Owner opens it up" exactly.
-      // Never rendered for an Owner target either (Owner is always
-      // unrestricted, nothing meaningful to show/edit).
-      const showAdminAccessBlock = canDelegateAdminAccess && a.role !== "owner";
-      let adminAccessBlockHtml = "";
-      if (showAdminAccessBlock) {
-        const isOwnerViewer = authInfo?.role === "owner";
-        // Same rank rule as everywhere else: Owner can touch anyone,
-        // a delegated non-Owner only a strictly-lower-ranked target
-        // (never themselves).
-        const canEditAdminSections = isOwnerViewer || myRank > targetRank;
-        const allSectionsSelected = a.allowedAdminSections === "all";
-        const allEditSelected = a.adminSectionEditAccess === "all";
-        const adminSectionChecks = ADMIN_SECTIONS_LIST.map((s) => {
-          const isChecked = allSectionsSelected || (Array.isArray(a.allowedAdminSections) && a.allowedAdminSections.includes(s.id));
-          const checkboxHtml = `
-          <label class="agent-profile-module-check">
-            <input type="checkbox" class="ap-admin-section-checkbox" value="${acctEsc(s.id)}" ${isChecked ? "checked" : ""} ${canEditAdminSections ? "" : "disabled"} />
-            ${s.icon} ${acctEsc(s.name)}
-          </label>`;
-          // View only / Can Edit — only for the 3 sections where that
-          // distinction exists (see EDITABLE_ADMIN_SECTIONS above).
-          // COMPLETELY REPLACES the old rank-based split (explicit
-          // business-owner decision) — this radio pair is the only thing
-          // that decides Can-Edit now, for every rank including
-          // SuperAdmin. HIDDEN (not just disabled) whenever the section
-          // checkbox itself is unchecked — Can-Edit means nothing for a
-          // section you can't even see, and a permanently-visible
-          // grayed-out row is just visual noise (approved design change,
-          // was disabled-but-always-shown before). Toggled live via
-          // wireAdminSectionEditToggles() below; a read-only viewer
-          // (canEditAdminSections false) never sees this row at all,
-          // regardless of check state.
-          if (!EDITABLE_ADMIN_SECTIONS.includes(s.id) || !canEditAdminSections) return checkboxHtml;
-          const isEditChecked = allEditSelected || (Array.isArray(a.adminSectionEditAccess) && a.adminSectionEditAccess.includes(s.id));
-          return checkboxHtml + `
-          <div class="agent-profile-edit-level-row" data-for-section="${acctEsc(s.id)}" style="${isChecked ? "" : "display:none;"}">
-            <label><input type="radio" name="apEditLevel_${acctEsc(s.id)}" value="view" ${isEditChecked ? "" : "checked"} /> View only</label>
-            <label><input type="radio" name="apEditLevel_${acctEsc(s.id)}" value="edit" ${isEditChecked ? "checked" : ""} /> Can Edit</label>
-          </div>`;
-        }).join("");
-        // The delegation grant itself (canManageAdminAccess) is Owner-only
-        // to even see, let alone edit — a delegated manager never sees
-        // whether they could re-delegate, because they can't.
-        const delegateRowHtml = isOwnerViewer ? `
-          <label class="agent-profile-delegate-row">
-            <input type="checkbox" id="ap_canManageAdminAccess" ${a.canManageAdminAccess ? "checked" : ""} />
-            Can manage Account Management Access for other accounts
-          </label>` : "";
-        adminAccessBlockHtml = `
-            <button type="button" class="agent-profile-collapse-toggle${canEditAdminSections ? "" : " is-restricted"}" id="ap_adminToggle" aria-expanded="false">
-              <span>🔒 Account management access</span>
-              <span class="agent-profile-collapse-chevron">▸</span>
-            </button>
-            <div class="agent-profile-collapse-body agent-profile-admin-section-list" id="ap_adminList" data-editable="${canEditAdminSections}">
-              ${adminSectionChecks}
-              ${delegateRowHtml}
-            </div>
-            ${canEditAdminSections ? "" : '<p class="agent-profile-admin-note">You can only edit this for accounts ranked below your own.</p>'}`;
-      }
+      // ---- Account Management Access (2026-07) — only rendered for
+      // whoever is allowed to manage OTHER accounts' admin-section access
+      // (Owner, or a delegate granted canManageAdminAccess) AND who
+      // outranks this target. Everyone else never sees this block at
+      // all — it's not just disabled, it doesn't exist in their DOM.
+      const adminSectionChecks = ADMIN_SECTIONS_LIST.map((s) => {
+        const isChecked = accountCanSeeAdminSection(a, s.id);
+        const checkboxHtml = `
+        <label class="agent-profile-module-check">
+          <input type="checkbox" class="ap-admin-section-checkbox" value="${acctEsc(s.id)}" ${isChecked ? "checked" : ""} />
+          ${s.icon} ${acctEsc(s.name)}
+        </label>`;
+        if (!EDITABLE_ADMIN_SECTIONS.includes(s.id)) return checkboxHtml;
+        const isEditChecked = accountCanEditAdminSection(a, s.id);
+        return checkboxHtml + `
+        <div class="agent-profile-edit-level-row" data-for-section="${acctEsc(s.id)}" style="${isChecked ? "" : "display:none;"}">
+          <label><input type="radio" name="apEditLevel_${acctEsc(s.id)}" value="view" ${isEditChecked ? "" : "checked"} /> View only</label>
+          <label><input type="radio" name="apEditLevel_${acctEsc(s.id)}" value="edit" ${isEditChecked ? "checked" : ""} /> Can Edit</label>
+        </div>`;
+      }).join("");
+      // The delegation flag itself — can ONLY be set by an Owner, never
+      // by a delegate (no re-delegation chains).
+      const showDelegationToggle = authInfo?.role === "owner" && !isSelfProfile;
 
       overlay.innerHTML = `
         <div class="edit-details-modal">
@@ -976,16 +954,36 @@
               <div class="brand-toggle-label"><span></span>${canManageAccess ? `<span class="select-all-btn" id="ap_selectAllBrands">${allBrandsSelected ? "✓ All Selected" : "Select All"}</span>` : ""}</div>
               <div class="brand-toggle-grid" id="ap_brandGrid" style="${canManageAccess ? "" : "pointer-events:none; opacity:0.65;"}">${brandPills}</div>
             </div>
-            <div class="field"><label>Full name</label><input type="text" id="ap_fullname" value="${acctEsc(a.fullName || "")}" autocomplete="off" /></div>
-            <div class="field"><label>Agent PSD</label><input type="text" id="ap_pid" value="${acctEsc(a.pid || "")}" placeholder="e.g. PSD-014" autocomplete="off" /></div>
+            <div class="field"><label>Full name</label><input type="text" id="ap_fullname" value="${acctEsc(a.fullName || "")}" autocomplete="off" ${canEditProfileFields ? "" : "disabled"} /></div>
+            <div class="field"><label>Agent PSD</label><input type="text" id="ap_pid" value="${acctEsc(a.pid || "")}" placeholder="e.g. PSD-014" autocomplete="off" ${canEditProfileFields ? "" : "disabled"} /></div>
 
-            <button type="button" class="agent-profile-collapse-toggle" id="ap_topicToggle" aria-expanded="false" style="margin-top:14px;">
-              <span>Topic access ${canManageAccess ? "" : '<span class="agent-profile-locked-note">(requires Can-Edit on Agent Profile + outranking this account)</span>'}</span>
-              <span class="agent-profile-collapse-chevron">▸</span>
-            </button>
-            <div class="agent-profile-collapse-body agent-profile-module-list" id="ap_topicList">${moduleChecks}</div>
+            <div class="agent-profile-collapsible" data-section="topicAccess">
+              <button type="button" class="agent-profile-collapsible-header" data-collapse-toggle>
+                <span class="agent-profile-section-label agent-profile-section-label-lg">🔒 Topic Access</span>
+                <span class="agent-profile-chev">→</span>
+              </button>
+              <div class="agent-profile-collapsible-body" style="display:none;">
+                ${!canManageAccess ? '<p class="agent-profile-locked-note" style="margin:-4px 0 8px;">(requires outranking this account)</p>' : ""}
+                <div class="agent-profile-module-list">${moduleChecks}</div>
+              </div>
+            </div>
 
-            ${adminAccessBlockHtml}
+            ${canManageThisAccountsAdminAccess ? `
+            <div class="agent-profile-collapsible" data-section="adminAccess">
+              <button type="button" class="agent-profile-collapsible-header" data-collapse-toggle>
+                <span class="agent-profile-section-label agent-profile-section-label-lg">🔒 Account Management Access <span class="agent-profile-section-hint">(which admin sidebar sections this account can see/edit)</span></span>
+                <span class="agent-profile-chev">→</span>
+              </button>
+              <div class="agent-profile-collapsible-body" style="display:none;">
+                <div class="agent-profile-admin-section-list">${adminSectionChecks}</div>
+                ${showDelegationToggle ? `
+                <hr class="agent-profile-divider" />
+                <label class="agent-profile-module-check">
+                  <input type="checkbox" id="ap_canManageAdminAccess" ${a.canManageAdminAccess ? "checked" : ""} />
+                  Can manage Account Management Access for other accounts
+                </label>` : ""}
+              </div>
+            </div>` : ""}
           </div>
 
           <div class="edit-details-status" id="agentProfileStatus"></div>
@@ -996,11 +994,9 @@
         </div>`;
       document.body.appendChild(overlay);
 
-      wireCollapse("ap_topicToggle", "ap_topicList");
-      if (showAdminAccessBlock) wireCollapse("ap_adminToggle", "ap_adminList");
-      if (showAdminAccessBlock) wireAdminSectionEditToggles();
-
       if (canManageAccess) wireAgentProfileBrandPicker();
+      if (canManageThisAccountsAdminAccess) wireAdminSectionEditToggles();
+      wireAgentProfileCollapsibles();
 
       function close() { overlay.remove(); }
       document.getElementById("agentProfileClose").addEventListener("click", close);
@@ -1017,47 +1013,6 @@
       }
 
       document.getElementById("agentProfileSave").addEventListener("click", () => saveAgentProfileModal(a.username));
-    }
-
-    // Shared collapse/expand mechanic for Topic access + Account
-    // management access — collapsed by default, click the header to
-    // toggle. Just a display swap + chevron rotation (CSS handles the
-    // rotation via the aria-expanded attribute), no animation library.
-    function wireCollapse(toggleId, bodyId) {
-      const toggle = document.getElementById(toggleId);
-      const body = document.getElementById(bodyId);
-      if (!toggle || !body) return;
-      toggle.addEventListener("click", () => {
-        const open = body.classList.toggle("is-open");
-        toggle.setAttribute("aria-expanded", open ? "true" : "false");
-      });
-    }
-
-    // Keeps each editable admin section's View-only/Can-Edit radio pair
-    // in sync with its own checkbox — unchecking "Whitelist IP" (say)
-    // immediately disables its View/Edit radios too, since Can-Edit only
-    // ever means anything once the section itself is granted. Only
-    // called when the viewer has edit rights on this block at all
-    // (canEditAdminSections true) — for a read-only viewer everything's
-    // already disabled from render, nothing to wire up.
-    // Keeps each editable admin section's View-only/Can-Edit radio pair
-    // in sync with its own checkbox — unchecking "Whitelist IP" (say)
-    // immediately hides its View/Edit row too (not just grays it out —
-    // Can-Edit means nothing for a section you can't even see, so there's
-    // no reason to keep taking up space once unchecked; approved design
-    // change from an earlier disabled-but-visible version). Only wired
-    // up when the viewer has edit rights on this block at all
-    // (canEditAdminSections true, checked at render time in
-    // openAgentProfileModal()) — a read-only viewer never gets this row
-    // in the DOM to begin with.
-    function wireAdminSectionEditToggles() {
-      document.querySelectorAll(".ap-admin-section-checkbox").forEach((cb) => {
-        cb.addEventListener("change", () => {
-          const row = document.querySelector(`.agent-profile-edit-level-row[data-for-section="${cb.value}"]`);
-          if (!row) return;
-          row.style.display = cb.checked ? "" : "none";
-        });
-      });
     }
 
     function wireAgentProfileBrandPicker() {
@@ -1081,6 +1036,28 @@
       }
     }
 
+    function wireAgentProfileCollapsibles() {
+      document.querySelectorAll(".agent-profile-collapsible").forEach((section) => {
+        const header = section.querySelector("[data-collapse-toggle]");
+        const body = section.querySelector(".agent-profile-collapsible-body");
+        if (!header || !body) return;
+        header.addEventListener("click", () => {
+          const isOpen = section.classList.toggle("is-open");
+          body.style.display = isOpen ? "" : "none";
+        });
+      });
+    }
+
+    function wireAdminSectionEditToggles() {
+      document.querySelectorAll(".ap-admin-section-checkbox").forEach((cb) => {
+        cb.addEventListener("change", () => {
+          const row = document.querySelector(`.agent-profile-edit-level-row[data-for-section="${cb.value}"]`);
+          if (!row) return;
+          row.style.display = cb.checked ? "" : "none";
+        });
+      });
+    }
+
     async function saveAgentProfileModal(username) {
       const statusEl = document.getElementById("agentProfileStatus");
       const payload = {
@@ -1089,16 +1066,18 @@
         fullName: document.getElementById("ap_fullname").value.trim(),
         pid: document.getElementById("ap_pid").value.trim(),
       };
-      // Check the actual DOM, not the global isSuperAdmin — the same
-      // SuperAdmin viewer can have canManageAccess true for one account
-      // and false for another (see openAgentProfileModal above), so
-      // whether #ap_role actually got rendered as an editable <select>
-      // (vs. a disabled <input>) is what determines whether it's safe to
-      // read from here. Reading a global flag instead could try to read
-      // a value out of an input that was never rendered at all.
-      const canEditAccess = !!document.getElementById("ap_role");
-      if (canEditAccess) {
-        payload.role = document.getElementById("ap_role").value;
+      // Check for the ELEMENT, not the global `isSuperAdmin` flag — the
+      // Role/Office/Brands/Topic-Access controls only render as editable
+      // (with these ids) when openAgentProfileModal() computed
+      // canManageAccess=true for THIS SPECIFIC target (a SuperAdmin
+      // viewing another SuperAdmin's profile, for instance, still has
+      // isSuperAdmin=true globally but canManageAccess=false for that
+      // target — its role field renders as a plain disabled <input> with
+      // no id="ap_role" at all, so relying on isSuperAdmin here would
+      // throw trying to read a field that was never rendered).
+      const roleSelect = document.getElementById("ap_role");
+      if (roleSelect) {
+        payload.role = roleSelect.value;
         payload.officeId = document.getElementById("ap_office").value || null;
         const pills = Array.from(document.querySelectorAll("#ap_brandGrid .brand-toggle-pill"));
         const selected = pills.filter((p) => p.classList.contains("selected")).map((p) => p.dataset.brand);
@@ -1107,30 +1086,18 @@
         const selectedModules = moduleChecks.filter((c) => c.checked).map((c) => c.value);
         payload.allowedModules = selectedModules.length === moduleChecks.length ? "all" : selectedModules;
       }
-      // Account Management Access is its own permission track, separate
-      // from canEditAccess above (a delegated non-SuperAdmin can edit
-      // this without being able to touch role/office/brands/modules at
-      // all) — so it's read independently, gated only by whether the
-      // block was actually rendered editable (data-editable="true", set
-      // in openAgentProfileModal() based on the SAME rank rule the
-      // server enforces).
+      // Account Management Access — only present in the DOM at all when
+      // openAgentProfileModal() computed canManageThisAccountsAdminAccess
+      // for this target. Use the dedicated .ap-admin-section-checkbox
+      // class, NOT "input[type=checkbox]" — this block sits alongside an
+      // Owner-only delegation toggle (#ap_canManageAdminAccess) that a
+      // generic checkbox selector would wrongly sweep into the count.
       const adminSectionList = document.querySelector(".agent-profile-admin-section-list");
-      if (adminSectionList && adminSectionList.dataset.editable === "true") {
-        // NOTE: scoped to .ap-admin-section-checkbox specifically, not a
-        // bare "input[type=checkbox]" selector — this list also contains
-        // the Owner-only delegation checkbox (#ap_canManageAdminAccess)
-        // further down in the same DOM node, which would otherwise get
-        // swept into "adminChecks" too (it has no `value` attribute, so
-        // it'd contribute a bogus "on" entry and throw off the
-        // selectedSections.length === adminChecks.length "all" check).
+      if (adminSectionList) {
         const adminChecks = Array.from(adminSectionList.querySelectorAll(".ap-admin-section-checkbox"));
         const selectedSections = adminChecks.filter((c) => c.checked).map((c) => c.value);
         payload.allowedAdminSections = selectedSections.length === adminChecks.length ? "all" : selectedSections;
-        // View-only/Can-Edit sub-choice for whitelistIp/tgRoutes/
-        // agentProfile (see EDITABLE_ADMIN_SECTIONS above) — only
-        // meaningful for a section that's actually checked above; an
-        // unchecked section has no view access at all, so its Can-Edit
-        // radio (if rendered) is ignored here regardless of its value.
+
         const editSections = EDITABLE_ADMIN_SECTIONS.filter((id) => {
           if (!selectedSections.includes(id)) return false;
           const radio = adminSectionList.querySelector(`input[name="apEditLevel_${id}"]:checked`);
@@ -1138,11 +1105,10 @@
         });
         payload.adminSectionEditAccess = editSections.length === EDITABLE_ADMIN_SECTIONS.length ? "all" : editSections;
       }
-      // The delegation grant checkbox only ever exists in the DOM when
-      // the viewer is the Owner (see openAgentProfileModal()) — its mere
-      // presence is the permission check.
-      const delegateToggle = document.getElementById("ap_canManageAdminAccess");
-      if (delegateToggle) payload.canManageAdminAccess = delegateToggle.checked;
+      const delegationToggle = document.getElementById("ap_canManageAdminAccess");
+      if (delegationToggle) {
+        payload.canManageAdminAccess = delegationToggle.checked;
+      }
       statusEl.textContent = "Saving…";
       statusEl.className = "edit-details-status";
       const res = await window.AgentAuth.authFetch("/api/admin/accounts", {
