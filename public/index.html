@@ -909,16 +909,20 @@
           // COMPLETELY REPLACES the old rank-based split (explicit
           // business-owner decision) — this radio pair is the only thing
           // that decides Can-Edit now, for every rank including
-          // SuperAdmin. Disabled unless the viewer can edit admin
-          // sections at all AND the section checkbox itself is checked
-          // (wired live via wireAdminSectionEditToggles() below).
-          if (!EDITABLE_ADMIN_SECTIONS.includes(s.id)) return checkboxHtml;
+          // SuperAdmin. HIDDEN (not just disabled) whenever the section
+          // checkbox itself is unchecked — Can-Edit means nothing for a
+          // section you can't even see, and a permanently-visible
+          // grayed-out row is just visual noise (approved design change,
+          // was disabled-but-always-shown before). Toggled live via
+          // wireAdminSectionEditToggles() below; a read-only viewer
+          // (canEditAdminSections false) never sees this row at all,
+          // regardless of check state.
+          if (!EDITABLE_ADMIN_SECTIONS.includes(s.id) || !canEditAdminSections) return checkboxHtml;
           const isEditChecked = allEditSelected || (Array.isArray(a.adminSectionEditAccess) && a.adminSectionEditAccess.includes(s.id));
-          const radioDisabled = canEditAdminSections && isChecked ? "" : "disabled";
           return checkboxHtml + `
-          <div class="agent-profile-edit-level-row" data-for-section="${acctEsc(s.id)}">
-            <label><input type="radio" name="apEditLevel_${acctEsc(s.id)}" value="view" ${isEditChecked ? "" : "checked"} ${radioDisabled} /> View only</label>
-            <label><input type="radio" name="apEditLevel_${acctEsc(s.id)}" value="edit" ${isEditChecked ? "checked" : ""} ${radioDisabled} /> Can Edit</label>
+          <div class="agent-profile-edit-level-row" data-for-section="${acctEsc(s.id)}" style="${isChecked ? "" : "display:none;"}">
+            <label><input type="radio" name="apEditLevel_${acctEsc(s.id)}" value="view" ${isEditChecked ? "" : "checked"} /> View only</label>
+            <label><input type="radio" name="apEditLevel_${acctEsc(s.id)}" value="edit" ${isEditChecked ? "checked" : ""} /> Can Edit</label>
           </div>`;
         }).join("");
         // The delegation grant itself (canManageAdminAccess) is Owner-only
@@ -1036,12 +1040,22 @@
     // called when the viewer has edit rights on this block at all
     // (canEditAdminSections true) — for a read-only viewer everything's
     // already disabled from render, nothing to wire up.
+    // Keeps each editable admin section's View-only/Can-Edit radio pair
+    // in sync with its own checkbox — unchecking "Whitelist IP" (say)
+    // immediately hides its View/Edit row too (not just grays it out —
+    // Can-Edit means nothing for a section you can't even see, so there's
+    // no reason to keep taking up space once unchecked; approved design
+    // change from an earlier disabled-but-visible version). Only wired
+    // up when the viewer has edit rights on this block at all
+    // (canEditAdminSections true, checked at render time in
+    // openAgentProfileModal()) — a read-only viewer never gets this row
+    // in the DOM to begin with.
     function wireAdminSectionEditToggles() {
       document.querySelectorAll(".ap-admin-section-checkbox").forEach((cb) => {
         cb.addEventListener("change", () => {
           const row = document.querySelector(`.agent-profile-edit-level-row[data-for-section="${cb.value}"]`);
           if (!row) return;
-          row.querySelectorAll("input[type=radio]").forEach((r) => { r.disabled = !cb.checked; });
+          row.style.display = cb.checked ? "" : "none";
         });
       });
     }
