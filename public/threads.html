@@ -403,8 +403,8 @@
           </div>
           <div class="thread-detail-actions">
             <button class="status-chip ${t.solved ? "solved" : "unsolved"}" id="solveBtn">${t.solved ? "✅ Solved" : "❌ Not Solved"}</button>
-            ${!t.rootRecalled && (!t.fieldMap || !t.brandId) ? '<button class="icon-btn icon-btn-labeled" id="editRootBtn" title="Edit the original Telegram message (plain text — this ticket predates field-level editing)">✍🏻 Edit</button>' : ""}
-            ${!t.rootRecalled && t.fieldMap && t.brandId ? '<button class="icon-btn icon-btn-labeled" id="editDetailsBtn" title="Edit fields — syncs the Telegram message + the Sheet row (if any)">📊 Edit</button>' : ""}
+            ${!t.rootRecalled && (!t.fieldMap || !t.brandId) ? '<button class="icon-btn icon-btn-labeled" id="editRootBtn" title="Edit the original Telegram message (plain text — this ticket predates field-level editing)">✏️ Edit</button>' : ""}
+            ${!t.rootRecalled && t.fieldMap && t.brandId ? '<button class="icon-btn icon-btn-labeled" id="editDetailsBtn" title="Edit fields — syncs the Telegram message + the Sheet row (if any)">✏️ Edit</button>' : ""}
             ${t.fieldMap && t.brandId ? '<button class="icon-btn icon-btn-labeled" id="forwardBtn" title="Generate a new ticket in another Topic, pre-filled from this one">↗️ Forward</button>' : ""}
             ${!t.rootRecalled ? '<button class="icon-btn icon-btn-labeled" id="recallRootBtn" title="Recall (delete) the original Telegram message">↩️ Recall</button>' : ""}
             <button class="icon-btn icon-btn-labeled" id="deleteBtn" title="Delete this tracking record (Telegram + Sheet are untouched)">🗑 Delete</button>
