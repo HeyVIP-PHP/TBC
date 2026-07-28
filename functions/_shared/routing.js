@@ -98,31 +98,6 @@ export const MODULE_META = {
 };
 
 /**
- * Risk Issue only: certain selections auto-fill the Remark with fixed,
- * pre-approved wording instead of whatever the agent typed — keeps phrasing
- * to the Risk team consistent. Checked in this field order (issueType first,
- * then accountStatus, then cancelType); first match wins. A selection not
- * listed here just falls through to whatever the agent typed in Remark.
- */
-export const RISK_ISSUE_AUTO_REMARKS = {
-  issueType: {
-    "Bonus Auto Force": "The player claimed the bonus, but it was automatically force-served.",
-  },
-  accountStatus: {
-    "Suspended -- player wants to deposit":
-      "𝗛𝗶 𝘁𝗲𝗮𝗺, Account showing 𝘀𝘂𝘀𝗽𝗲𝗻𝗱𝗲𝗱, Is it possible to Activate? The player want to make a 𝗱𝗲𝗽𝗼𝘀𝗶𝘁.",
-    "Account Inactive": "𝗛𝗶 𝘁𝗲𝗮𝗺, 𝗔𝗰𝗰𝗼𝘂𝗻𝘁 𝘀𝗵𝗼𝘄𝗶𝗻𝗴 𝗶𝗻𝗮𝗰𝘁𝗶𝘃𝗲, 𝗜𝘀 𝗶𝘁 𝗽𝗼𝘀𝘀𝗶𝗯𝗹𝗲 𝘁𝗼 𝗮𝗰𝘁𝗶𝘃𝗮𝘁𝗲?",
-    "Suspended -- Player has been warned":
-      "𝗛𝗶 𝘁𝗲𝗮𝗺, We have warned the player. 𝗜𝘀 𝗶𝘁 𝗽𝗼𝘀𝘀𝗶𝗯𝗹𝗲 𝘁𝗼 𝗮𝗰𝘁𝗶𝘃𝗮𝘁𝗲 𝘁𝗵𝗶𝘀 𝗮𝗰𝗰𝗼𝘂𝗻𝘁?",
-  },
-  cancelType: {
-    "Cancel with 10% Penalty":
-      "𝗛𝗶 𝘁𝗲𝗮𝗺, Please help cancel this bonus with a 10% penalty as per the player's request, Thanks.",
-    "Cancel without Penalty": "𝗛𝗶 𝘁𝗲𝗮𝗺,\nPlease help to cancel this bonus as per player request. Thanks.",
-  },
-};
-
-/**
  * Risk Issue only: emoji shown next to each field when building the message
  * dynamically for an issue type that doesn't have its own row list in
  * MESSAGE_TEMPLATE.risk_issue.templates yet (everything except "Bonus Cancel
@@ -372,7 +347,6 @@ export const MESSAGE_TEMPLATE = {
           { emoji: "🎁", label: "Bonus Code", key: "bonusCode", tight: true },
           { emoji: "📌", label: "Cancel Type", key: "cancelType" },
           { emoji: "📝", label: "Remark", key: "remark" },
-          { emoji: "💬", key: "autoRemark", raw: true },
           { emoji: "👷", label: "PIC", key: "pic" },
         ],
       },

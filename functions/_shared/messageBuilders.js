@@ -16,7 +16,7 @@
  * array of column values" functions, no I/O. submit.js and
  * threads/[id].js are both responsible for the actual network calls.
  */
-import { RISK_ISSUE_AUTO_REMARKS, RISK_ISSUE_FIELD_EMOJI, ACCOUNT_ISSUE_FIELD_STYLE, BANK_ISSUE_FIELD_STYLE, WITHDRAW_ISSUE_FIELD_STYLE } from "./routing.js";
+import { RISK_ISSUE_FIELD_EMOJI, ACCOUNT_ISSUE_FIELD_STYLE, BANK_ISSUE_FIELD_STYLE, WITHDRAW_ISSUE_FIELD_STYLE } from "./routing.js";
 
 export function escapeHtml(str) {
   return String(str)
@@ -70,15 +70,6 @@ export function resolveColumnValues(columns, { fieldMap, brand, reporter, screen
   });
 }
 
-export function resolveAutoRemark(fieldMap) {
-  for (const triggerField of ["issueType", "accountStatus", "cancelType"]) {
-    const table = RISK_ISSUE_AUTO_REMARKS[triggerField];
-    const match = table && table[fieldMap[triggerField]];
-    if (match) return match;
-  }
-  return null;
-}
-
 export function resolveSheetLayout(entry, fieldMap) {
   if (!entry) return null;
   if (entry.selectorField) {
@@ -108,7 +99,6 @@ function resolveFieldValue(item, { brandName, fieldMap, reporter, screenshotLink
   if (item.key === "screenshotLink") return screenshotLink;
   if (item.key === "pic") return reporter;
   if (item.key === "dateShift") return formatDateShift(fieldMap.reportDate, fieldMap.shift);
-  if (item.key === "autoRemark") return resolveAutoRemark(fieldMap);
   if (item.key === "submittedBy") return reporter ? `Submitted by ${reporter}` : null;
   return fieldMap[item.key];
 }
@@ -197,9 +187,6 @@ export function buildRiskIssueDynamicMessage({ brandName, fields, fieldMap, repo
     lines.push("", `📝 <b>Remark:</b> ${escapeHtml(fieldMap.remark)}`);
   }
 
-  const autoNote = resolveAutoRemark(fieldMap);
-  if (autoNote) lines.push("", `💬 ${escapeHtml(autoNote)}`);
-
   lines.push("", `👷 <b>PIC:</b> ${escapeHtml(reporter)}`);
   return lines.join("\n");
 }
@@ -271,15 +258,13 @@ export function buildWithdrawIssueDynamicMessage({ brandName, fields, fieldMap, 
   return lines.join("\n");
 }
 
-export function buildMessage({ meta, brandName, reporter, fields, moduleId, fieldMap }) {
-  const autoNote = moduleId === "risk_issue" ? resolveAutoRemark(fieldMap) : null;
+export function buildMessage({ meta, brandName, reporter, fields }) {
   const lines = [
     `${meta.emoji} <b>New ${escapeHtml(meta.name)} — ${escapeHtml(brandName)}</b>`,
     "",
     ...fields
       .filter((f) => f.value)
       .map((f) => `<b>${escapeHtml(f.label)}:</b> ${escapeHtml(f.value)}`),
-    ...(autoNote ? ["", `💬 ${escapeHtml(autoNote)}`] : []),
     "",
     `🧑‍💼 Submitted by ${escapeHtml(reporter)}`,
   ];
