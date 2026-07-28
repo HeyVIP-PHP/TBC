@@ -319,15 +319,16 @@
     // rank floor above, mirrors canSeeAdminSection() in
     // functions/_shared/accounts.js exactly. Only the Owner is
     // unconditionally unrestricted; everyone else (including SuperAdmin)
-    // defaults to "all" until the Owner explicitly unchecks a section for
-    // them. This is purely the UI-hiding half — every corresponding
-    // server endpoint (offices.js, routes.js, accounts.js) enforces the
-    // same check independently, so hiding the sidebar item is a
-    // convenience, not the actual security boundary.
+    // is DENIED by default — sees nothing here until the Owner explicitly
+    // checks a section for them (opposite of Topic Access above, which
+    // defaults to allowed). This is purely the UI-hiding half — every
+    // corresponding server endpoint (offices.js, routes.js, accounts.js)
+    // enforces the same check independently, so hiding the sidebar item
+    // is a convenience, not the actual security boundary.
     function canSeeAdminSection(sectionId) {
       if (!authInfo) return false;
       if (authInfo.role === "owner") return true;
-      if (authInfo.allowedAdminSections === "all" || authInfo.allowedAdminSections === undefined) return true;
+      if (authInfo.allowedAdminSections === "all") return true;
       return Array.isArray(authInfo.allowedAdminSections) && authInfo.allowedAdminSections.includes(sectionId);
     }
     // Whether this viewer can edit OTHER accounts' Account Management
@@ -850,7 +851,7 @@
         // a delegated non-Owner only a strictly-lower-ranked target
         // (never themselves).
         const canEditAdminSections = isOwnerViewer || myRank > targetRank;
-        const allSectionsSelected = a.allowedAdminSections === "all" || a.allowedAdminSections === undefined;
+        const allSectionsSelected = a.allowedAdminSections === "all";
         const adminSectionChecks = ADMIN_SECTIONS_LIST.map((s) => `
           <label class="agent-profile-module-check">
             <input type="checkbox" value="${acctEsc(s.id)}" ${allSectionsSelected || (Array.isArray(a.allowedAdminSections) && a.allowedAdminSections.includes(s.id)) ? "checked" : ""} ${canEditAdminSections ? "" : "disabled"} />

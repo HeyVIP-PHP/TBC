@@ -178,7 +178,7 @@ async function handlePost({ request, env }) {
         (body.officeId !== undefined && (body.officeId || null) !== (existingTarget.officeId || null)) ||
         (body.allowedBrands !== undefined && JSON.stringify(body.allowedBrands) !== JSON.stringify(existingTarget.allowedBrands ?? [])) ||
         (body.allowedModules !== undefined && JSON.stringify(body.allowedModules) !== JSON.stringify(existingTarget.allowedModules ?? "all"));
-      const adminSectionsChanging = body.allowedAdminSections !== undefined && JSON.stringify(body.allowedAdminSections) !== JSON.stringify(existingTarget.allowedAdminSections ?? "all");
+      const adminSectionsChanging = body.allowedAdminSections !== undefined && JSON.stringify(body.allowedAdminSections) !== JSON.stringify(existingTarget.allowedAdminSections ?? []);
       const passwordChanging = !!body.password;
 
       if (roleChanging || accessChanging) {

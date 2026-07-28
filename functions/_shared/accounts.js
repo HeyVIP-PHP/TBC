@@ -349,12 +349,14 @@ export async function saveAccount(env, { username, password, passwordChangedBy, 
     allowedModules: allowedModules !== undefined
       ? (allowedModules === "all" ? "all" : (Array.isArray(allowedModules) ? allowedModules : []))
       : (existing?.allowedModules ?? "all"),
-    // Account Management Access — same "all" default reasoning as
-    // allowedModules above: ships as a no-op for every existing account
-    // until the Owner explicitly restricts one. See canSeeAdminSection().
+    // Account Management Access — DENY-by-default, opposite of
+    // allowedModules above: a brand-new account (or any pre-existing one
+    // that's never had this touched) starts with ZERO sections, not all
+    // of them. The Owner opts each account in explicitly. See
+    // canSeeAdminSection().
     allowedAdminSections: allowedAdminSections !== undefined
       ? (allowedAdminSections === "all" ? "all" : (Array.isArray(allowedAdminSections) ? allowedAdminSections : []))
-      : (existing?.allowedAdminSections ?? "all"),
+      : (existing?.allowedAdminSections ?? []),
     // Whether this account can edit OTHER accounts' allowedAdminSections.
     // Only ever set true by the Owner — see canManageOthersAdminAccess()
     // and the server-side guard in functions/api/admin/accounts.js (this
@@ -528,17 +530,18 @@ export function canSeeModule(account, moduleId) {
 // Whitelist IP / TG Group·Channel / Agent Profile so far; add new ids to
 // ADMIN_SECTIONS below as more sections need this). Unlike canSeeBrand/
 // canSeeModule (which auto-pass at admin+ rank), this one does NOT
-// auto-pass by rank — only the Owner is unrestricted. Everyone else,
-// including SuperAdmin, is subject to allowedAdminSections, which
-// defaults to "all" so shipping this feature doesn't retroactively hide
-// anything until the Owner actually unchecks something. `account` may be
-// `null` in bootstrap mode (see authenticateStaff()) — treated as fully
-// trusted, same as every other check bootstrap mode bypasses.
+// auto-pass by rank — only the Owner is unrestricted. DENY-BY-DEFAULT,
+// the opposite of allowedModules/allowedBrands above: a missing/undefined
+// allowedAdminSections means NO sections, not all of them — this is a
+// sensitive permission the Owner has to opt each account INTO explicitly,
+// not one that ships pre-granted. `account` may be `null` in bootstrap
+// mode (see authenticateStaff()) — treated as fully trusted, same as
+// every other check bootstrap mode bypasses.
 export const ADMIN_SECTIONS = ["createAccount", "whitelistIp", "tgRoutes", "agentProfile"];
 export function canSeeAdminSection(account, sectionId) {
   if (!account) return true; // bootstrap mode
   if (account.role === "owner") return true;
-  if (account.allowedAdminSections === "all" || account.allowedAdminSections === undefined) return true;
+  if (account.allowedAdminSections === "all") return true;
   return Array.isArray(account.allowedAdminSections) && account.allowedAdminSections.includes(sectionId);
 }
 
