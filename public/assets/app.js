@@ -102,6 +102,76 @@
     if (f.required && !isGated) fieldEls[f.key].control.required = true;
   });
 
+  // ---- Withdraw Issue: duplicate-TID guard ----
+  // Checks the brand's "Withdraw Issue" Sheet (not KV, which gets purged
+  // over time) for a TID that was already submitted. Runs onBlur (early
+  // warning) and again right before submit (final guard, in case the
+  // field was edited back to a flagged value without a fresh blur).
+  let tidDuplicateInfo = null; // { date, pic } when the current TID value is a duplicate, else null
+  let checkTidNow = null;      // only set for withdraw_issue; submit handler reads this
+  let tidCheckSeq = 0;         // guards against a stale response overwriting a newer one
+
+  if (module.id === "withdraw_issue" && fieldEls.tid) {
+    const tidLabel = fieldEls.tid.wrap.querySelector("label");
+    const tidWarning = document.createElement("span");
+    tidWarning.className = "tid-warning";
+    tidLabel.appendChild(tidWarning);
+    const submitBtnEl = document.getElementById("submitBtn");
+
+    // One function owns all three states together (warning text / red
+    // input border / submit button disabled) so they can never drift
+    // out of sync with each other.
+    function setTidState(state, text) {
+      tidWarning.textContent = text || "";
+      tidWarning.className = "tid-warning" + (state ? ` ${state}` : "");
+      fieldEls.tid.control.classList.toggle("field-error", state === "found");
+      if (state === "found") {
+        submitBtnEl.disabled = true;
+        submitBtnEl.title = "This TID was already submitted — change it before continuing.";
+      } else if (submitBtnEl.title) {
+        submitBtnEl.disabled = false;
+        submitBtnEl.title = "";
+      }
+    }
+
+    async function checkTid(showChecking) {
+      const brandValue = brandSelect.value;
+      const tidValue = fieldEls.tid.control.value.trim();
+      tidDuplicateInfo = null;
+      if (!brandValue || !tidValue) { setTidState(null, ""); return null; }
+
+      const seq = ++tidCheckSeq;
+      if (showChecking) setTidState("checking", "checking…");
+
+      let data;
+      try {
+        const res = await window.AgentAuth.authFetch(`/api/check-tid?brand=${encodeURIComponent(brandValue)}&tid=${encodeURIComponent(tidValue)}`);
+        data = await res.json();
+      } catch {
+        data = { ok: false };
+      }
+
+      if (seq !== tidCheckSeq) return null; // a newer check already superseded this one
+      if (!data.ok) { setTidState(null, ""); return null; }
+
+      if (data.found) {
+        tidDuplicateInfo = { date: data.date, pic: data.pic };
+        const parts = [data.date, data.pic].filter(Boolean).join(" by ");
+        setTidState("found", `⚠️ TID has been submitted on${parts ? ` ${parts}` : " before"}.`);
+      } else {
+        setTidState(null, "");
+      }
+      return tidDuplicateInfo;
+    }
+
+    checkTidNow = checkTid;
+    fieldEls.tid.control.addEventListener("blur", () => checkTid(true));
+    // Retyping clears the warning immediately — no need to wait for another blur.
+    fieldEls.tid.control.addEventListener("input", () => { if (tidDuplicateInfo) setTidState(null, ""); });
+    // Switching brands invalidates any prior result (it was checked against the old brand's sheet).
+    brandSelect.addEventListener("change", () => setTidState(null, ""));
+  }
+
   // ---- Brand-dependent select options (e.g. Promotion / Tier Level lists
   // that differ per brand) — rebuilt whenever the brand changes. ----
   function refreshBrandDependentOptions() {
@@ -348,6 +418,14 @@
     btn.textContent = "Submitting…";
 
     try {
+      if (checkTidNow) {
+        await checkTidNow(true);
+        if (tidDuplicateInfo) {
+          const parts = [tidDuplicateInfo.date, tidDuplicateInfo.pic].filter(Boolean).join(" by ");
+          throw new Error(`This TID was already submitted${parts ? ` on ${parts}` : ""}. Change the TID or confirm with the team before resubmitting.`);
+        }
+      }
+
       const formData = new FormData(form);
       const fields = module.fields
         .filter((f) => !f.showIf || fieldEls[f.key].wrap.classList.contains("is-visible"))
@@ -395,7 +473,9 @@
       status.textContent = err.message || "Something went wrong. Try again.";
       status.className = "status-msg err";
     } finally {
-      btn.disabled = false;
+      // Only re-enable if the TID isn't (still) flagged as a duplicate —
+      // otherwise this would silently undo the "found" state's button-disable.
+      if (!tidDuplicateInfo) btn.disabled = false;
       document.getElementById("submitLabel").textContent = `Submit ${module.name}`;
     }
   });

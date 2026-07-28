@@ -1159,6 +1159,21 @@ h1 {
 }
 .field textarea { resize: vertical; min-height: 90px; }
 
+/* Withdraw Issue: duplicate-TID guard */
+.tid-warning {
+  margin-left: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--required);
+}
+.tid-warning.checking { color: var(--ink-soft); font-weight: 500; font-style: italic; }
+
+.field input.field-error {
+  border-color: var(--required);
+  background: color-mix(in srgb, var(--field-bg) 85%, var(--required) 15%);
+}
+.field input.field-error:focus { border-color: var(--required); }
+
 /* Highlighted "what kind of issue" box */
 .field-emphasize {
   border: 1.5px solid var(--border);
