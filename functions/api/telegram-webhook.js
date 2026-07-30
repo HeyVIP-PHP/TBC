@@ -7,7 +7,15 @@
  *   curl "https://api.telegram.org/bot<TOKEN>/setWebhook" \
  *     -d "url=https://inrtg-control.pages.dev/api/telegram-webhook" \
  *     -d "secret_token=<TELEGRAM_WEBHOOK_SECRET>" \
- *     -d "allowed_updates=[\"message\"]"
+ *     -d "allowed_updates=[\"message\",\"edited_message\"]"
+ *
+ * NOTE: if the webhook was registered before "edited_message" support
+ * was added, Telegram will keep silently NOT sending edited_message
+ * updates even after this file is deployed — allowed_updates is only
+ * read at setWebhook time, not re-derived from the code. Re-run the
+ * curl command above (with the updated allowed_updates) once after
+ * deploying, then confirm with getWebhookInfo that "edited_message" is
+ * listed.
  *
  * `TELEGRAM_WEBHOOK_SECRET` is a string you make up yourself (any random
  * value works) and set as a Cloudflare secret with that same name — it's
@@ -27,7 +35,7 @@
  * intentionally ignored rather than guessed at, so a message never lands
  * on the wrong ticket.
  */
-import { findThreadIdByMessage, appendMessage } from "../_shared/threads.js";
+import { findThreadIdByMessage, appendMessage, editIncomingMessageInThread } from "../_shared/threads.js";
 
 export async function onRequestPost({ request, env }) {
   // Verify the request really came from Telegram.
@@ -56,6 +64,7 @@ export async function onRequestPost({ request, env }) {
 
 async function handleUpdate(env, update) {
   if (!env.THREADS_KV) return;
+  if (update.edited_message) return handleEditedMessage(env, update.edited_message);
   const msg = update.message;
   if (!msg) return;
   // This used to reject ANY bot account's message (`msg.from?.is_bot`),
@@ -128,4 +137,25 @@ async function handleUpdate(env, update) {
     messageId: msg.message_id,
     replyToMessageId: replyTarget.message_id,
   });
+}
+
+// Someone edited a message directly inside Telegram — message_id stays
+// the same as the original send, only the content and edit_date change,
+// so we can look it up in msgid: the exact same way a brand-new reply
+// does (findThreadIdByMessage). Uses the same own-bot-id check as
+// handleUpdate() above (see that function's comment for why this is
+// more correct than a blanket is_bot filter) — our own bot-sent
+// messages are only ever edited through the dashboard's own ✏️ buttons,
+// a completely separate path (functions/api/threads/[id].js) that never
+// touches this webhook, so there's no double-handling risk between the
+// two.
+async function handleEditedMessage(env, msg) {
+  if (!msg) return;
+  const ownBotId = (env.TELEGRAM_BOT_TOKEN || "").split(":")[0];
+  if (ownBotId && String(msg.from?.id) === ownBotId) return;
+  const hasContent = msg.text || msg.caption;
+  if (!hasContent) return; // e.g. only the attached media changed, no caption either way — nothing to show
+  const threadId = await findThreadIdByMessage(env, msg.chat.id, msg.message_id);
+  if (!threadId) return; // editing something we're not tracking — ignore, don't guess
+  await editIncomingMessageInThread(env, threadId, msg.message_id, msg.text || msg.caption);
 }

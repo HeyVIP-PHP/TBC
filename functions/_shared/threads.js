@@ -712,6 +712,33 @@ export async function editMessageInThread(env, threadId, messageId, text) {
   return thread;
 }
 
+// The OTHER side's reply was edited directly inside Telegram (not sent
+// from our own dashboard) — inbound counterpart to editMessageInThread()
+// above, which only ever touches OUR OWN self-sent replies. Driven by
+// Telegram's edited_message webhook update (see telegram-webhook.js),
+// since editing someone else's message isn't something the Bot API lets
+// us do — we can only find out about it after the fact and record what
+// it now says. Reopens an already-solved ticket the same way a brand-new
+// reply does (see appendMessage above) — a deliberate edit is the same
+// "still needs attention" signal, and it shouldn't sit unnoticed just
+// because it happened to be an edit instead of a new message.
+export async function editIncomingMessageInThread(env, threadId, messageId, text) {
+  const thread = await getThread(env, threadId);
+  if (!thread) return null;
+  const msg = thread.messages.find((m) => !m.self && m.messageId === messageId);
+  if (!msg) return null; // not a message we're tracking for this thread — ignore
+  msg.text = text;
+  msg.editedAt = new Date().toISOString();
+  thread.lastActivity = msg.editedAt;
+  if (thread.solved) {
+    thread.solved = false;
+    thread.solvedAt = null;
+  }
+  await saveThread(env, thread);
+  await patchListCache(env, thread); // instant sidebar update — lastActivity / reopened status
+  return thread;
+}
+
 // A self-sent reply was recalled from Telegram — remove it from the
 // conversation (matches how Telegram itself just removes it, no trace).
 export async function removeMessageFromThread(env, threadId, messageId) {
