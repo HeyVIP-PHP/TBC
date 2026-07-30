@@ -239,7 +239,9 @@
       searchTimer = setTimeout(() => loadList(q), 250);
     });
 
-    let pendingAttachment = null;
+    let pendingAttachments = []; // File[] — queued for the next reply, up to MAX_REPLY_ATTACHMENTS
+    const MAX_REPLY_ATTACHMENTS = 10; // Telegram's own sendMediaGroup album cap
+    const MAX_ATTACHMENT_MB = 45; // stays under Telegram Bot API's ~50MB upload ceiling with some margin
     let replyTarget = null; // { messageId, from, text } | null
 
     function setReplyTarget(messageId, from, text) {
@@ -276,17 +278,36 @@
     function renderAttachPreview() {
       const el = document.getElementById("replyAttachPreview");
       if (!el) return;
-      if (!pendingAttachment) { el.innerHTML = ""; return; }
-      el.innerHTML = `
-        <span class="attach-chip">📎 ${escapeHtml(pendingAttachment.name)} (${Math.round(pendingAttachment.size / 1024)} KB)
-          <button type="button" id="clearAttachBtn">✕</button>
-        </span>`;
-      document.getElementById("clearAttachBtn").addEventListener("click", () => {
-        pendingAttachment = null;
-        document.getElementById("replyFileInput").value = "";
-        renderAttachPreview();
+      if (!pendingAttachments.length) { el.innerHTML = ""; return; }
+      el.innerHTML = pendingAttachments
+        .map((f, i) => `
+          <span class="attach-chip">📎 ${escapeHtml(f.name)} (${Math.round(f.size / 1024)} KB)
+            <button type="button" data-remove-attach="${i}">✕</button>
+          </span>`)
+        .join("");
+      el.querySelectorAll("[data-remove-attach]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          pendingAttachments.splice(Number(btn.dataset.removeAttach), 1);
+          renderAttachPreview();
+        });
       });
       polishEmoji();
+    }
+
+    // Shared by the file picker (change event) and clipboard paste — both
+    // just hand this a list of File objects and it applies the same
+    // rules: drop anything over MAX_ATTACHMENT_MB (with a heads-up, since
+    // a silent drop would look like a bug), cap the total queued at
+    // MAX_REPLY_ATTACHMENTS, then re-render the chip row.
+    function queueAttachments(files) {
+      if (!files.length) return;
+      const tooBig = files.filter((f) => f.size > MAX_ATTACHMENT_MB * 1024 * 1024);
+      const sized = files.filter((f) => f.size <= MAX_ATTACHMENT_MB * 1024 * 1024);
+      if (tooBig.length) alert(`${tooBig.map((f) => f.name).join(", ")} — over ${MAX_ATTACHMENT_MB}MB, Telegram will reject it. Not added.`);
+      const room = MAX_REPLY_ATTACHMENTS - pendingAttachments.length;
+      if (sized.length > room) alert(`You can attach up to ${MAX_REPLY_ATTACHMENTS} files in one message — only the first ${Math.max(room, 0)} of your new selection were added.`);
+      pendingAttachments.push(...sized.slice(0, Math.max(room, 0)));
+      renderAttachPreview();
     }
 
     function timeAgo(iso) {
@@ -319,7 +340,7 @@
         ${t.solved ? '<span class="t-done">✓</span>' : ""}
       `;
       el.addEventListener("click", () => {
-        if (t.id !== selectedId) { pendingAttachment = null; replyTarget = null; }
+        if (t.id !== selectedId) { pendingAttachments = []; replyTarget = null; }
         openThread(t.id);
       });
       return el;
@@ -576,8 +597,8 @@
           <div class="reply-attach-preview" id="replyAttachPreview"></div>
           <div class="reply-box">
             <div class="reply-input-wrap">
-              <button class="attach-btn" id="attachBtn" title="Attach screenshot or PDF">🔗</button>
-              <input type="file" id="replyFileInput" accept="image/png,image/jpeg,application/pdf" hidden />
+              <button class="attach-btn" id="attachBtn" title="Attach images, videos, or PDFs (multiple allowed, or paste an image directly into the box)">🔗</button>
+              <input type="file" id="replyFileInput" accept="image/*,video/*,application/pdf" multiple hidden />
               <input type="text" id="replyInput" placeholder="Reply into the Telegram thread..." autocomplete="off" />
             </div>
             <button id="replySend">Send</button>
@@ -592,8 +613,10 @@
       });
       document.getElementById("attachBtn").addEventListener("click", () => document.getElementById("replyFileInput").click());
       document.getElementById("replyFileInput").addEventListener("change", (e) => {
-        pendingAttachment = e.target.files[0] || null;
-        renderAttachPreview();
+        // Accumulate across multiple picks (the attach button can be
+        // clicked again to add more) rather than replacing the queue.
+        queueAttachments(Array.from(e.target.files || []));
+        e.target.value = ""; // reset so picking the same file again still fires "change"
       });
       renderAttachPreview();
       scrollConversation(true);
@@ -642,9 +665,15 @@
       const initials = (m.from || "?").trim().slice(0, 2).toUpperCase();
       const color = m.self ? "var(--accent-gold)" : colorFor(m.from || "?");
       const deliveredTick = m.self ? '<span class="msg-tick" title="Delivered">✓</span>' : "";
+      // attachmentFileIds/attachmentNames (plural, arrays) is the current
+      // shape for a reply's attachments — falls back to the old singular
+      // attachmentFileId/attachmentName fields for replies sent before
+      // multi-attachment support existed, so old threads still render.
+      const attachFileIds = (m.attachmentFileIds && m.attachmentFileIds.length) ? m.attachmentFileIds : (m.attachmentFileId ? [m.attachmentFileId] : []);
+      const attachNames = (m.attachmentNames && m.attachmentNames.length) ? m.attachmentNames : (m.attachmentName ? [m.attachmentName] : []);
       const attachTag = m.hasAttachment
-        ? (m.attachmentFileId
-            ? `<div class="inline-attach-slot msg-inline-attach" data-attachment-file="${escapeAttr(m.attachmentFileId)}" data-attachment-name="${escapeAttr(m.attachmentName || "attachment")}"><div class="inline-attach-loading">Loading attachment…</div></div>`
+        ? (attachFileIds.length
+            ? attachFileIds.map((fid, i) => `<div class="inline-attach-slot msg-inline-attach" data-attachment-file="${escapeAttr(fid)}" data-attachment-name="${escapeAttr(attachNames[i] || "attachment")}"><div class="inline-attach-loading">Loading attachment…</div></div>`).join("")
             : '<span class="msg-attach-tag" title="Sent before this dashboard could look attachments back up — check the Telegram group for it.">📎 attachment</span>')
         : "";
       return `
@@ -698,19 +727,19 @@
     async function sendReply() {
       const input = document.getElementById("replyInput");
       const text = input.value.trim();
-      if (!text && !pendingAttachment) return;
+      if (!text && !pendingAttachments.length) return;
       const btn = document.getElementById("replySend");
       btn.disabled = true;
       btn.textContent = "Sending…";
       try {
         const payload = { action: "reply", text };
         if (replyTarget) payload.replyToMessageId = replyTarget.messageId;
-        if (pendingAttachment) {
-          payload.attachment = {
-            name: pendingAttachment.name,
-            type: pendingAttachment.type,
-            dataUrl: await fileToDataUrl(pendingAttachment),
-          };
+        if (pendingAttachments.length) {
+          payload.attachments = await Promise.all(pendingAttachments.map(async (f) => ({
+            name: f.name,
+            type: f.type,
+            dataUrl: await fileToDataUrl(f),
+          })));
         }
         const res = await authFetch(`/api/threads/${selectedThread.id}`, {
           method: "POST",
@@ -724,7 +753,7 @@
         }
         selectedThread = data.thread;
         input.value = "";
-        pendingAttachment = null;
+        pendingAttachments = [];
         replyTarget = null;
         renderReplyTargetBanner();
         document.getElementById("replyFileInput").value = "";
@@ -1309,6 +1338,39 @@
     document.getElementById("attachLightboxClose").addEventListener("click", closeAttachLightbox);
     attachLightbox.addEventListener("click", (e) => { if (e.target === attachLightbox) closeAttachLightbox(); });
     document.addEventListener("keydown", (e) => { if (e.key === "Escape" && attachLightbox.classList.contains("is-open")) closeAttachLightbox(); });
+
+    // Paste-anywhere, like Telegram desktop: copy a screenshot and just
+    // Ctrl+V / ⌘V while a thread is open — no need to click into the
+    // reply box first. Scoped with guards instead of to one element:
+    //   - no thread open → nothing to attach it to, let it fall through
+    //   - an edit-details or forward modal is open (both use the same
+    //     .edit-details-overlay class) → the forward modal owns paste
+    //     itself for its own attachment dropzone (see onPaste inside
+    //     openForwardModal); the edit-details modal has no attachments
+    //     at all. Either way, don't also queue onto the reply below.
+    //   - the attachment lightbox is open → the person is VIEWING an
+    //     existing attachment, not composing a new reply
+    // Only acts when the clipboard actually contains a file — a normal
+    // text paste (kind "string") always falls through untouched,
+    // wherever on the page it happens.
+    document.addEventListener("paste", (e) => {
+      if (!selectedThread) return;
+      if (document.querySelector(".edit-details-overlay")) return;
+      if (attachLightbox.classList.contains("is-open")) return;
+      const items = Array.from(e.clipboardData?.items || []);
+      const files = items.filter((it) => it.kind === "file").map((it) => it.getAsFile()).filter(Boolean);
+      if (!files.length) return;
+      e.preventDefault();
+      // Clipboard screenshots often come through with a generic name
+      // like "image.png" with no useful info — good enough as-is, but
+      // give it a timestamp so multiple pastes don't look identical in
+      // the chip row.
+      const named = files.map((f, i) => (f.name && f.name !== "image.png") ? f : new File([f], `pasted-${Date.now()}-${i}.${(f.type.split("/")[1] || "png")}`, { type: f.type }));
+      queueAttachments(named);
+      // Land focus in the reply box so the caption is easy to type right
+      // after pasting, same as if the person had clicked 🔗 first.
+      document.getElementById("replyInput")?.focus();
+    });
 
     bootDashboard();
 

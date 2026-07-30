@@ -128,22 +128,26 @@ async function handleThreadAction({ request, env, params }) {
 
   if (action === "reply") {
     const text = (body.text || "").trim();
-    const attachment = body.attachment; // { name, type, dataUrl } | undefined
+    // { name, type, dataUrl }[] — also accepts the old singular
+    // `attachment` field so any in-flight/cached client build still works.
+    const attachments = Array.isArray(body.attachments) ? body.attachments : (body.attachment ? [body.attachment] : []);
     const replyToMessageId = body.replyToMessageId || null;
-    if (!text && !attachment) return json({ ok: false, error: "Reply text is empty." }, 400);
+    if (!text && !attachments.length) return json({ ok: false, error: "Reply text is empty." }, 400);
     if (!env.TELEGRAM_BOT_TOKEN) return json({ ok: false, error: "Server is missing TELEGRAM_BOT_TOKEN." }, 500);
 
     const thread = existingThread;
 
-    let messageId;
-    let attachmentFileId = null;
+    let messageIds = [];
+    let attachmentFileIds = [];
+    let attachmentNames = [];
     try {
-      if (attachment) {
-        const sent = await sendTelegramAttachment(env, thread, text, attachment, replyToMessageId);
-        messageId = sent.messageId;
-        attachmentFileId = sent.fileId;
+      if (attachments.length) {
+        const sent = await sendTelegramReplyAttachments(env, thread, text, attachments, replyToMessageId);
+        messageIds = sent.messageIds;
+        attachmentFileIds = sent.attachmentFileIds;
+        attachmentNames = sent.attachmentNames;
       } else {
-        messageId = await sendTelegramText(env, thread, text, replyToMessageId);
+        messageIds = [await sendTelegramText(env, thread, text, replyToMessageId)];
       }
     } catch (e) {
       return json({ ok: false, error: String(e.message || e) }, 502);
@@ -168,14 +172,20 @@ async function handleThreadAction({ request, env, params }) {
     const updated = await appendMessage(env, id, {
       from: account.username,
       handle: null,
-      text: text || `📎 ${attachment.name}`,
-      hasAttachment: !!attachment,
-      attachmentName: attachment ? attachment.name : null,
-      attachmentFileId,
+      text: text || (attachments.length === 1 ? `📎 ${attachments[0].name}` : `📎 ${attachments.length} attachments`),
+      hasAttachment: !!attachments.length,
+      attachmentNames,
+      attachmentFileIds,
       ts: new Date().toISOString(),
       self: true,
       delivered: true,
-      messageId,
+      // messageId stays the FIRST id (the one carrying the caption/text —
+      // see sendTelegramReplyAttachments) so replyToMessageId quoting and
+      // the edit/recall buttons (which key off this single id) keep
+      // working unchanged. messageIds is every id in the send (>1 only
+      // for a multi-attachment album) — recallReply needs all of them.
+      messageId: messageIds[0],
+      messageIds,
       replyToMessageId: replyToMessageId || null,
     });
     return json({ ok: true, thread: updated });
@@ -301,7 +311,18 @@ async function handleThreadAction({ request, env, params }) {
     if (!text || !messageId) return json({ ok: false, error: "Missing text or messageId." }, 400);
     if (!env.TELEGRAM_BOT_TOKEN) return json({ ok: false, error: "Server is missing TELEGRAM_BOT_TOKEN." }, 500);
 
-    const tg = await callTelegram(env, "editMessageText", { chat_id: existingThread.chatId, message_id: messageId, text, parse_mode: "HTML" });
+    // A reply sent WITH attachment(s) went out as a caption on
+    // sendPhoto/sendVideo/sendDocument (or, for an album, on the first
+    // item of the sendMediaGroup — see sendTelegramReplyAttachments) —
+    // Telegram rejects editMessageText on those; editMessageCaption is
+    // required instead. A plain text-only reply still uses
+    // editMessageText as before.
+    const editingMsg = existingThread.messages.find((m) => m.self && m.messageId === messageId);
+    const editMethod = editingMsg?.hasAttachment ? "editMessageCaption" : "editMessageText";
+    const editPayload = { chat_id: existingThread.chatId, message_id: messageId, parse_mode: "HTML" };
+    if (editingMsg?.hasAttachment) editPayload.caption = text; else editPayload.text = text;
+
+    const tg = await callTelegram(env, editMethod, editPayload);
     if (!tg.ok) return json({ ok: false, error: telegramEditError(tg) }, 502);
 
     const updated = await editMessageInThread(env, id, messageId, text);
@@ -314,10 +335,17 @@ async function handleThreadAction({ request, env, params }) {
     if (!env.TELEGRAM_BOT_TOKEN) return json({ ok: false, error: "Server is missing TELEGRAM_BOT_TOKEN." }, 500);
 
     const thread = existingThread;
-    const tg = await callTelegram(env, "deleteMessage", { chat_id: thread.chatId, message_id: messageId });
-    if (!tg.ok) return json({ ok: false, error: telegramDeleteError(tg) }, 502);
-
     const recalledMsg = thread.messages.find((m) => m.self && m.messageId === messageId);
+    // A reply sent as a multi-attachment album (sendMediaGroup) has one
+    // Telegram message_id PER item, only the first (messageId) carrying
+    // the caption — same reasoning as recallRoot's rootMessageIds above.
+    // Delete every one of them, not just the captioned one, or the rest
+    // of the album is left behind in the group forever.
+    const idsToDelete = recalledMsg?.messageIds && recalledMsg.messageIds.length ? recalledMsg.messageIds : [messageId];
+    const results = await Promise.all(idsToDelete.map((mid) => callTelegram(env, "deleteMessage", { chat_id: thread.chatId, message_id: mid })));
+    const firstFailure = results.find((r) => !r.ok);
+    if (firstFailure) return json({ ok: false, error: telegramDeleteError(firstFailure) }, 502);
+
     const updated = await removeMessageFromThread(env, id, messageId);
     await logDeletion(env, {
       type: "recall-reply",
@@ -365,22 +393,90 @@ function looksLikeImage(type, name) {
   return /\.(jpe?g|png|gif|webp|bmp|heic|heif)$/i.test(name || "");
 }
 
-async function sendTelegramAttachment(env, thread, text, attachment, replyToMessageId) {
-  const { name, type, dataUrl } = attachment;
+// Same fallback reasoning as looksLikeImage above — trust the browser's
+// File.type first, fall back to extension for files that arrive with a
+// missing/generic type (e.g. re-uploaded after being saved out of some
+// other app). Used to route video attachments through sendVideo (native
+// inline player + thumbnail in Telegram) instead of sendDocument (bare
+// 📎 filename, no preview/playback in-chat).
+function looksLikeVideo(type, name) {
+  if ((type || "").startsWith("video/")) return true;
+  return /\.(mp4|mov|webm|mkv|avi|m4v|3gp)$/i.test(name || "");
+}
+
+// Classifies one attachment into the three Telegram upload "lanes" this
+// file works with. Centralized here so the single-send path, the
+// media-group grouping decision, and the media-group per-item `type`
+// field all agree on the same classification.
+function attachmentKind(type, name) {
+  if (looksLikeImage(type, name)) return "photo";
+  if (looksLikeVideo(type, name)) return "video";
+  return "document";
+}
+
+function dataUrlToBytes(dataUrl) {
   const base64 = dataUrl.includes(",") ? dataUrl.slice(dataUrl.indexOf(",") + 1) : dataUrl;
   const binary = atob(base64);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  const blob = new Blob([bytes], { type: type || "application/octet-stream" });
+  return bytes;
+}
 
-  const isImage = looksLikeImage(type, name);
-  const method = isImage ? "sendPhoto" : "sendDocument";
-  const field = isImage ? "photo" : "document";
+// Sends 1+ attachments on a reply. One file goes out as a single
+// sendPhoto/sendVideo/sendDocument with `text` as its caption; 2+ files
+// become one Telegram album (sendMediaGroup, caption on the first item)
+// as long as nothing in the batch needs sendDocument — Telegram's own
+// album endpoint accepts a mix of photos and videos but not documents.
+// A mixed image/video + document batch falls back to one message per
+// attachment (only the first carrying the caption), same reasoning
+// submit.js's sendTelegramWithAttachments already uses for tickets.
+async function sendTelegramReplyAttachments(env, thread, text, attachments, replyToMessageId) {
+  const replyId = replyToMessageId || thread.rootMessageId;
+
+  if (attachments.length === 1) {
+    const { messageId, fileId, name } = await sendReplySingleWithCaption(env, thread, text, attachments[0], replyId);
+    return {
+      messageIds: [messageId],
+      attachmentFileIds: fileId ? [fileId] : [],
+      attachmentNames: fileId ? [name] : [],
+    };
+  }
+
+  const allMedia = attachments.every((a) => attachmentKind(a.type, a.name) !== "document");
+  if (allMedia) {
+    const sent = await sendReplyMediaGroup(env, thread, text, attachments, replyId);
+    const withFileId = sent.filter((s) => s.fileId);
+    return {
+      messageIds: sent.map((s) => s.messageId),
+      attachmentFileIds: withFileId.map((s) => s.fileId),
+      attachmentNames: withFileId.map((s) => s.name),
+    };
+  }
+
+  const sent = [];
+  for (let i = 0; i < attachments.length; i++) {
+    sent.push(await sendReplySingleWithCaption(env, thread, i === 0 ? text : undefined, attachments[i], replyId));
+  }
+  const withFileId = sent.filter((s) => s.fileId);
+  return {
+    messageIds: sent.map((s) => s.messageId),
+    attachmentFileIds: withFileId.map((s) => s.fileId),
+    attachmentNames: withFileId.map((s) => s.name),
+  };
+}
+
+async function sendReplySingleWithCaption(env, thread, text, attachment, replyId) {
+  const { name, type, dataUrl } = attachment;
+  const blob = new Blob([dataUrlToBytes(dataUrl)], { type: type || "application/octet-stream" });
+
+  const kind = attachmentKind(type, name);
+  const method = kind === "photo" ? "sendPhoto" : kind === "video" ? "sendVideo" : "sendDocument";
+  const field = kind; // "photo" | "video" | "document" — same names as the FormData field Telegram expects
 
   const form = new FormData();
   form.append("chat_id", thread.chatId);
   if (thread.topicId) form.append("message_thread_id", String(thread.topicId));
-  form.append("reply_to_message_id", String(replyToMessageId || thread.rootMessageId));
+  form.append("reply_to_message_id", String(replyId));
   form.append(field, blob, name || "attachment");
   if (text) form.append("caption", text);
 
@@ -390,16 +486,53 @@ async function sendTelegramAttachment(env, thread, text, attachment, replyToMess
 
   // sendPhoto returns an ARRAY of sizes (Telegram auto-generates several
   // resolutions) — the last one is the largest/original-quality version,
-  // which is the one worth keeping. sendDocument returns a single object
-  // instead, no array. Either way, this file_id is what
-  // functions/api/attachment/[fileId].js needs later to fetch the actual
-  // bytes on demand — see the comment where this function is called for
-  // why nothing is stored/uploaded anywhere at send time.
-  const fileId = isImage
+  // which is the one worth keeping. sendVideo and sendDocument each
+  // return a single object instead, no array. Either way, this file_id is
+  // what functions/api/attachment/[fileId].js needs later to fetch the
+  // actual bytes on demand — see the comment where this function is
+  // called for why nothing is stored/uploaded anywhere at send time.
+  const fileId = kind === "photo"
     ? data.result.photo?.[data.result.photo.length - 1]?.file_id || null
-    : data.result.document?.file_id || null;
+    : kind === "video"
+      ? data.result.video?.file_id || null
+      : data.result.document?.file_id || null;
 
-  return { messageId: data.result.message_id, fileId };
+  return { messageId: data.result.message_id, fileId, name: name || null };
+}
+
+// Sends 2+ photos/videos as one Telegram album — all-or-nothing
+// multipart upload, caption goes on the first item only (Telegram shows
+// it as the whole album's caption regardless of which item it's on).
+async function sendReplyMediaGroup(env, thread, text, attachments, replyId) {
+  const form = new FormData();
+  form.append("chat_id", thread.chatId);
+  if (thread.topicId) form.append("message_thread_id", String(thread.topicId));
+  form.append("reply_to_message_id", String(replyId));
+
+  const media = attachments.map((att, i) => {
+    const entry = { type: attachmentKind(att.type, att.name), media: `attach://file${i}` };
+    if (i === 0 && text) entry.caption = text;
+    return entry;
+  });
+  form.append("media", JSON.stringify(media));
+
+  attachments.forEach((att, i) => {
+    const blob = new Blob([dataUrlToBytes(att.dataUrl)], { type: att.type || "application/octet-stream" });
+    form.append(`file${i}`, blob, att.name || `file${i}`);
+  });
+
+  const res = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMediaGroup`, { method: "POST", body: form });
+  const data = await res.json();
+  if (!data.ok) throw new Error(data.description || "Telegram send failed.");
+  // attachments[i] lines up positionally with data.result[i] —
+  // sendMediaGroup returns results in the same order the media items
+  // were submitted in. Each result carries either a `photo` array or a
+  // `video` object depending on which type that particular item was.
+  return data.result.map((m, i) => ({
+    messageId: m.message_id,
+    fileId: (m.photo?.[m.photo.length - 1]?.file_id) || m.video?.file_id || null,
+    name: attachments[i]?.name || null,
+  }));
 }
 
 // Telegram's own wording is fairly technical — translate the common cases
