@@ -55,10 +55,14 @@ export function resolveColumnValues(columns, { fieldMap, brand, reporter, screen
       // Server-generated date, independent of any form field — used by
       // modules (like Bank Issue) that don't ask the agent for a date at
       // all, so the Sheet still gets one automatically at submit time.
+      // Computed in Manila local time (see manilaDateISO below), not the
+      // Worker's raw UTC clock, so a submission made between ~4pm-midnight
+      // UTC (already past midnight in the Philippines) still lands on the
+      // correct PH calendar day instead of the previous one.
       // NOTE: on an editDetails() re-write this recomputes to TODAY, not
       // the original submit date — acceptable since these modules never
       // asked for/stored a real date to begin with.
-      if (col === "autoDate") return formatDateDDMMYYYY(new Date().toISOString().slice(0, 10));
+      if (col === "autoDate") return formatDateDDMMYYYY(manilaDateISO());
       return fieldMap[col] || "-";
     }
     // { details: ["remark", "issueDetails"] } — first non-empty field wins
@@ -134,6 +138,14 @@ function formatDateShift(isoDate, shift) {
   if (!formatted) return "-";
   const emoji = shift === "Night Shift" ? "🌙" : "☀️";
   return `${formatted} ( ${shift || "Day Shift"} Report )${emoji}`;
+}
+
+// Philippines (Asia/Manila) is a fixed UTC+8 offset with no DST, so this
+// simple shift-then-slice is safe year-round (no timezone DB needed in
+// the Workers runtime). Used by the "autoDate" column above.
+export function manilaDateISO() {
+  const manila = new Date(Date.now() + 8 * 60 * 60 * 1000);
+  return manila.toISOString().slice(0, 10);
 }
 
 export function formatDateDDMMYYYY(isoDate) {
@@ -220,6 +232,10 @@ export function buildAccountIssueDynamicMessage({ brandName, fields, fieldMap, r
 export function buildBankIssueDynamicMessage({ brandName, fields, fieldMap, reporter }) {
   const lines = [`🏦 <b>Bank Issue — ${escapeHtml(fieldMap.issueType || "-")}</b>`, ""];
   lines.push(`🎮 <b>Brand/Platform:</b> ${escapeHtml(brandCurrencyLabel(brandName))}`);
+  // Same server-generated, Manila-local date as the "autoDate" Sheet
+  // column (see resolveColumnValues above) — Bank Issue never asks the
+  // agent for a date field, so this is the only place it comes from.
+  lines.push(`📅 <b>Date:</b> ${escapeHtml(formatDateDDMMYYYY(manilaDateISO()))}`);
   lines.push(`👤 <b>Username:</b> ${escapeHtml(fieldMap.uid || "-")}`);
 
   fields
@@ -242,6 +258,10 @@ export function buildBankIssueDynamicMessage({ brandName, fields, fieldMap, repo
 export function buildWithdrawIssueDynamicMessage({ brandName, fields, fieldMap, reporter }) {
   const lines = [`💸 <b>Withdraw Issue — ${escapeHtml(fieldMap.issueType || "-")}</b>`, ""];
   lines.push(`🎮 <b>Brand/Platform:</b> ${escapeHtml(brandCurrencyLabel(brandName))}`);
+  // Same server-generated, Manila-local date as the "autoDate" Sheet
+  // column (see resolveColumnValues above) — Withdraw Issue never asks
+  // the agent for a date field, so this is the only place it comes from.
+  lines.push(`📅 <b>Date:</b> ${escapeHtml(formatDateDDMMYYYY(manilaDateISO()))}`);
   lines.push(`👤 <b>Username:</b> ${escapeHtml(fieldMap.username || "-")}`);
 
   fields
