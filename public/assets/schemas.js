@@ -174,6 +174,11 @@ const MODULES = [
           "Change Mobile Number",
         ],
       },
+      // Bank Issue used to have no date field at all — the Sheet/TG date
+      // was 100% server-generated (today, Manila time). Agents asked to
+      // see/adjust it (e.g. backfilling yesterday's ticket), so it's now
+      // a real field like QA's — still defaults to today, still editable.
+      { key: "date", label: "Date", type: "date", required: true, defaultToday: true },
       { key: "uid", label: "UID", type: "text", required: true, placeholder: "Player UID..." },
       // -- Add Mobile Number -- (moved from Account Issue, same fields/format)
       { key: "registerNumber", label: "Register Number", type: "text", required: false, placeholder: "Register number...",
@@ -204,10 +209,7 @@ const MODULES = [
       { key: "newMobileNumber", label: "New Mobile Number", type: "text", required: false,
         showIf: { field: "issueType", oneOf: ["Change Mobile Number"] },
       },
-      { key: "accountNumber", label: "Account Number", type: "text", required: false,
-        showIf: { field: "issueType", oneOf: ["Change Mobile Number"] },
-      },
-      { key: "accountName", label: "Account Name", type: "text", required: false,
+      { key: "accountName", label: "New Wallet Account Name", type: "text", required: false,
         showIf: { field: "issueType", oneOf: ["Change Mobile Number"] },
       },
       { key: "relationship", label: "Relationship", type: "text", required: false,

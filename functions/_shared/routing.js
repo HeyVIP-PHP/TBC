@@ -167,8 +167,7 @@ export const BANK_ISSUE_FIELD_STYLE = {
   removeNumber: { emoji: "➖" },
   previousMobileNumber: { emoji: "📤" },
   newMobileNumber: { emoji: "📥" },
-  accountNumber: { emoji: "🏦" },
-  accountName: { emoji: "🧾" },
+  accountName: { emoji: "🧾" }, // label comes from schema: "New Wallet Account Name"
   relationship: { emoji: "🤝" },
 };
 
@@ -436,8 +435,8 @@ export const SHEET_LAYOUT = {
   },
   // Trimmed on purpose — only these 7 columns exist on the "Bank Issue"
   // tab (Date A → PIC G). The rest of the module's fields (Register
-  // Number, Add Number, CNIC, Previous/New Mobile Number, Account
-  // Number/Name, Relationship, etc.) only show up in the Telegram
+  // Number, Add Number, CNIC, Previous/New Mobile Number, New Wallet
+  // Account Name, Relationship, etc.) only show up in the Telegram
   // message, same "not listed = Sheet skips it" rule as Account Issue's
   // Update Information fields above.
   bank_issue: {

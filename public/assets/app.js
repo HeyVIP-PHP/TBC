@@ -95,7 +95,12 @@
     fieldEls[f.key] = { wrap, control: wrap.querySelector("input,select,textarea"), def: f };
 
     if (f.defaultToday && f.type === "date") {
-      fieldEls[f.key].control.value = new Date().toISOString().slice(0, 10);
+      // Local calendar date, not toISOString() (which is always UTC and
+      // can land on the wrong day near midnight for agents in Manila,
+      // UTC+8).
+      const now = new Date();
+      const localISO = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+      fieldEls[f.key].control.value = localISO;
     }
 
     // Base required state (conditional/gated fields only become required once visible+required)
