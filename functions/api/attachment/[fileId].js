@@ -85,27 +85,90 @@ async function handleGet({ request, env, params }) {
   //      and blindly trusting it would short-circuit past the better
   //      guesses below.
   //   3. Guessing from Telegram's own internal file_path.
-  //   4. Whatever Telegram's header said, even if generic.
-  //   5. Hardcoded fallback, if genuinely nothing else worked out.
+  //   4. Magic-bytes sniffing (read the file's actual header bytes) —
+  //      only reached when 1–3 all came up empty, i.e. filename AND
+  //      both Telegram-provided type hints are gone. This is the case
+  //      for old records that never had a filename saved and whose
+  //      file_path/Content-Type were already generic at upload time —
+  //      filename/metadata are dead ends there, so the file's own bytes
+  //      are the only signal left, and they're never lost as long as
+  //      the file content itself isn't corrupted.
+  //   5. Whatever Telegram's header said, even if generic.
+  //   6. Hardcoded fallback, if genuinely nothing else worked out.
   const originalName = new URL(request.url).searchParams.get("name") || "";
   const tgContentType = fileRes.headers.get("Content-Type") || "";
-  const contentType =
+  const preliminaryType =
     guessContentType(originalName) ||
     (tgContentType && tgContentType !== "application/octet-stream" ? tgContentType : null) ||
-    guessContentType(filePath) ||
-    tgContentType ||
-    "application/octet-stream";
-  return new Response(fileRes.body, {
+    guessContentType(filePath);
+
+  const cacheHeaders = {
+    // Private + short-lived — this is a live proxy, not a stable asset
+    // URL; no reason for a shared/public cache to hold onto it, but a
+    // brief cache is harmless if someone reopens the same image within
+    // a few minutes (e.g. re-opening the lightbox).
+    "Cache-Control": "private, max-age=300",
+  };
+
+  // Layers 1–3 already produced a trustworthy type — stream the body
+  // straight through untouched. No need to buffer the whole file just
+  // to peek at its header when we already know what it is.
+  if (preliminaryType) {
+    return new Response(fileRes.body, {
+      status: 200,
+      headers: { "Content-Type": preliminaryType, ...cacheHeaders },
+    });
+  }
+
+  // Last resort: filename and every Telegram-provided type hint are
+  // gone. Buffer the file (unavoidable here, since we need to read its
+  // header bytes before deciding what to send) and sniff its magic
+  // bytes. This has a real I/O/memory cost, which is exactly why it's
+  // gated behind "everything else already failed" rather than run on
+  // every request.
+  let bodyBuffer = null;
+  try {
+    bodyBuffer = await fileRes.arrayBuffer();
+  } catch (e) {
+    bodyBuffer = null; // fall through to the generic-type response below
+  }
+
+  let finalType = tgContentType || "application/octet-stream";
+  if (bodyBuffer) {
+    const sniffed = await sniffTypeFromBytes(new Uint8Array(bodyBuffer)).catch(() => null);
+    if (sniffed) finalType = sniffed;
+  }
+
+  return new Response(bodyBuffer, {
     status: 200,
-    headers: {
-      "Content-Type": contentType,
-      // Private + short-lived — this is a live proxy, not a stable asset
-      // URL; no reason for a shared/public cache to hold onto it, but a
-      // brief cache is harmless if someone reopens the same image within
-      // a few minutes (e.g. re-opening the lightbox).
-      "Cache-Control": "private, max-age=300",
-    },
+    headers: { "Content-Type": finalType, ...cacheHeaders },
   });
+}
+
+// Reads the first few bytes of a file and compares them against known
+// magic-byte signatures. Works even when the filename and every
+// server-provided Content-Type hint are missing or generic, since this
+// signature lives in the file's own content and survives regardless of
+// what happened to its metadata — as long as the file isn't corrupted.
+// Returns a MIME type string, or null if nothing matched.
+async function sniffTypeFromBytes(bytes) {
+  const head = bytes.slice(0, 12);
+  const hex = Array.from(head)
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+
+  if (hex.startsWith("25504446")) return "application/pdf"; // %PDF
+  if (hex.startsWith("ffd8ff")) return "image/jpeg";
+  if (hex.startsWith("89504e47")) return "image/png";
+  if (hex.startsWith("474946383761") || hex.startsWith("474946383961")) return "image/gif"; // GIF87a / GIF89a
+  if (hex.startsWith("52494646") && hex.slice(16, 24) === "57454250") return "image/webp"; // RIFF....WEBP
+  if (hex.startsWith("504b0304")) return "application/zip"; // also covers docx/xlsx/pptx
+  if (hex.startsWith("4d5a")) return "application/x-msdownload"; // MZ (exe/dll)
+  if (hex.slice(8, 16) === "66747970") return "video/mp4"; // ....ftyp
+  if (hex.startsWith("1f8b")) return "application/gzip";
+  // Extend as needed for this project's other expected formats.
+
+  return null;
 }
 
 function guessContentType(pathOrName) {
