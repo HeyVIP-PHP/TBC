@@ -811,9 +811,21 @@
       document.body.appendChild(overlay);
 
       const container = overlay.querySelector("#editDetailsFields");
-      const fieldEls = {};
+      // IMPORTANT: keyed by ARRAY INDEX, not by f.key. Some modules (e.g.
+      // risk_issue) reuse the same key ("remark") on two different field
+      // definitions gated by different showIf conditions — a plain
+      // by-key dict would let the second definition silently clobber the
+      // first one's DOM reference, so refreshVisibility()/Save would end
+      // up reading/hiding the WRONG textarea (bug: a Remark typed for one
+      // issueType was silently dropped from the save payload because the
+      // dict entry pointed at a different, hidden "remark" field).
+      const fieldEls = [];
+      // Separate first-match-wins lookup by key, only ever used to find a
+      // showIf "driver" field's current value (e.g. "issueType") — driver
+      // fields are never duplicated, so this stays safe.
+      const fieldElsByKey = {};
 
-      module.fields.forEach((f) => {
+      module.fields.forEach((f, i) => {
         const wrap = document.createElement("div");
         wrap.className = "field";
         const value = fieldMap[f.key] != null ? fieldMap[f.key] : "";
@@ -833,7 +845,9 @@
         }
         wrap.innerHTML = `<label>${escapeHtml(f.label)}${f.required ? ' <span class="required">*</span>' : ""}</label>${controlHtml}`;
         container.appendChild(wrap);
-        fieldEls[f.key] = { wrap, control: wrap.querySelector("input,select,textarea") };
+        const entry = { wrap, control: wrap.querySelector("input,select,textarea") };
+        fieldEls[i] = entry;
+        if (!(f.key in fieldElsByKey)) fieldElsByKey[f.key] = entry;
       });
 
       // Same AND-of-conditions showIf logic as the submission form
@@ -844,19 +858,19 @@
         const conditions = Array.isArray(showIf) ? showIf : [showIf];
         return conditions.every((c) => {
           if (c.field === "brand") return c.oneOf.includes(t.brandId); // brand isn't editable here — fixed to the ticket's own
-          const driver = fieldEls[c.field];
+          const driver = fieldElsByKey[c.field];
           return driver && c.oneOf.includes(driver.control.value);
         });
       }
       function refreshVisibility() {
-        module.fields.forEach((f) => {
+        module.fields.forEach((f, i) => {
           if (!f.showIf) return;
-          fieldEls[f.key].wrap.style.display = conditionMet(f.showIf) ? "" : "none";
+          fieldEls[i].wrap.style.display = conditionMet(f.showIf) ? "" : "none";
         });
       }
-      module.fields.forEach((f) => {
-        if (fieldEls[f.key].control.tagName === "SELECT") {
-          fieldEls[f.key].control.addEventListener("change", refreshVisibility);
+      module.fields.forEach((f, i) => {
+        if (fieldEls[i].control.tagName === "SELECT") {
+          fieldEls[i].control.addEventListener("change", refreshVisibility);
         }
       });
       refreshVisibility();
@@ -868,10 +882,12 @@
 
       overlay.querySelector("#editDetailsSave").addEventListener("click", async () => {
         const fields = module.fields
-          .filter((f) => !f.showIf || fieldEls[f.key].wrap.style.display !== "none")
-          .map((f) => ({ key: f.key, label: f.label, value: (fieldEls[f.key].control.value || "").trim() }));
-        const missingRequired = module.fields.find((f) =>
-          f.required && (!f.showIf || fieldEls[f.key].wrap.style.display !== "none") && !fieldEls[f.key].control.value.trim()
+          .map((f, i) => ({ f, i })) // pair with original index BEFORE filtering —
+                                      // filter() resets indices for a chained map()
+          .filter(({ f, i }) => !f.showIf || fieldEls[i].wrap.style.display !== "none")
+          .map(({ f, i }) => ({ key: f.key, label: f.label, value: (fieldEls[i].control.value || "").trim() }));
+        const missingRequired = module.fields.find((f, i) =>
+          f.required && (!f.showIf || fieldEls[i].wrap.style.display !== "none") && !fieldEls[i].control.value.trim()
         );
         const statusEl = overlay.querySelector("#editDetailsStatus");
         if (missingRequired) {
