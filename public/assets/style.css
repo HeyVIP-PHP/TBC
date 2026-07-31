@@ -78,6 +78,14 @@
 
 * { box-sizing: border-box; }
 
+/* 全局滚动条样式 */
+* { scrollbar-width: thin; scrollbar-color: var(--accent-glow) transparent; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--accent-glow); border-radius: 20px; border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background: rgba(124, 108, 240, 0.75); background-clip: padding-box; }
+::-webkit-scrollbar-corner { background: transparent; }
+
 body {
   margin: 0;
   min-height: 100vh;
@@ -670,7 +678,7 @@ a { color: inherit; text-decoration: none; }
 .hub-main {
   flex: 1;
   position: relative;
-  padding: 48px 40px;
+  padding: 36px 40px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -678,12 +686,8 @@ a { color: inherit; text-decoration: none; }
 }
 .hub-main .inner { max-width: 480px; }
 .status-badge-corner {
-  position: fixed;
-  left: 330px;
-  bottom: 24px;
-}
-@media (max-width: 720px) {
-  .status-badge-corner { position: static; display: inline-flex; margin-top: 24px; }
+  display: inline-flex;
+  margin-top: 14px;
 }
 .hub-main h1 { font-family: var(--font-display); font-weight: 600; font-size: 28px; margin: 0 0 10px; letter-spacing: -0.01em; }
 .hub-main p { color: var(--ink-soft); margin: 0 0 24px; line-height: 1.6; }
@@ -866,7 +870,7 @@ a { color: inherit; text-decoration: none; }
 .thread-top-fixed { flex-shrink: 0; padding: 30px 40px 0; }
 .thread-scroll-area { flex: 1; overflow-y: auto; padding: 20px 40px; min-height: 0; }
 .thread-reply-fixed { flex-shrink: 0; padding: 16px 40px 26px; border-top: 1px solid var(--panel-border); }
-.thread-detail-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+.thread-detail-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 18px; flex-wrap: wrap; }
 .thread-detail-title { display: flex; align-items: center; gap: 10px; font-family: var(--font-display); font-size: 19px; font-weight: 600; }
 .thread-detail-sub { font-size: 12.5px; color: var(--ink-soft); margin-top: 4px; }
 .thread-detail-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; flex-wrap: wrap; }
