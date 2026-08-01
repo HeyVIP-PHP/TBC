@@ -634,6 +634,47 @@ a { color: inherit; text-decoration: none; }
 .sidebar-item.expandable { cursor: pointer; user-select: none; }
 .sidebar-item.expandable .arrow { transition: transform 0.15s ease; }
 .sidebar-item.expandable.open .arrow { transform: rotate(90deg); }
+
+/* Account Management — one continuous card (header + expanded list share
+   a single border/radius, split only by a thin divider when open) rather
+   than two separately-boxed elements stacked with a gap between them. */
+.am-group {
+  border-radius: 14px;
+  border: 1px solid transparent;
+  background: var(--sidebar-item-bg);
+  overflow: hidden;
+  margin-bottom: 8px;
+  transition: border-color 0.15s ease;
+}
+.am-group:has(.am-toggle:hover),
+.am-group:has(.sidebar-subitems.open) { border-color: var(--panel-border); }
+.am-group .am-toggle {
+  margin-bottom: 0;
+  border: none;
+  border-left: 3px solid transparent;
+  border-radius: 0;
+  background: transparent;
+}
+.am-group .am-toggle:hover { background: var(--sidebar-item-hover); transform: none; }
+.am-group .sidebar-subitems {
+  margin: 0; padding: 6px; border-left: none;
+  border-top: 1px solid var(--panel-border);
+}
+.sidebar-subitem { position: relative; }
+.sidebar-subitem .sub-icon {
+  width: 26px; height: 26px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: background 0.15s ease;
+}
+.sidebar-subitem:hover .sub-icon { background: var(--sub-accent, rgba(255, 255, 255, 0.1)); }
+.sub-status-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: #f59e0b; margin-left: auto;
+}
+.sidebar-subitem.has-status-alert {
+  border-left: 3px solid #f59e0b;
+  background: rgba(245, 158, 11, 0.08);
+}
 .sidebar-subitems {
   display: none; margin: -2px 0 12px 22px; padding-left: 14px;
   border-left: 2px solid var(--panel-border);

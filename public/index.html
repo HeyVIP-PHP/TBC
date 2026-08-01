@@ -76,21 +76,23 @@
       </a>
       <div id="sidebarList"></div>
 
-      <div class="sidebar-item expandable" id="acctMgmtToggle">
-        <div class="icon" style="background:#a78bfa33;">🛡️</div>
-        <div class="text">
-          <div class="name">Account Management</div>
-          <div class="desc">Accounts, offices & passwords</div>
+      <div class="am-group" id="acctMgmtGroup">
+        <div class="sidebar-item am-toggle expandable" id="acctMgmtToggle">
+          <div class="icon" style="background:#a78bfa33;">🛡️</div>
+          <div class="text">
+            <div class="name">Account Management</div>
+            <div class="desc">Accounts, offices & passwords</div>
+          </div>
+          <span class="arrow">&rarr;</span>
         </div>
-        <span class="arrow">&rarr;</span>
-      </div>
-      <div class="sidebar-subitems" id="acctMgmtSubitems">
-        <div class="sidebar-subitem" id="subCreateAccount" style="display:none;"><span class="sub-icon">➕</span> Create Account</div>
-        <div class="sidebar-subitem" id="subWhitelistIp" style="display:none;"><span class="sub-icon">🌐</span> Whitelist IP</div>
-        <div class="sidebar-subitem" id="subTgRoutes" style="display:none;"><span class="sub-icon">📤</span> TG Group / Channel</div>
-        <div class="sidebar-subitem" id="subSettings" style="display:none;"><span class="sub-icon">🚧</span> Settings</div>
-        <div class="sidebar-subitem" id="subResetPassword"><span class="sub-icon">🔑</span> Reset Password</div>
-        <div class="sidebar-subitem" id="subAgentProfile" style="display:none;"><span class="sub-icon">🪪</span> Agent Profile</div>
+        <div class="sidebar-subitems" id="acctMgmtSubitems">
+          <div class="sidebar-subitem" id="subCreateAccount" style="display:none;--sub-accent:#a78bfa33;"><span class="sub-icon">➕</span> Create Account</div>
+          <div class="sidebar-subitem" id="subWhitelistIp" style="display:none;--sub-accent:#60a5fa33;"><span class="sub-icon">🌐</span> Whitelist IP</div>
+          <div class="sidebar-subitem" id="subTgRoutes" style="display:none;--sub-accent:#38bdf833;"><span class="sub-icon">📤</span> TG Group / Channel</div>
+          <div class="sidebar-subitem" id="subSettings" style="display:none;--sub-accent:#f59e0b33;"><span class="sub-icon">🚧</span> Settings<span class="sub-status-dot" id="subSettingsDot" style="display:none;"></span></div>
+          <div class="sidebar-subitem" id="subResetPassword" style="--sub-accent:#f3c46333;"><span class="sub-icon">🔑</span> Reset Password</div>
+          <div class="sidebar-subitem" id="subAgentProfile" style="display:none;--sub-accent:#f472b633;"><span class="sub-icon">🪪</span> Agent Profile</div>
+        </div>
       </div>
     </aside>
     <main class="hub-main page-morph-in" data-transition-root>
@@ -336,6 +338,17 @@
         document.querySelectorAll(".sidebar-item[data-module]").forEach((el) => applyTo(el, el.dataset.module));
         applyTo(document.getElementById("threadsCard"), "tg_reply_threads");
         applyTo(document.getElementById("promoCard"), "promo_code_search");
+
+        // Settings row itself gets a quiet reminder (left accent + dot) —
+        // not the same "grayed out + blocked" treatment as the topics
+        // above, since Settings itself is never blocked; this is just a
+        // "something you toggled off is still off" nudge for whoever
+        // manages it.
+        const anyNonActive = Object.values(data.items).some((i) => i.status !== "active");
+        const settingsSubitem = document.getElementById("subSettings");
+        const settingsDot = document.getElementById("subSettingsDot");
+        if (settingsSubitem) settingsSubitem.classList.toggle("has-status-alert", anyNonActive);
+        if (settingsDot) settingsDot.style.display = anyNonActive ? "inline-block" : "none";
       } catch {
         // Non-fatal — cards just show without a status badge; the real
         // block still happens server-side if someone clicks through.
