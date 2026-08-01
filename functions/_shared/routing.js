@@ -71,6 +71,7 @@ export const BRANDS = {
 // Only these modules get written to the brand's Google Sheet.
 // Flip any of these to change what gets recorded, independent of Telegram routing.
 export const RECORD_TO_SHEET = {
+  deposit_request: true,
   qa: true,
   account_issue: true,
   // No Google Sheet exists for this yet — Telegram still sends fine,
@@ -462,6 +463,23 @@ export const MESSAGE_TEMPLATE = {
  * Add an entry here per module once you know that module's tab name + columns.
  */
 export const SHEET_LAYOUT = {
+  // Brand-new tab, created automatically (with this exact header row) on
+  // that brand's very first Deposit Request submission — see
+  // `autoCreate`/`headers` handling in submit.js and
+  // appendRowByColumnsWithAutoCreate() in _shared/googleSheets.js. Writes
+  // into the SAME per-brand sheet (brand.sheetId) every other module's
+  // tab already lives in — not a separate spreadsheet — since no other
+  // sheetId was given. Column set/order/labels below match the exact
+  // header row the business owner specified (2026-08-01) — no Channel or
+  // Screenshot column, unlike the Telegram message/what was first shipped
+  // with; do not "helpfully" add them back without asking again.
+  deposit_request: {
+    tab: "Deposit Request",
+    startColumn: "A",
+    autoCreate: true,
+    headers: ["Brand", "Date", "Username", "Amount", "Phone number", "TID", "Reference No.", "PIC"],
+    columns: ["brand", "dateFormatted", "username", "amount", "phoneNumber", "tid", "referenceNo", "pic"],
+  },
   qa: {
     tab: "QA OTP & Domain",
     startColumn: "B",

@@ -110,6 +110,47 @@ export async function appendRowByColumns(env, sheetId, tabName, startColumn, val
 }
 
 /**
+ * Same as appendRowByColumns() above (fixed column order, letter-addressed
+ * range) EXCEPT the target tab doesn't have to exist yet — if the first
+ * append 400s (tab missing), this creates it with `headers` as row 1, then
+ * retries once. Use this instead of the plain appendRowToSheet() auto-
+ * create path when you want a SPECIFIC tab name (not tied to the module
+ * id) and nice human-readable column headers in a chosen order, rather
+ * than whatever `Object.keys(row)` happens to produce. First user:
+ * SHEET_LAYOUT.deposit_request in routing.js (tab "Deposit Request").
+ */
+export async function appendRowByColumnsWithAutoCreate(env, sheetId, tabName, startColumn, headers, values) {
+  const token = await getAccessToken(env);
+  const endColumn = columnLetter(columnIndex(startColumn) + values.length - 1);
+  const range = `${tabName}!${startColumn}:${endColumn}`;
+  const appendUrl =
+    `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/` +
+    `${encodeURIComponent(range)}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`;
+
+  let res = await sheetsFetch(appendUrl, token, { values: [values] });
+  if (res.status === 400) {
+    // Tab probably doesn't exist yet — create it with the given header
+    // row (starting at the same `startColumn`, so headers line up with
+    // the data columns this call is about to write), then retry once.
+    await ensureTabWithHeaders(token, sheetId, tabName, headers, startColumn);
+    res = await sheetsFetch(appendUrl, token, { values: [values] });
+  }
+  if (!res.ok) {
+    throw new Error(`Sheets append failed (${res.status}): ${await res.text()}`);
+  }
+  let row = null;
+  try {
+    const body = await res.json();
+    const updatedRange = body?.updates?.updatedRange || "";
+    const match = updatedRange.match(/![A-Z]+(\d+):/);
+    if (match) row = parseInt(match[1], 10);
+  } catch {
+    // Non-fatal — see the matching comment in appendRowByColumns above.
+  }
+  return { row };
+}
+
+/**
  * Overwrites an already-written row in place (as opposed to
  * appendRowByColumns, which always adds a new one) — used by
  * editDetails() in functions/api/threads/[id].js so an edit made on the
@@ -315,7 +356,7 @@ export async function appendRowToSheet(env, sheetId, tabName, row) {
   }
 }
 
-async function ensureTabWithHeaders(token, sheetId, tabName, headers) {
+async function ensureTabWithHeaders(token, sheetId, tabName, headers, startColumn = "A") {
   await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId}:batchUpdate`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
@@ -323,7 +364,7 @@ async function ensureTabWithHeaders(token, sheetId, tabName, headers) {
   }).catch(() => {}); // ignore — a parallel request may have already created it
 
   await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(tabName)}!A1?valueInputOption=RAW`,
+    `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(tabName)}!${startColumn}1?valueInputOption=RAW`,
     {
       method: "PUT",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },

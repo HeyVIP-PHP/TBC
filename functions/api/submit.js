@@ -1,5 +1,5 @@
 import { BRANDS, RECORD_TO_SHEET, MODULE_META, SHEET_LAYOUT, MESSAGE_TEMPLATE, SCREENSHOT_R2_ENABLED, PROMOTION_SHEET_CONFIG, PROMOTION_MESSAGE_TEMPLATE, DEPOSIT_CHANNEL_PSEUDO_MODULES, depositChannelModuleId } from "../_shared/routing.js";
-import { appendRowToSheet, appendRowByColumns, writeRowForDate } from "../_shared/googleSheets.js";
+import { appendRowToSheet, appendRowByColumns, appendRowByColumnsWithAutoCreate, writeRowForDate } from "../_shared/googleSheets.js";
 import { uploadAttachmentToR2, screenshotUrl } from "../_shared/r2.js";
 import { createThread } from "../_shared/threads.js";
 import { verifyRequest, canSeeBrand, canSeeModule } from "../_shared/accounts.js";
@@ -216,7 +216,9 @@ async function handleSubmit({ request, env }) {
           const layout = resolveSheetLayout(layoutEntry, fieldMap);
           if (layout) {
             const values = resolveColumnValues(layout.columns, { fieldMap, brand, reporter, screenshotLink, attachmentLinks });
-            const { row } = await appendRowByColumns(env, brand.sheetId, layout.tab, layout.startColumn, values);
+            const { row } = layout.autoCreate
+              ? await appendRowByColumnsWithAutoCreate(env, brand.sheetId, layout.tab, layout.startColumn, layout.headers, values)
+              : await appendRowByColumns(env, brand.sheetId, layout.tab, layout.startColumn, values);
             if (row) sheetRef = { sheetId: brand.sheetId, tab: layout.tab, startColumn: layout.startColumn, columns: layout.columns, row };
           } else {
             const row = {
