@@ -740,19 +740,34 @@
           else openFsDropdown(dd, trigger);
         });
       });
+      // Every menu keeps a direct reference back to its own .fs-dropdown
+      // wrapper — REQUIRED, not just convenient: once a menu is open and
+      // portaled out to <body> (see openFsDropdown() above), the wrapper
+      // is no longer one of its DOM ancestors at all, so `opt.closest(
+      // ".fs-dropdown")` from inside an option's own click handler
+      // returns null and silently no-ops (that was the actual bug behind
+      // "clicking an option does nothing" — a TypeError on the very next
+      // line, swallowed with no visible error). `.fs-dropdown-menu`
+      // itself is always still an ancestor of its own options regardless
+      // of where it currently lives, so read the wrapper off of THAT
+      // instead.
+      acctBody.querySelectorAll(".fs-dropdown").forEach((dd) => {
+        const menu = dd.querySelector(".fs-dropdown-menu");
+        if (menu) menu._dd = dd;
+      });
       acctBody.querySelectorAll('.fs-dropdown[data-field="status"] .fs-dropdown-option').forEach((opt) => {
         opt.addEventListener("click", () => {
-          const dd = opt.closest(".fs-dropdown");
+          const dd = opt.closest(".fs-dropdown-menu")._dd;
           dd.dataset.value = opt.dataset.value;
           dd.querySelector(".fs-dropdown-trigger").textContent = opt.querySelector("span").textContent;
-          dd.querySelectorAll(".fs-dropdown-option").forEach((o) => o.classList.toggle("selected", o === opt));
+          opt.closest(".fs-dropdown-menu").querySelectorAll(".fs-dropdown-option").forEach((o) => o.classList.toggle("selected", o === opt));
           closeFsDropdown(dd);
         });
       });
       acctBody.querySelectorAll('.fs-dropdown[data-field="bypass"] .fs-dropdown-option').forEach((opt) => {
         opt.addEventListener("click", (e) => {
           e.stopPropagation();
-          const dd = opt.closest(".fs-dropdown");
+          const dd = opt.closest(".fs-dropdown-menu")._dd;
           const current = dd.dataset.values ? dd.dataset.values.split(",").filter(Boolean) : [];
           const value = opt.dataset.value;
           const nextRoles = opt.classList.contains("selected")
