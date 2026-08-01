@@ -46,8 +46,8 @@
     if (itemStatus && itemStatus.blocked) {
       titleEl.textContent = itemStatus.status === "coming_soon" ? "Coming soon" : "Under maintenance";
       hintEl.textContent = itemStatus.status === "coming_soon"
-        ? "This topic isn't available yet. Check back later."
-        : "This topic is temporarily under maintenance. Please try again later.";
+        ? "🔜 Not available yet, please check back later."
+        : "⚠️ Under maintenance, please try again later.";
       formCard.querySelector("form").style.display = "none";
       return;
     }

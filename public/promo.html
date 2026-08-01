@@ -174,7 +174,7 @@
         document.body.innerHTML = `<div style="max-width:480px;margin:120px auto;text-align:center;font-family:sans-serif;color:var(--ink,#eef1fb);">
           <div style="font-size:40px;margin-bottom:12px;">${item.status === "coming_soon" ? "🔜" : "🚧"}</div>
           <h2 style="margin:0 0 8px;">${item.status === "coming_soon" ? "Coming soon" : "Under maintenance"}</h2>
-          <p style="color:var(--ink-soft,#9aa3c4);">${item.status === "coming_soon" ? "Promo Code Search isn't available yet. Check back later." : "Promo Code Search is temporarily under maintenance. Please try again later."}</p>
+          <p style="color:var(--ink-soft,#9aa3c4);">${item.status === "coming_soon" ? "🔜 Not available yet, please check back later." : "⚠️ Under maintenance, please try again later."}</p>
           <a href="/" style="color:#7c6cf0;">&larr; Back to hub</a>
         </div>`;
       }

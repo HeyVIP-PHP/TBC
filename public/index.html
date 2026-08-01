@@ -89,7 +89,7 @@
           <div class="sidebar-subitem" id="subCreateAccount" style="display:none;--sub-accent:#a78bfa33;"><span class="sub-icon">➕</span> Create Account</div>
           <div class="sidebar-subitem" id="subWhitelistIp" style="display:none;--sub-accent:#60a5fa33;"><span class="sub-icon">🌐</span> Whitelist IP</div>
           <div class="sidebar-subitem" id="subTgRoutes" style="display:none;--sub-accent:#38bdf833;"><span class="sub-icon">📤</span> TG Group / Channel</div>
-          <div class="sidebar-subitem" id="subSettings" style="display:none;--sub-accent:#f59e0b33;"><span class="sub-icon">⚙️</span> Settings<span class="sub-status-dot" id="subSettingsDot" style="display:none;"></span></div>
+          <div class="sidebar-subitem" id="subSettings" style="display:none;--sub-accent:#f59e0b33;"><span class="sub-icon">⚙️</span> Settings</div>
           <div class="sidebar-subitem" id="subResetPassword" style="--sub-accent:#f3c46333;"><span class="sub-icon">🔑</span> Reset Password</div>
           <div class="sidebar-subitem" id="subAgentProfile" style="display:none;--sub-accent:#f472b633;"><span class="sub-icon">🪪</span> Agent Profile</div>
         </div>
@@ -324,31 +324,33 @@
           : '<span class="feature-status-badge fs-maint">🚧 Maintenance</span>';
         const applyTo = (el, itemId) => {
           const item = data.items[itemId];
-          if (!el || !item || item.status === "active") return;
+          if (!el) return;
+          // Idempotent — this runs again after every Settings save (see
+          // saveFeatureSettingRow()), not just once on page load, so a
+          // topic flipped back to Active must lose its old badge/dim/
+          // click-block, and one still in Maintenance must not end up
+          // with the badge inserted twice.
+          el.classList.remove("feature-status-dim");
+          el.querySelector(".feature-status-badge")?.remove();
+          if (el._featureStatusBlockHandler) {
+            el.removeEventListener("click", el._featureStatusBlockHandler);
+            el._featureStatusBlockHandler = null;
+          }
+          if (!item || item.status === "active") return;
           el.classList.add("feature-status-dim");
           el.insertAdjacentHTML("beforeend", badgeHtml(item.status));
           if (item.blocked) {
-            el.addEventListener("click", (e) => {
+            el._featureStatusBlockHandler = (e) => {
               e.preventDefault();
-              const msg = item.status === "coming_soon" ? "This isn't available yet. Check back later." : "This is temporarily under maintenance. Please try again later.";
+              const msg = item.status === "coming_soon" ? "🔜 Not available yet, please check back later." : "⚠️ Under maintenance, please try again later.";
               setHubNote(msg);
-            });
+            };
+            el.addEventListener("click", el._featureStatusBlockHandler);
           }
         };
         document.querySelectorAll(".sidebar-item[data-module]").forEach((el) => applyTo(el, el.dataset.module));
         applyTo(document.getElementById("threadsCard"), "tg_reply_threads");
         applyTo(document.getElementById("promoCard"), "promo_code_search");
-
-        // Settings row itself gets a quiet reminder (left accent + dot) —
-        // not the same "grayed out + blocked" treatment as the topics
-        // above, since Settings itself is never blocked; this is just a
-        // "something you toggled off is still off" nudge for whoever
-        // manages it.
-        const anyNonActive = Object.values(data.items).some((i) => i.status !== "active");
-        const settingsSubitem = document.getElementById("subSettings");
-        const settingsDot = document.getElementById("subSettingsDot");
-        if (settingsSubitem) settingsSubitem.classList.toggle("has-status-alert", anyNonActive);
-        if (settingsDot) settingsDot.style.display = anyNonActive ? "inline-block" : "none";
       } catch {
         // Non-fatal — cards just show without a status badge; the real
         // block still happens server-side if someone clicks through.
@@ -618,6 +620,11 @@
     }
 
     function renderFeatureSettings() {
+      // A dropdown menu left open when Save triggers a re-render would
+      // otherwise strand its portaled-to-<body> menu element forever —
+      // the row it belonged to just got wiped out by the innerHTML
+      // replacement below, so nothing would ever find/remove it again.
+      document.querySelectorAll("body > .fs-dropdown-menu").forEach((m) => m.remove());
       const canEditSettings = canEditAdminSection("settings");
       const STATUS_OPTIONS = [
         { value: "active", label: "Active" },
@@ -688,13 +695,49 @@
       // value replaces the previous one and closes the menu); bypass is
       // a real multi-select (each option toggles independently, menu
       // stays open so several roles can be checked in one go).
+      // Opening a dropdown moves its menu OUT of .fs-scroll (the
+      // scrollable row list) and appends it straight to <body> with
+      // `position: fixed`, coordinates computed from the trigger's own
+      // on-screen position — a scrollable ancestor with overflow-y:auto
+      // clips any descendant that visually extends past its own box
+      // REGARDLESS of z-index (that's just how CSS clipping works), so
+      // the only way for the menu to truly float above everything,
+      // never sliced off, is to not be a descendant of that box at all
+      // while it's open. Moved back into its original spot in the DOM
+      // on close so a future render/query still finds it in place.
+      function closeFsDropdown(dd) {
+        const menu = dd.querySelector(".fs-dropdown-menu") || dd._fsMenu;
+        if (menu) {
+          menu.style.display = "none";
+          if (menu.parentElement !== dd) dd.appendChild(menu);
+        }
+        dd.classList.remove("open");
+      }
+      function openFsDropdown(dd, trigger) {
+        acctBody.querySelectorAll(".fs-dropdown.open").forEach((d) => closeFsDropdown(d));
+        const menu = dd.querySelector(".fs-dropdown-menu");
+        dd._fsMenu = menu;
+        const rect = trigger.getBoundingClientRect();
+        menu.style.display = "block";
+        menu.style.width = `${rect.width}px`;
+        menu.style.left = `${rect.left}px`;
+        // Flip upward only if it'd otherwise run off the bottom of the
+        // actual browser viewport — now that the menu floats freely
+        // instead of being boxed into .fs-scroll, that's the only edge
+        // left to worry about.
+        const menuHeight = menu.scrollHeight || 160;
+        const openUpward = rect.bottom + menuHeight + 8 > window.innerHeight && rect.top - menuHeight - 8 > 0;
+        menu.style.top = openUpward ? "" : `${rect.bottom + 4}px`;
+        menu.style.bottom = openUpward ? `${window.innerHeight - rect.top + 4}px` : "";
+        document.body.appendChild(menu);
+        dd.classList.add("open");
+      }
       acctBody.querySelectorAll(".fs-dropdown-trigger").forEach((trigger) => {
         trigger.addEventListener("click", (e) => {
           e.stopPropagation();
           const dd = trigger.closest(".fs-dropdown");
-          const wasOpen = dd.classList.contains("open");
-          acctBody.querySelectorAll(".fs-dropdown.open").forEach((d) => d.classList.remove("open"));
-          if (!wasOpen) dd.classList.add("open");
+          if (dd.classList.contains("open")) closeFsDropdown(dd);
+          else openFsDropdown(dd, trigger);
         });
       });
       acctBody.querySelectorAll('.fs-dropdown[data-field="status"] .fs-dropdown-option').forEach((opt) => {
@@ -703,7 +746,7 @@
           dd.dataset.value = opt.dataset.value;
           dd.querySelector(".fs-dropdown-trigger").textContent = opt.querySelector("span").textContent;
           dd.querySelectorAll(".fs-dropdown-option").forEach((o) => o.classList.toggle("selected", o === opt));
-          dd.classList.remove("open");
+          closeFsDropdown(dd);
         });
       });
       acctBody.querySelectorAll('.fs-dropdown[data-field="bypass"] .fs-dropdown-option').forEach((opt) => {
@@ -726,8 +769,27 @@
       });
     }
     document.addEventListener("click", () => {
-      document.querySelectorAll(".fs-dropdown.open").forEach((d) => d.classList.remove("open"));
+      document.querySelectorAll(".fs-dropdown.open").forEach((dd) => {
+        const menu = dd._fsMenu || dd.querySelector(".fs-dropdown-menu");
+        if (menu) {
+          menu.style.display = "none";
+          if (menu.parentElement !== dd) dd.appendChild(menu);
+        }
+        dd.classList.remove("open");
+      });
     });
+    // Portaled-open menus are positioned in viewport coordinates — if the
+    // Settings row list scrolls (or the window resizes) while one is
+    // open, its coordinates go stale. Simplest fix: just close it: an
+    // open dropdown menu isn't worth tracking a live reposition for.
+    document.addEventListener("scroll", (e) => {
+      if (e.target.closest && e.target.closest(".fs-dropdown")) return;
+      document.querySelectorAll(".fs-dropdown.open").forEach((dd) => {
+        const menu = dd._fsMenu || dd.querySelector(".fs-dropdown-menu");
+        if (menu) { menu.style.display = "none"; if (menu.parentElement !== dd) dd.appendChild(menu); }
+        dd.classList.remove("open");
+      });
+    }, true);
 
     async function saveFeatureSettingRow(row) {
       const itemId = row.dataset.item;
@@ -747,6 +809,12 @@
       const idx = acctFeatureItems.findIndex((i) => i.id === itemId);
       if (idx >= 0) acctFeatureItems[idx] = { ...acctFeatureItems[idx], ...data.item };
       setAcctNote("Saved.", "ok");
+      // Home page (sidebar + TG Reply Threads/Promo Code Search cards)
+      // was already rendered before this save — without this, an agent
+      // would see the OLD status until a manual page reload, which looks
+      // exactly like the toggle silently doing nothing. Re-run the same
+      // check that runs on page load so it reflects immediately.
+      applyFeatureStatuses();
       // Same scroll-position fix as saveTgRouteRow() — see that comment.
       renderFeatureSettings();
       const newScroller = acctBody.querySelector(".fs-scroll");
@@ -1422,6 +1490,10 @@
     function closeAcctModal() {
       acctBackdrop.classList.remove("is-open");
       acctMode = null;
+      // Same cleanup as the top of renderFeatureSettings() — a dropdown
+      // portaled to <body> doesn't get hidden just because the modal
+      // backdrop that used to be behind it does.
+      document.querySelectorAll("body > .fs-dropdown-menu").forEach((m) => m.remove());
     }
     document.getElementById("acctModalClose").addEventListener("click", closeAcctModal);
     acctBackdrop.addEventListener("click", (e) => { if (e.target === acctBackdrop) closeAcctModal(); });
