@@ -291,6 +291,17 @@ export const PROMOTION_MESSAGE_TEMPLATE = {
   "betjili|Birthday Bonus": PROMOTION_ROWS_UNIFIED,
   "betvisa|Birthday Bonus": PROMOTION_ROWS_UNIFIED,
   "betjili|Review Bonus": PROMOTION_ROWS_UNIFIED,
+  // 2026-08-01 fix: these two were missing when the unified TG format was
+  // rolled out, so submissions for them silently fell through to the
+  // generic buildMessage() fallback in messageBuilders.js's
+  // buildTicketMessage() dispatch — different field order, no "Particular
+  // information" header, missing the NID NO / Processed BY / Platform /
+  // To be added rows that Birthday Bonus (both brands) already had. Both
+  // are real options in betjili's optionsByBrand list (see
+  // public/assets/schemas.js, promotion_request module) so both need an
+  // entry here.
+  "betjili|Free Bet Upon Registration 75": PROMOTION_ROWS_UNIFIED,
+  "betjili|₱100 Free Cash On App Download": PROMOTION_ROWS_UNIFIED,
 };
 
 /**
