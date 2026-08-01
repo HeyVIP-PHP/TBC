@@ -33,7 +33,7 @@ async function handleGet({ request, env }) {
   // submit.js. Real enforcement, not just index.html graying the card
   // out and threads.html blocking on load.
   const featureStatus = await getFeatureStatus(env, "tg_reply_threads");
-  if (featureStatus.status !== "active" && !accountCanBypass(account, featureStatus.bypassRank)) {
+  if (featureStatus.status !== "active" && !accountCanBypass(account, featureStatus.bypassRoles)) {
     return json({ ok: false, error: "TG Reply Threads is currently unavailable. Please try again later." }, 403);
   }
 

@@ -16,12 +16,21 @@
  *   promo_code_search  -> /promo.html + /api/promo-search
  *
  * KV shape:
- *   feature-status:<itemId>  ->  { status: "maintenance"|"coming_soon", bypassRank: "superadmin"|"owner" }
+ *   feature-status:<itemId>  ->  { status: "maintenance"|"coming_soon", bypassRoles: ["superadmin","owner"] }
  * Missing key = "active" (the default, nothing blocked) — turning this
  * on with an empty KV changes nothing that already works, same guarantee
  * every other KV-override feature in this project makes.
+ *
+ * BYPASS ROLES — 2026-08-01: this used to be a single "bypassRank"
+ * threshold (e.g. "superadmin" meaning "superadmin and everything above
+ * it"). Replaced with an explicit ARRAY of specific roles allowed
+ * through, per business-owner request — e.g. an Owner can now grant
+ * "admin" bypass on one item without also having to grant it to
+ * superadmin/owner as a side effect of "at least this rank", and can
+ * pick any combination (not necessarily contiguous in ROLE_RANK order).
+ * Stored as role name strings from _shared/accounts.js's ROLE_RANK.
  */
-import { rankOf } from "./accounts.js";
+import { ROLE_RANK } from "./accounts.js";
 
 export const FEATURE_STATUS_ITEMS = [
   { id: "qa", emoji: "🔐", name: "QA" },
@@ -38,12 +47,21 @@ export const FEATURE_STATUS_ITEMS = [
 ];
 const VALID_ITEM_IDS = new Set(FEATURE_STATUS_ITEMS.map((i) => i.id));
 const VALID_STATUSES = new Set(["maintenance", "coming_soon"]);
-const VALID_BYPASS_RANKS = new Set(["superadmin", "owner"]);
+export const VALID_BYPASS_ROLES = Object.keys(ROLE_RANK); // agent, senior, admin, superadmin, owner
 
-const DEFAULT_STATUS = { status: "active", bypassRank: "superadmin" };
+const DEFAULT_STATUS = { status: "active", bypassRoles: ["superadmin", "owner"] };
 
 function statusKey(itemId) {
   return `feature-status:${itemId}`;
+}
+
+function sanitizeRoles(roles) {
+  const arr = Array.isArray(roles) ? roles.filter((r) => VALID_BYPASS_ROLES.includes(r)) : [];
+  // Owner can always get back in regardless of what was saved — otherwise
+  // a mis-click that unchecks every role would lock EVERYONE (including
+  // the person who just saved it) out of un-blocking it again.
+  if (!arr.includes("owner")) arr.push("owner");
+  return arr;
 }
 
 function parseStatus(raw) {
@@ -51,10 +69,7 @@ function parseStatus(raw) {
   try {
     const parsed = JSON.parse(raw);
     if (!parsed || !VALID_STATUSES.has(parsed.status)) return null;
-    return {
-      status: parsed.status,
-      bypassRank: VALID_BYPASS_RANKS.has(parsed.bypassRank) ? parsed.bypassRank : "superadmin",
-    };
+    return { status: parsed.status, bypassRoles: sanitizeRoles(parsed.bypassRoles) };
   } catch {
     return null;
   }
@@ -80,12 +95,12 @@ export async function getAllFeatureStatuses(env) {
   return result;
 }
 
-export async function saveFeatureStatus(env, itemId, { status, bypassRank }) {
+export async function saveFeatureStatus(env, itemId, { status, bypassRoles }) {
   if (!VALID_ITEM_IDS.has(itemId)) throw new Error(`Unknown item "${itemId}".`);
   if (!VALID_STATUSES.has(status)) throw new Error(`Invalid status "${status}".`);
-  const rank = VALID_BYPASS_RANKS.has(bypassRank) ? bypassRank : "superadmin";
-  await env.THREADS_KV.put(statusKey(itemId), JSON.stringify({ status, bypassRank: rank }));
-  return { status, bypassRank: rank };
+  const roles = sanitizeRoles(bypassRoles);
+  await env.THREADS_KV.put(statusKey(itemId), JSON.stringify({ status, bypassRoles: roles }));
+  return { status, bypassRoles: roles };
 }
 
 // Setting an item back to "Active" just deletes the override — same
@@ -94,11 +109,11 @@ export async function resetFeatureStatus(env, itemId) {
   await env.THREADS_KV.delete(statusKey(itemId));
 }
 
-// True if `account`'s role rank meets or exceeds the item's bypassRank —
-// i.e. this account is NOT blocked by a maintenance/coming-soon status,
-// same as a SuperAdmin/Owner testing something while it's still locked
-// for everyone else.
-export function accountCanBypass(account, bypassRank) {
+// True if `account`'s role is one of the item's explicitly-allowed
+// bypass roles — i.e. this account is NOT blocked by a maintenance/
+// coming-soon status, same as a SuperAdmin/Owner testing something
+// while it's still locked for everyone else.
+export function accountCanBypass(account, bypassRoles) {
   if (!account) return false; // bootstrap mode has no feature-status concept yet
-  return rankOf(account.role) >= rankOf(bypassRank);
+  return Array.isArray(bypassRoles) && bypassRoles.includes(account.role);
 }

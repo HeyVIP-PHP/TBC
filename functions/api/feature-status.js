@@ -34,7 +34,7 @@ async function handleGet({ request, env }) {
   for (const [id, s] of Object.entries(statuses)) {
     items[id] = {
       status: s.status,
-      blocked: s.status !== "active" && !accountCanBypass(account, s.bypassRank),
+      blocked: s.status !== "active" && !accountCanBypass(account, s.bypassRoles),
     };
   }
   return json({ ok: true, items });

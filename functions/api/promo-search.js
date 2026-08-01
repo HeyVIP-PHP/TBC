@@ -91,7 +91,7 @@ async function handleSearch({ request, env }) {
   // submit.js. Real enforcement, not just index.html graying the card
   // out and promo.html blocking on load.
   const featureStatus = await getFeatureStatus(env, "promo_code_search");
-  if (featureStatus.status !== "active" && !accountCanBypass(account, featureStatus.bypassRank)) {
+  if (featureStatus.status !== "active" && !accountCanBypass(account, featureStatus.bypassRoles)) {
     return json({ ok: false, error: "Promo Code Search is currently unavailable. Please try again later." }, 403);
   }
 

@@ -89,7 +89,7 @@
           <div class="sidebar-subitem" id="subCreateAccount" style="display:none;--sub-accent:#a78bfa33;"><span class="sub-icon">➕</span> Create Account</div>
           <div class="sidebar-subitem" id="subWhitelistIp" style="display:none;--sub-accent:#60a5fa33;"><span class="sub-icon">🌐</span> Whitelist IP</div>
           <div class="sidebar-subitem" id="subTgRoutes" style="display:none;--sub-accent:#38bdf833;"><span class="sub-icon">📤</span> TG Group / Channel</div>
-          <div class="sidebar-subitem" id="subSettings" style="display:none;--sub-accent:#f59e0b33;"><span class="sub-icon">🚧</span> Settings<span class="sub-status-dot" id="subSettingsDot" style="display:none;"></span></div>
+          <div class="sidebar-subitem" id="subSettings" style="display:none;--sub-accent:#f59e0b33;"><span class="sub-icon">⚙️</span> Settings<span class="sub-status-dot" id="subSettingsDot" style="display:none;"></span></div>
           <div class="sidebar-subitem" id="subResetPassword" style="--sub-accent:#f3c46333;"><span class="sub-icon">🔑</span> Reset Password</div>
           <div class="sidebar-subitem" id="subAgentProfile" style="display:none;--sub-accent:#f472b633;"><span class="sub-icon">🪪</span> Agent Profile</div>
         </div>
@@ -619,22 +619,58 @@
 
     function renderFeatureSettings() {
       const canEditSettings = canEditAdminSection("settings");
-      const roAttr = canEditSettings ? "" : "disabled";
+      const STATUS_OPTIONS = [
+        { value: "active", label: "Active" },
+        { value: "maintenance", label: "🚧 Maintenance" },
+        { value: "coming_soon", label: "🔜 Coming soon" },
+      ];
+      // Matches ROLE_RANK in _shared/accounts.js — any combination can be
+      // checked (not just "this rank and above"), per business-owner
+      // request. Owner is always force-included server-side even if left
+      // unchecked (see sanitizeRoles() in _shared/featureStatus.js), so
+      // it's shown but can't actually be the ONLY thing missing.
+      const ROLE_OPTIONS = [
+        { value: "agent", label: "Agent" },
+        { value: "senior", label: "Senior" },
+        { value: "admin", label: "Admin" },
+        { value: "superadmin", label: "SuperAdmin" },
+        { value: "owner", label: "Owner" },
+      ];
+      const fsDropdown = (options, current) => {
+        const currentLabel = (options.find((o) => o.value === current) || options[0]).label;
+        return `
+          <div class="fs-dropdown" data-field="status" data-value="${acctEsc(current)}">
+            <button type="button" class="fs-dropdown-trigger" ${canEditSettings ? "" : "disabled"}>${acctEsc(currentLabel)}</button>
+            <div class="fs-dropdown-menu">
+              ${options.map((o) => `<div class="fs-dropdown-option${o.value === current ? " selected" : ""}" data-value="${o.value}"><span>${acctEsc(o.label)}</span><span class="fs-check">✓</span></div>`).join("")}
+            </div>
+          </div>`;
+      };
+      // Real multi-select — clicking a role toggles just that checkbox
+      // and the menu stays open (unlike the status dropdown above, where
+      // picking one value always replaces the other). Trigger shows a
+      // short summary ("SuperAdmin, Owner" or "3 roles" once it'd
+      // otherwise overflow).
+      const fsMultiSummary = (roles) => {
+        if (!roles.length) return "Nobody can bypass";
+        const labels = roles.map((r) => ROLE_OPTIONS.find((o) => o.value === r)?.label || r);
+        return labels.length <= 2 ? labels.join(", ") : `${labels.length} roles can bypass`;
+      };
+      const fsMultiDropdown = (roles) => `
+        <div class="fs-dropdown" data-field="bypass" data-values="${acctEsc(roles.join(","))}">
+          <button type="button" class="fs-dropdown-trigger" ${canEditSettings ? "" : "disabled"}>${acctEsc(fsMultiSummary(roles))}</button>
+          <div class="fs-dropdown-menu">
+            ${ROLE_OPTIONS.map((o) => `<div class="fs-dropdown-option${roles.includes(o.value) ? " selected" : ""}" data-value="${o.value}"><span>${acctEsc(o.label)} can still use it</span><span class="fs-check">✓</span></div>`).join("")}
+          </div>
+        </div>`;
       const rowsHtml = acctFeatureItems.map((item) => `
         <div class="tgroute-row" data-item="${acctEsc(item.id)}">
           <div class="tgroute-mod-name">${item.emoji} ${acctEsc(item.name)}
             <span class="route-tag${item.status !== "active" ? " custom" : ""}">${item.status === "active" ? "active" : item.status.replace("_", " ")}</span>
           </div>
           <div class="tgroute-fields">
-            <select class="fs-status" ${roAttr}>
-              <option value="active"${item.status === "active" ? " selected" : ""}>Active</option>
-              <option value="maintenance"${item.status === "maintenance" ? " selected" : ""}>🚧 Maintenance</option>
-              <option value="coming_soon"${item.status === "coming_soon" ? " selected" : ""}>🔜 Coming soon</option>
-            </select>
-            <select class="fs-bypass" ${roAttr}>
-              <option value="superadmin"${item.bypassRank === "superadmin" ? " selected" : ""}>SuperAdmin+ can still use it</option>
-              <option value="owner"${item.bypassRank === "owner" ? " selected" : ""}>Owner only can still use it</option>
-            </select>
+            ${fsDropdown(STATUS_OPTIONS, item.status)}
+            ${fsMultiDropdown(item.bypassRoles || ["superadmin", "owner"])}
             <div class="tgroute-row-actions">
               ${canEditSettings ? '<button type="button" class="tgroute-action-btn fs-save">Save</button>' : ""}
             </div>
@@ -642,27 +678,69 @@
         </div>`).join("");
 
       acctBody.innerHTML = `
-        <div class="tgroute-modules">${rowsHtml}</div>
+        <div class="fs-scroll"><div class="tgroute-modules">${rowsHtml}</div></div>
         <hr class="tgroute-divider" />
         ${canEditSettings ? "" : '<p class="edit-modal-note">View only.</p>'}
-        <p class="edit-modal-note tgroute-footnote">Maintenance/Coming soon blocks everyone below the chosen rank from clicking into that topic/feature — Home page, form page, and the API itself. Changes apply immediately, no redeploy needed.</p>`;
+        <p class="edit-modal-note tgroute-footnote">Maintenance/Coming soon blocks everyone whose role isn't checked in the second dropdown — Home page, form page, and the API itself. Owner is always allowed through even if unchecked. Changes apply immediately, no redeploy needed.</p>`;
+
+      // Custom dropdowns (see .fs-dropdown in style.css for why these
+      // aren't plain <select>s). Status is single-select (picking a
+      // value replaces the previous one and closes the menu); bypass is
+      // a real multi-select (each option toggles independently, menu
+      // stays open so several roles can be checked in one go).
+      acctBody.querySelectorAll(".fs-dropdown-trigger").forEach((trigger) => {
+        trigger.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const dd = trigger.closest(".fs-dropdown");
+          const wasOpen = dd.classList.contains("open");
+          acctBody.querySelectorAll(".fs-dropdown.open").forEach((d) => d.classList.remove("open"));
+          if (!wasOpen) dd.classList.add("open");
+        });
+      });
+      acctBody.querySelectorAll('.fs-dropdown[data-field="status"] .fs-dropdown-option').forEach((opt) => {
+        opt.addEventListener("click", () => {
+          const dd = opt.closest(".fs-dropdown");
+          dd.dataset.value = opt.dataset.value;
+          dd.querySelector(".fs-dropdown-trigger").textContent = opt.querySelector("span").textContent;
+          dd.querySelectorAll(".fs-dropdown-option").forEach((o) => o.classList.toggle("selected", o === opt));
+          dd.classList.remove("open");
+        });
+      });
+      acctBody.querySelectorAll('.fs-dropdown[data-field="bypass"] .fs-dropdown-option').forEach((opt) => {
+        opt.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const dd = opt.closest(".fs-dropdown");
+          const current = dd.dataset.values ? dd.dataset.values.split(",").filter(Boolean) : [];
+          const value = opt.dataset.value;
+          const nextRoles = opt.classList.contains("selected")
+            ? current.filter((r) => r !== value)
+            : [...current, value];
+          dd.dataset.values = nextRoles.join(",");
+          opt.classList.toggle("selected");
+          dd.querySelector(".fs-dropdown-trigger").textContent = fsMultiSummary(nextRoles);
+        });
+      });
 
       acctBody.querySelectorAll(".fs-save").forEach((btn) => {
         btn.addEventListener("click", () => saveFeatureSettingRow(btn.closest(".tgroute-row")));
       });
     }
+    document.addEventListener("click", () => {
+      document.querySelectorAll(".fs-dropdown.open").forEach((d) => d.classList.remove("open"));
+    });
 
     async function saveFeatureSettingRow(row) {
       const itemId = row.dataset.item;
-      const status = row.querySelector(".fs-status").value;
-      const bypassRank = row.querySelector(".fs-bypass").value;
+      const status = row.querySelector('.fs-dropdown[data-field="status"]').dataset.value;
+      const bypassRolesRaw = row.querySelector('.fs-dropdown[data-field="bypass"]').dataset.values || "";
+      const bypassRoles = bypassRolesRaw.split(",").filter(Boolean);
       setAcctNote("Saving…");
-      const scroller = acctBody.querySelector(".tgroute-modules");
+      const scroller = acctBody.querySelector(".fs-scroll");
       const scrollTop = scroller ? scroller.scrollTop : 0;
       const action = status === "active" ? "reset" : "save";
       const res = await window.AgentAuth.authFetch("/api/admin/feature-status", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, itemId, status, bypassRank }),
+        body: JSON.stringify({ action, itemId, status, bypassRoles }),
       });
       const data = await res.json();
       if (!data.ok) return setAcctNote(data.error || "Save failed.", "err");
@@ -671,7 +749,7 @@
       setAcctNote("Saved.", "ok");
       // Same scroll-position fix as saveTgRouteRow() — see that comment.
       renderFeatureSettings();
-      const newScroller = acctBody.querySelector(".tgroute-modules");
+      const newScroller = acctBody.querySelector(".fs-scroll");
       if (newScroller) newScroller.scrollTop = scrollTop;
     }
 
@@ -1009,7 +1087,7 @@
       { id: "whitelistIp", icon: "🌐", name: "Whitelist IP" },
       { id: "tgRoutes", icon: "📤", name: "TG Group / Channel" },
       { id: "agentProfile", icon: "🪪", name: "Agent Profile" },
-      { id: "settings", icon: "🚧", name: "Settings" },
+      { id: "settings", icon: "⚙️", name: "Settings" },
     ];
 
     // The 4 sections where View vs Edit is a meaningful, separately

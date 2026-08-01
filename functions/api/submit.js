@@ -66,7 +66,7 @@ async function handleSubmit({ request, env }) {
   // who already had form.html open before the toggle flipped, or who
   // hits this endpoint directly, still gets stopped here.
   const featureStatus = await getFeatureStatus(env, moduleId);
-  if (featureStatus.status !== "active" && !accountCanBypass(account, featureStatus.bypassRank)) {
+  if (featureStatus.status !== "active" && !accountCanBypass(account, featureStatus.bypassRoles)) {
     const label = featureStatus.status === "coming_soon" ? "not available yet" : "under maintenance";
     return json({ ok: false, error: `${MODULE_META[moduleId]?.name || moduleId} is currently ${label}. Please try again later.` }, 403);
   }

@@ -1,12 +1,12 @@
 /**
  * /api/admin/feature-status  ("Settings" admin page)
  *
- *   GET  -> { ok, items: [{ id, emoji, name, status, bypassRank }] }
+ *   GET  -> { ok, items: [{ id, emoji, name, status, bypassRoles }] }
  *     Gated by the "settings" Account Management Access section — same
  *     view/edit model as tgRoutes/whitelistIp (see canSeeAdminSection()/
  *     canEditAdminSection() in _shared/accounts.js).
  *
- *   POST { action:"save", itemId, status, bypassRank } -> maintenance/
+ *   POST { action:"save", itemId, status, bypassRoles } -> maintenance/
  *     coming_soon. Requires Can-Edit on "settings".
  *   POST { action:"reset", itemId } -> back to Active. Same gate.
  *
@@ -64,7 +64,7 @@ async function handlePost({ request, env }) {
 
   if (body.action === "save") {
     try {
-      const saved = await saveFeatureStatus(env, itemId, { status: body.status, bypassRank: body.bypassRank });
+      const saved = await saveFeatureStatus(env, itemId, { status: body.status, bypassRoles: body.bypassRoles });
       return json({ ok: true, item: saved });
     } catch (e) {
       return json({ ok: false, error: String(e.message || e) }, 400);
@@ -73,7 +73,7 @@ async function handlePost({ request, env }) {
 
   if (body.action === "reset") {
     await resetFeatureStatus(env, itemId);
-    return json({ ok: true, item: { status: "active", bypassRank: "superadmin" } });
+    return json({ ok: true, item: { status: "active", bypassRoles: ["superadmin", "owner"] } });
   }
 
   return json({ ok: false, error: `Unknown action "${body.action}".` }, 400);
