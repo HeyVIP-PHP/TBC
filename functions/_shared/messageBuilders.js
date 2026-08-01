@@ -326,7 +326,7 @@ export function buildPromotionRequestMessage(rows, { brandName, fieldMap, report
 export function buildDepositRequestMessage({ brandName, fieldMap, reporter }) {
   const brandLabel = brandCurrencyLabel(brandName);
   const lines = [
-    `💳 <b>Deposit Request — ${escapeHtml(brandLabel)}</b>`,
+    `💳 <b>Deposit Request</b>`,
     "",
     `<b>Brand/platform:</b> ${escapeHtml(brandLabel)}`,
     `<b>Channel:</b> ${escapeHtml(fieldMap.channel || "-")}`,
