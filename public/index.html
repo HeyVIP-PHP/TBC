@@ -663,9 +663,9 @@
         const labels = roles.map((r) => ROLE_OPTIONS.find((o) => o.value === r)?.label || r);
         return labels.length <= 2 ? labels.join(", ") : `${labels.length} roles can bypass`;
       };
-      const fsMultiDropdown = (roles) => `
-        <div class="fs-dropdown" data-field="bypass" data-values="${acctEsc(roles.join(","))}">
-          <button type="button" class="fs-dropdown-trigger" ${canEditSettings ? "" : "disabled"}>${acctEsc(fsMultiSummary(roles))}</button>
+      const fsMultiDropdown = (roles, isActive) => `
+        <div class="fs-dropdown${isActive ? " fs-dropdown-na" : ""}" data-field="bypass" data-values="${acctEsc(roles.join(","))}">
+          <button type="button" class="fs-dropdown-trigger" ${canEditSettings && !isActive ? "" : "disabled"}>${isActive ? "Not applicable while Active" : acctEsc(fsMultiSummary(roles))}</button>
           <div class="fs-dropdown-menu">
             ${ROLE_OPTIONS.map((o) => `<div class="fs-dropdown-option${roles.includes(o.value) ? " selected" : ""}" data-value="${o.value}"><span>${acctEsc(o.label)} can still use it</span><span class="fs-check">✓</span></div>`).join("")}
           </div>
@@ -677,7 +677,7 @@
           </div>
           <div class="tgroute-fields">
             ${fsDropdown(STATUS_OPTIONS, item.status)}
-            ${fsMultiDropdown(item.bypassRoles || ["superadmin", "owner"])}
+            ${fsMultiDropdown(item.bypassRoles || ["superadmin", "owner"], item.status === "active")}
             <div class="tgroute-row-actions">
               ${canEditSettings ? '<button type="button" class="tgroute-action-btn fs-save">Save</button>' : ""}
             </div>
@@ -762,6 +762,23 @@
           dd.querySelector(".fs-dropdown-trigger").textContent = opt.querySelector("span").textContent;
           opt.closest(".fs-dropdown-menu").querySelectorAll(".fs-dropdown-option").forEach((o) => o.classList.toggle("selected", o === opt));
           closeFsDropdown(dd);
+          // Live-toggle the bypass dropdown for THIS row — it only means
+          // anything once the status is actually Maintenance/Coming
+          // soon, so don't wait for Save to gray it out/back in.
+          const bypassDd = dd.closest(".tgroute-fields").querySelector('.fs-dropdown[data-field="bypass"]');
+          if (bypassDd) {
+            const isActive = opt.dataset.value === "active";
+            bypassDd.classList.toggle("fs-dropdown-na", isActive);
+            const bypassTrigger = bypassDd.querySelector(".fs-dropdown-trigger");
+            if (isActive) {
+              bypassTrigger.setAttribute("disabled", "disabled");
+              bypassTrigger.dataset.prevText = bypassTrigger.textContent;
+              bypassTrigger.textContent = "Not applicable while Active";
+            } else {
+              bypassTrigger.removeAttribute("disabled");
+              if (bypassTrigger.dataset.prevText) bypassTrigger.textContent = bypassTrigger.dataset.prevText;
+            }
+          }
         });
       });
       acctBody.querySelectorAll('.fs-dropdown[data-field="bypass"] .fs-dropdown-option').forEach((opt) => {
