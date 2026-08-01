@@ -680,7 +680,16 @@
         acctRoutesData.routes[`${acctRoutesSelectedBrand}|${moduleId}`] = data.route;
       }
       setAcctNote("Saved.", "ok");
+      // renderTgRoutes() below fully rebuilds .tgroute-modules (the
+      // scrollable right-hand column) from scratch, which resets its
+      // scroll position to the top — jarring when you're editing the 7th
+      // row of a long list like the Deposit channels. Capture/restore it
+      // around the re-render so Save feels like it stays put.
+      const scroller = acctBody.querySelector(".tgroute-modules");
+      const scrollTop = scroller ? scroller.scrollTop : 0;
       renderTgRoutes();
+      const newScroller = acctBody.querySelector(".tgroute-modules");
+      if (newScroller) newScroller.scrollTop = scrollTop;
     }
 
     async function resetTgRouteRow(row) {
@@ -698,7 +707,13 @@
         acctRoutesData.routes[`${acctRoutesSelectedBrand}|${moduleId}`] = data.route;
       }
       setAcctNote("Reset to default.", "ok");
+      // Same scroll-position fix as saveTgRouteRow() above — see that
+      // comment.
+      const scroller = acctBody.querySelector(".tgroute-modules");
+      const scrollTop = scroller ? scroller.scrollTop : 0;
       renderTgRoutes();
+      const newScroller = acctBody.querySelector(".tgroute-modules");
+      if (newScroller) newScroller.scrollTop = scrollTop;
     }
 
     let acctOfficesById = {};
