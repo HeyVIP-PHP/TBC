@@ -67,7 +67,13 @@ async function handleGet({ request, env }) {
   if (!canSeeAdminSection(auth.account, "tgRoutes")) return json({ ok: false, error: "You don't have access to TG Group / Channel." }, 403);
 
   const brandIds = Object.keys(BRANDS);
-  const moduleIds = Object.keys(MODULE_META);
+  // "deposit_request" itself is never a routing target — a Deposit
+  // Request submission always routes through one of the deposit_<channel>
+  // pseudo-modules instead (picked by the agent's Channel selection), so
+  // showing a "Deposit Request" row here would just be a dead field no
+  // submission ever reads. Its per-channel rows (deposit_copopay etc.,
+  // still present in MODULE_META) stay in the grid.
+  const moduleIds = Object.keys(MODULE_META).filter((id) => id !== "deposit_request");
   const overrides = await getAllRouteOverrides(env, brandIds, moduleIds);
 
   const brands = brandIds.map((id) => ({ id, name: BRANDS[id].name }));

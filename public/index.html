@@ -607,7 +607,7 @@
 
       const canEditRoutes = canEditAdminSection("tgRoutes");
       const roAttr = canEditRoutes ? "" : "disabled";
-      const moduleRowsHtml = modules.map((m) => {
+      const renderModuleRow = (m) => {
         const key = `${acctRoutesSelectedBrand}|${m.id}`;
         const r = routes[key] || { chatId: "", topicId: null, isOverride: false };
         return `
@@ -624,7 +624,19 @@
               </div>
             </div>
           </div>`;
-      }).join("");
+      };
+      // Deposit channel pseudo-modules (deposit_copopay etc.) get their
+      // own labeled group, separate from the real topics — a Deposit
+      // Request submission's Telegram destination is picked by the
+      // agent's Channel selection on the form, not by a "Deposit Request"
+      // row (there isn't one; see admin/routes.js).
+      const normalModules = modules.filter((m) => !m.id.startsWith("deposit_"));
+      const depositModules = modules.filter((m) => m.id.startsWith("deposit_"));
+      const moduleRowsHtml = normalModules.map(renderModuleRow).join("")
+        + (depositModules.length
+          ? `<p class="edit-modal-note tgroute-footnote" style="margin-top:16px">💳 Deposit Request channels — routed by the Channel the agent picks on the form, not by a single "Deposit Request" row.</p>`
+            + depositModules.map(renderModuleRow).join("")
+          : "");
 
       acctBody.innerHTML = `
         <div class="tgroute-layout">

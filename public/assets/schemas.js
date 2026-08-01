@@ -30,6 +30,38 @@ const DEFAULT_ATTACHMENTS = { max: 3, accept: "image/png,image/jpeg,application/
 // main "what kind of issue is this" selector, matching the reference design).
 const MODULES = [
   {
+    id: "deposit_request",
+    name: "Deposit Request",
+    icon: "💳",
+    formTitle: "Deposit Request",
+    accent: "#22D3EE",
+    description: "Select channel & submit deposit",
+    reporterLabel: "PIC",
+    attachments: DEFAULT_ATTACHMENTS,
+    fields: [
+      {
+        // optionsByBrand fields start empty client-side and are filled in
+        // by refreshBrandDependentOptions() once a brand is picked (see
+        // app.js) — same mechanism promotion_request's "promotion" field
+        // already uses. Casing differs slightly between brands on purpose
+        // (matches what each brand's team actually calls it); the server
+        // normalizes both to the same routing target — see
+        // depositChannelModuleId() in functions/_shared/routing.js.
+        key: "channel", label: "Channel", type: "select", required: true, emphasize: true,
+        optionsByBrand: {
+          betjili: ["SGPAY", "HTpay", "CopoPay", "K2pay", "LPay", "EWP", "Dreampay"],
+          betvisa: ["Copopay", "SGpay", "HTpay", "K2Pay", "Lpay", "EWP"],
+        },
+      },
+      { key: "date", label: "Date", type: "date", required: true, defaultToday: true },
+      { key: "username", label: "Username", type: "text", required: true, placeholder: "Player username..." },
+      { key: "amount", label: "Amount", type: "number", required: true, placeholder: "0.00" },
+      { key: "phoneNumber", label: "Phone Number", type: "text", required: true, placeholder: "Phone number..." },
+      { key: "tid", label: "TID", type: "text", required: true, placeholder: "Transaction ID..." },
+      { key: "referenceNo", label: "Reference No", type: "text", required: true, placeholder: "Reference number..." },
+    ],
+  },
+  {
     id: "qa",
     name: "QA",
     icon: "🔐",

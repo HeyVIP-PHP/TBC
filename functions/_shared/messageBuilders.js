@@ -315,6 +315,33 @@ export function buildPromotionRequestMessage(rows, { brandName, fieldMap, report
   return lines.join("\n");
 }
 
+// Deposit Request: fixed format, no per-row emoji (unlike every other
+// module's dynamic builders) — matches the exact wording/grouping given
+// by the business owner. Two blank-line-separated groups: routing info
+// (Brand/platform, Channel, Date) then transaction info (Username through
+// PIC). `fieldMap.channel` is shown exactly as submitted (whichever
+// spelling that brand's team uses, e.g. "SGPAY" vs "SGpay") — the
+// normalization to a shared routing target only happens server-side in
+// submit.js via depositChannelModuleId(), never in the message text.
+export function buildDepositRequestMessage({ brandName, fieldMap, reporter }) {
+  const brandLabel = brandCurrencyLabel(brandName);
+  const lines = [
+    `💳 <b>Deposit Request — ${escapeHtml(brandLabel)}</b>`,
+    "",
+    `<b>Brand/platform:</b> ${escapeHtml(brandLabel)}`,
+    `<b>Channel:</b> ${escapeHtml(fieldMap.channel || "-")}`,
+    `<b>Date:</b> ${escapeHtml(formatDateDDMMYYYY(fieldMap.date) || "-")}`,
+    "",
+    `<b>Username:</b> ${escapeHtml(fieldMap.username || "-")}`,
+    `<b>Amount:</b> ${escapeHtml(fieldMap.amount || "-")}`,
+    `<b>Phone Number:</b> ${escapeHtml(fieldMap.phoneNumber || "-")}`,
+    `<b>TID:</b> ${escapeHtml(fieldMap.tid || "-")}`,
+    `<b>Reference No:</b> ${escapeHtml(fieldMap.referenceNo || "-")}`,
+    `<b>PIC:</b> ${escapeHtml(reporter || "-")}`,
+  ];
+  return lines.join("\n");
+}
+
 /**
  * The "which builder do I use for this module" dispatch — this exact
  * chain of if/else lived only in submit.js before; now shared so
@@ -334,6 +361,7 @@ export function buildTicketMessage({ moduleId, brandId, meta, brand, fieldMap, f
   if (moduleId === "account_issue") return buildAccountIssueDynamicMessage({ brandName: brand.name, fields, fieldMap, reporter });
   if (moduleId === "bank_issue") return buildBankIssueDynamicMessage({ brandName: brand.name, fields, fieldMap, reporter });
   if (moduleId === "withdraw_issue") return buildWithdrawIssueDynamicMessage({ brandName: brand.name, fields, fieldMap, reporter });
+  if (moduleId === "deposit_request") return buildDepositRequestMessage({ brandName: brand.name, fieldMap, reporter });
   if (moduleId === "promotion_request" && promotionMessageTemplate[`${brandId}|${fieldMap.promotion}`]) {
     return buildPromotionRequestMessage(promotionMessageTemplate[`${brandId}|${fieldMap.promotion}`], { brandName: brand.name, fieldMap, reporter });
   }

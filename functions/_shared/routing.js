@@ -87,6 +87,7 @@ export const RECORD_TO_SHEET = {
 
 // Emoji + display name per module, used to build the Telegram message header.
 export const MODULE_META = {
+  deposit_request: { emoji: "💳", name: "Deposit Request", accent: "#22D3EE" },
   qa: { emoji: "🔐", name: "QA", accent: "#60A5FA" },
   account_issue: { emoji: "🔑", name: "Account Issue", accent: "#FBBF24" },
   bank_issue: { emoji: "🏦", name: "Bank Issue", accent: "#38BDF8" },
@@ -95,7 +96,55 @@ export const MODULE_META = {
   promotion_request: { emoji: "🎟️", name: "Promotion Request", accent: "#F472B6" },
   daily_report: { emoji: "📊", name: "Daily Report", accent: "#34D399" },
   genie_issue: { emoji: "🤖", name: "Genie Issue", accent: "#A78BFA" },
+
+  // ---- Deposit Request channel routing targets (NOT real submittable
+  // topics — see DEPOSIT_CHANNEL_PSEUDO_MODULES / depositChannelModuleId()
+  // below and the filtering in functions/api/submit.js's VALID_MODULES).
+  // Every real Deposit Request submission still uses moduleId
+  // "deposit_request" above; ONLY the Telegram routing target (which
+  // group/topic it's sent to) is picked per-channel via one of these
+  // pseudo-module ids, so each channel can point at a totally different
+  // group — not just a different topic in the same group — using the
+  // exact same "TG Group / Channel" admin page and routes.js KV machinery
+  // every other module already uses (one row per brand x pseudo-module,
+  // live-editable, no redeploy). A brand that doesn't offer a given
+  // channel (see schemas.js optionsByBrand) just leaves that row blank —
+  // harmless, it's never looked up for that brand since the channel never
+  // appears in that brand's dropdown.
+  deposit_copopay: { emoji: "💳", name: "Deposit — Copopay", accent: "#22D3EE" },
+  deposit_sgpay: { emoji: "💳", name: "Deposit — SGPay", accent: "#22D3EE" },
+  deposit_htpay: { emoji: "💳", name: "Deposit — HTpay", accent: "#22D3EE" },
+  deposit_k2pay: { emoji: "💳", name: "Deposit — K2Pay", accent: "#22D3EE" },
+  deposit_lpay: { emoji: "💳", name: "Deposit — LPay", accent: "#22D3EE" },
+  deposit_ewp: { emoji: "💳", name: "Deposit — EWP", accent: "#22D3EE" },
+  deposit_dreampay: { emoji: "💳", name: "Deposit — Dreampay", accent: "#22D3EE" },
 };
+
+// Every pseudo-module key added above, in one place — submit.js filters
+// these OUT of VALID_MODULES (they must never be accepted as a real
+// moduleId in a submission, only used internally to look up a route) and
+// the "TG Group / Channel" admin page (public/index.html) uses this list
+// to render them as their own "Deposit Channels" section, separate from
+// the real topics grid, instead of mixing them into the normal module list.
+export const DEPOSIT_CHANNEL_PSEUDO_MODULES = [
+  "deposit_copopay", "deposit_sgpay", "deposit_htpay", "deposit_k2pay", "deposit_lpay", "deposit_ewp", "deposit_dreampay",
+];
+
+// Deposit Request's "channel" field value (as typed by whichever brand's
+// team named it, e.g. "SGPAY" vs "SGpay") -> the pseudo-module id used to
+// look up its Telegram route. Case/punctuation-insensitive on purpose —
+// both brands' spelling variants of the same channel collapse to the same
+// routing target (e.g. betjili's "SGPAY" and betvisa's "SGpay" both
+// resolve to "deposit_sgpay"), while still letting each BRAND have its
+// own chatId/topicId for that channel via the normal brand|module KV key.
+// Returns null for a name that doesn't match any known channel (caller
+// should treat that as a routing error rather than silently falling back
+// to some default group).
+export function depositChannelModuleId(channelName) {
+  const slug = String(channelName || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  const match = DEPOSIT_CHANNEL_PSEUDO_MODULES.find((id) => id === `deposit_${slug}`);
+  return match || null;
+}
 
 /**
  * Risk Issue only: emoji shown next to each field when building the message
