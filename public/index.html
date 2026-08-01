@@ -88,6 +88,7 @@
         <div class="sidebar-subitem" id="subCreateAccount" style="display:none;"><span class="sub-icon">➕</span> Create Account</div>
         <div class="sidebar-subitem" id="subWhitelistIp" style="display:none;"><span class="sub-icon">🌐</span> Whitelist IP</div>
         <div class="sidebar-subitem" id="subTgRoutes" style="display:none;"><span class="sub-icon">📤</span> TG Group / Channel</div>
+        <div class="sidebar-subitem" id="subSettings" style="display:none;"><span class="sub-icon">🚧</span> Settings</div>
         <div class="sidebar-subitem" id="subResetPassword"><span class="sub-icon">🔑</span> Reset Password</div>
         <div class="sidebar-subitem" id="subAgentProfile" style="display:none;"><span class="sub-icon">🪪</span> Agent Profile</div>
       </div>
@@ -101,7 +102,7 @@
             <div class="t-desc">Track Telegram replies to your form submissions in real-time</div>
             <div class="t-sub-stat" id="threadsUnsolvedStat"></div>
           </a>
-          <a href="/promo.html" class="tool-card" style="--tool-accent:#f472b6;">
+          <a href="/promo.html" class="tool-card" id="promoCard" style="--tool-accent:#f472b6;">
             <div class="t-icon" style="background:#f472b633;">🎟️</div>
             <div class="t-name">Promo Code Search</div>
             <div class="t-desc">Search multiple promo codes at once</div>
@@ -292,6 +293,7 @@
       const a = document.createElement("a");
       a.href = `/form.html?module=${m.id}`;
       a.className = "sidebar-item";
+      a.dataset.module = m.id;
       a.style.setProperty("--item-accent", m.accent);
       a.innerHTML = `
         <div class="icon" style="background:${m.accent}33;">${m.icon}</div>
@@ -303,6 +305,59 @@
       `;
       list.appendChild(a);
     });
+
+    // ---- Settings (Maintenance / Coming soon) — gray out + badge +
+    // block clicks on the sidebar topics and the two feature cards. Real
+    // enforcement (submit.js/threads.js/promo-search.js, plus form.html/
+    // threads.html/promo.html re-checking on direct load) happens
+    // server-side regardless — this is purely the Home page UX so a
+    // blocked agent never even gets to click through in the first place.
+    async function applyFeatureStatuses() {
+      try {
+        const res = await window.AgentAuth.authFetch("/api/feature-status");
+        const data = await res.json();
+        if (!data.ok) return;
+        const badgeHtml = (status) => status === "coming_soon"
+          ? '<span class="feature-status-badge fs-coming">🔜 Coming soon</span>'
+          : '<span class="feature-status-badge fs-maint">🚧 Maintenance</span>';
+        const applyTo = (el, itemId) => {
+          const item = data.items[itemId];
+          if (!el || !item || item.status === "active") return;
+          el.classList.add("feature-status-dim");
+          el.insertAdjacentHTML("beforeend", badgeHtml(item.status));
+          if (item.blocked) {
+            el.addEventListener("click", (e) => {
+              e.preventDefault();
+              const msg = item.status === "coming_soon" ? "This isn't available yet. Check back later." : "This is temporarily under maintenance. Please try again later.";
+              setHubNote(msg);
+            });
+          }
+        };
+        document.querySelectorAll(".sidebar-item[data-module]").forEach((el) => applyTo(el, el.dataset.module));
+        applyTo(document.getElementById("threadsCard"), "tg_reply_threads");
+        applyTo(document.getElementById("promoCard"), "promo_code_search");
+      } catch {
+        // Non-fatal — cards just show without a status badge; the real
+        // block still happens server-side if someone clicks through.
+      }
+    }
+    // Small transient note near the top of the page — reuses the same
+    // idea as setAcctNote() in the admin modal, just a standalone toast
+    // since this fires from outside that modal.
+    function setHubNote(text) {
+      let note = document.getElementById("hubTransientNote");
+      if (!note) {
+        note = document.createElement("div");
+        note.id = "hubTransientNote";
+        note.style.cssText = "position:fixed;top:70px;left:50%;transform:translateX(-50%);background:var(--card-bg);border:1px solid var(--border);color:var(--ink);padding:10px 18px;border-radius:10px;font-size:13px;z-index:999;";
+        document.body.appendChild(note);
+      }
+      note.textContent = text;
+      note.style.display = "block";
+      clearTimeout(note._hideTimer);
+      note._hideTimer = setTimeout(() => { note.style.display = "none"; }, 3000);
+    }
+    applyFeatureStatuses();
 
     // ---- Account Management (sidebar dropdown + 4 focused modals) ----
     // Rank matches functions/_shared/accounts.js ROLE_RANK exactly — keep
@@ -361,6 +416,7 @@
     // canEditAdminSection() above for the matching Can-Edit replacement).
     document.getElementById("subWhitelistIp").style.display = canSeeAdminSection("whitelistIp") ? "flex" : "none";
     document.getElementById("subTgRoutes").style.display = canSeeAdminSection("tgRoutes") ? "flex" : "none";
+    document.getElementById("subSettings").style.display = canSeeAdminSection("settings") ? "flex" : "none";
     document.getElementById("subAgentProfile").style.display = canSeeAdminSection("agentProfile") ? "flex" : "none";
 
     const acctToggle = document.getElementById("acctMgmtToggle");
@@ -373,6 +429,7 @@
     document.getElementById("subCreateAccount").addEventListener("click", () => openAcctModal("create"));
     document.getElementById("subWhitelistIp").addEventListener("click", () => openAcctModal("whitelist"));
     document.getElementById("subTgRoutes").addEventListener("click", () => openAcctModal("tgroutes"));
+    document.getElementById("subSettings").addEventListener("click", () => openAcctModal("settings"));
     document.getElementById("subResetPassword").addEventListener("click", () => openAcctModal("reset"));
     document.getElementById("subAgentProfile").addEventListener("click", () => openAcctModal("profile"));
     document.getElementById("acctProfileRoleFilter").addEventListener("change", () => renderAgentProfileTable());
@@ -413,14 +470,14 @@
       acctBody.innerHTML = '<p class="edit-modal-note">Loading…</p>';
       acctBackdrop.classList.add("is-open");
       const modalEl = acctBackdrop.querySelector(".edit-modal");
-      modalEl.classList.toggle("wide", mode === "profile" || mode === "tgroutes");
-      // Both "profile" and "tgroutes" use per-row inline save buttons
-      // instead of one global footer Save (too many independently-
-      // editable rows for a single "Save" to mean anything useful).
-      // With Cancel removed (closing is via the X button now), the whole
-      // actions row would otherwise just be dead space when Save is
-      // hidden — hide the row itself, not just the button inside it.
-      const showFooterSave = mode !== "profile" && mode !== "tgroutes";
+      modalEl.classList.toggle("wide", mode === "profile" || mode === "tgroutes" || mode === "settings");
+      // "profile", "tgroutes", and "settings" all use per-row inline save
+      // buttons instead of one global footer Save (too many
+      // independently-editable rows for a single "Save" to mean anything
+      // useful). With Cancel removed (closing is via the X button now),
+      // the whole actions row would otherwise just be dead space when
+      // Save is hidden — hide the row itself, not just the button inside it.
+      const showFooterSave = mode !== "profile" && mode !== "tgroutes" && mode !== "settings";
       document.getElementById("acctModalSave").style.display = showFooterSave ? "" : "none";
       document.getElementById("acctModalActions").style.display = showFooterSave ? "" : "none";
       const roleFilterEl = document.getElementById("acctProfileRoleFilter");
@@ -519,6 +576,90 @@
         acctTitle.textContent = "TG Group / Channel";
         await loadTgRoutes();
       }
+
+      if (mode === "settings") {
+        acctTitle.textContent = "Settings";
+        await loadFeatureSettings();
+      }
+    }
+
+    // ---- Settings (Maintenance / Coming soon toggles) ----
+    // Flat list — unlike TG Group/Channel, these 11 items aren't
+    // per-brand, so there's no left-hand brand column, just one row per
+    // item. Backed by /api/admin/feature-status; enforcement itself
+    // lives server-side in submit.js/threads.js/promo-search.js (see
+    // functions/_shared/featureStatus.js) plus the client-side
+    // graying/blocking on this same page (see applyFeatureStatuses()
+    // below) and on form.html/threads.html/promo.html.
+    let acctFeatureItems = null;
+
+    async function loadFeatureSettings() {
+      const res = await window.AgentAuth.authFetch("/api/admin/feature-status");
+      const data = await res.json();
+      if (!data.ok) {
+        acctBody.innerHTML = `<p class="edit-modal-note err">${acctEsc(data.error || "Failed to load.")}</p>`;
+        return;
+      }
+      acctFeatureItems = data.items;
+      renderFeatureSettings();
+    }
+
+    function renderFeatureSettings() {
+      const canEditSettings = canEditAdminSection("settings");
+      const roAttr = canEditSettings ? "" : "disabled";
+      const rowsHtml = acctFeatureItems.map((item) => `
+        <div class="tgroute-row" data-item="${acctEsc(item.id)}">
+          <div class="tgroute-mod-name">${item.emoji} ${acctEsc(item.name)}
+            <span class="route-tag${item.status !== "active" ? " custom" : ""}">${item.status === "active" ? "active" : item.status.replace("_", " ")}</span>
+          </div>
+          <div class="tgroute-fields">
+            <select class="fs-status" ${roAttr}>
+              <option value="active"${item.status === "active" ? " selected" : ""}>Active</option>
+              <option value="maintenance"${item.status === "maintenance" ? " selected" : ""}>🚧 Maintenance</option>
+              <option value="coming_soon"${item.status === "coming_soon" ? " selected" : ""}>🔜 Coming soon</option>
+            </select>
+            <select class="fs-bypass" ${roAttr}>
+              <option value="superadmin"${item.bypassRank === "superadmin" ? " selected" : ""}>SuperAdmin+ can still use it</option>
+              <option value="owner"${item.bypassRank === "owner" ? " selected" : ""}>Owner only can still use it</option>
+            </select>
+            <div class="tgroute-row-actions">
+              ${canEditSettings ? '<button type="button" class="tgroute-action-btn fs-save">Save</button>' : ""}
+            </div>
+          </div>
+        </div>`).join("");
+
+      acctBody.innerHTML = `
+        <div class="tgroute-modules">${rowsHtml}</div>
+        <hr class="tgroute-divider" />
+        ${canEditSettings ? "" : '<p class="edit-modal-note">View only.</p>'}
+        <p class="edit-modal-note tgroute-footnote">Maintenance/Coming soon blocks everyone below the chosen rank from clicking into that topic/feature — Home page, form page, and the API itself. Changes apply immediately, no redeploy needed.</p>`;
+
+      acctBody.querySelectorAll(".fs-save").forEach((btn) => {
+        btn.addEventListener("click", () => saveFeatureSettingRow(btn.closest(".tgroute-row")));
+      });
+    }
+
+    async function saveFeatureSettingRow(row) {
+      const itemId = row.dataset.item;
+      const status = row.querySelector(".fs-status").value;
+      const bypassRank = row.querySelector(".fs-bypass").value;
+      setAcctNote("Saving…");
+      const scroller = acctBody.querySelector(".tgroute-modules");
+      const scrollTop = scroller ? scroller.scrollTop : 0;
+      const action = status === "active" ? "reset" : "save";
+      const res = await window.AgentAuth.authFetch("/api/admin/feature-status", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, itemId, status, bypassRank }),
+      });
+      const data = await res.json();
+      if (!data.ok) return setAcctNote(data.error || "Save failed.", "err");
+      const idx = acctFeatureItems.findIndex((i) => i.id === itemId);
+      if (idx >= 0) acctFeatureItems[idx] = { ...acctFeatureItems[idx], ...data.item };
+      setAcctNote("Saved.", "ok");
+      // Same scroll-position fix as saveTgRouteRow() — see that comment.
+      renderFeatureSettings();
+      const newScroller = acctBody.querySelector(".tgroute-modules");
+      if (newScroller) newScroller.scrollTop = scrollTop;
     }
 
     // ---- TG Group / Channel (live-editable Telegram routing) ----
@@ -855,13 +996,14 @@
       { id: "whitelistIp", icon: "🌐", name: "Whitelist IP" },
       { id: "tgRoutes", icon: "📤", name: "TG Group / Channel" },
       { id: "agentProfile", icon: "🪪", name: "Agent Profile" },
+      { id: "settings", icon: "🚧", name: "Settings" },
     ];
 
-    // The 3 sections where View vs Edit is a meaningful, separately
+    // The 4 sections where View vs Edit is a meaningful, separately
     // grantable choice — mirrors EDITABLE_ADMIN_SECTIONS in
     // _shared/accounts.js exactly. "createAccount" isn't here: creating
     // an account IS the action, there's no view-only version of it.
-    const EDITABLE_ADMIN_SECTIONS = ["whitelistIp", "tgRoutes", "agentProfile"];
+    const EDITABLE_ADMIN_SECTIONS = ["whitelistIp", "tgRoutes", "agentProfile", "settings"];
 
     function openAgentProfileModal(username) {
       const a = acctAccounts.find((acc) => acc.username === username);

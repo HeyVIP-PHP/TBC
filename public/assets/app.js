@@ -1,4 +1,4 @@
-(function () {
+(async function () {
   if (window.initThemeToggle) window.initThemeToggle();
   if (window.initClock) window.initClock();
   if (window.AgentAuth) window.AgentAuth.renderWhoami("agentWhoami");
@@ -32,6 +32,28 @@
     hintEl.textContent = "Your account doesn't have access to this topic. Contact a SuperAdmin if you think this is wrong.";
     formCard.querySelector("form").style.display = "none";
     return;
+  }
+
+  // Settings (Maintenance / Coming soon) — a separate axis from
+  // allowedModules above. Checked here so a bookmarked/typed form.html
+  // URL to a toggled-off topic still gets stopped, not just the Home
+  // page hiding the click path — submit.js re-checks this again
+  // server-side regardless, this is purely the friendly early message.
+  try {
+    const statusRes = await window.AgentAuth.authFetch("/api/feature-status");
+    const statusData = await statusRes.json();
+    const itemStatus = statusData.ok ? statusData.items[module.id] : null;
+    if (itemStatus && itemStatus.blocked) {
+      titleEl.textContent = itemStatus.status === "coming_soon" ? "Coming soon" : "Under maintenance";
+      hintEl.textContent = itemStatus.status === "coming_soon"
+        ? "This topic isn't available yet. Check back later."
+        : "This topic is temporarily under maintenance. Please try again later.";
+      formCard.querySelector("form").style.display = "none";
+      return;
+    }
+  } catch {
+    // Status check failing shouldn't block a topic that's actually fine
+    // — submit.js is the real enforcement point either way.
   }
 
   document.title = `${module.name} — Issue Submission`;

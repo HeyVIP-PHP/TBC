@@ -23,6 +23,7 @@
  */
 import { batchGetValues, getSheetTabTitles } from "../_shared/googleSheets.js";
 import { verifyRequest } from "../_shared/accounts.js";
+import { getFeatureStatus, accountCanBypass } from "../_shared/featureStatus.js";
 
 const PROMO_CODE_SHEET = {
   sheetId: "1VYKwdGyoa5qxCScHWyKrYPQYvQPl8igrBzK1mk2RT98",
@@ -85,6 +86,14 @@ async function handleSearch({ request, env }) {
   // Whole hub requires login now — see submit.js for the same note.
   const account = await verifyRequest(request, env);
   if (!account) return json({ ok: false, error: "Login required." }, 401);
+
+  // Settings (Maintenance / Coming soon) — see the matching comment in
+  // submit.js. Real enforcement, not just index.html graying the card
+  // out and promo.html blocking on load.
+  const featureStatus = await getFeatureStatus(env, "promo_code_search");
+  if (featureStatus.status !== "active" && !accountCanBypass(account, featureStatus.bypassRank)) {
+    return json({ ok: false, error: "Promo Code Search is currently unavailable. Please try again later." }, 403);
+  }
 
   const codes = (new URL(request.url).searchParams.get("codes") || "")
     .split(",")

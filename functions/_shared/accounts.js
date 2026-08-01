@@ -566,7 +566,7 @@ export function canSeeModule(account, moduleId) {
 // not one that ships pre-granted. `account` may be `null` in bootstrap
 // mode (see authenticateStaff()) — treated as fully trusted, same as
 // every other check bootstrap mode bypasses.
-export const ADMIN_SECTIONS = ["createAccount", "whitelistIp", "tgRoutes", "agentProfile"];
+export const ADMIN_SECTIONS = ["createAccount", "whitelistIp", "tgRoutes", "agentProfile", "settings"];
 export function canSeeAdminSection(account, sectionId) {
   if (!account) return true; // bootstrap mode
   if (account.role === "owner") return true;
@@ -593,7 +593,7 @@ export function canSeeAdminSection(account, sectionId) {
 // the TARGET account" rule for agentProfile edits — e.g. can't edit a
 // fellow SuperAdmin's role — is a different, still-active protection;
 // see functions/api/admin/accounts.js.)
-export const EDITABLE_ADMIN_SECTIONS = ["whitelistIp", "tgRoutes", "agentProfile"];
+export const EDITABLE_ADMIN_SECTIONS = ["whitelistIp", "tgRoutes", "agentProfile", "settings"];
 
 // Whether `account` can EDIT (not just view) a given section. Requires
 // view access first (can't edit something you can't even see), then

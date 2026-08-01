@@ -12,6 +12,7 @@
  */
 import { listThreads } from "../_shared/threads.js";
 import { verifyRequest, canSeeBrand } from "../_shared/accounts.js";
+import { getFeatureStatus, accountCanBypass } from "../_shared/featureStatus.js";
 
 export async function onRequestGet(context) {
   try {
@@ -27,6 +28,14 @@ async function handleGet({ request, env }) {
   }
   const account = await verifyRequest(request, env);
   if (!account) return json({ ok: false, error: "Login required." }, 401);
+
+  // Settings (Maintenance / Coming soon) — see the matching comment in
+  // submit.js. Real enforcement, not just index.html graying the card
+  // out and threads.html blocking on load.
+  const featureStatus = await getFeatureStatus(env, "tg_reply_threads");
+  if (featureStatus.status !== "active" && !accountCanBypass(account, featureStatus.bypassRank)) {
+    return json({ ok: false, error: "TG Reply Threads is currently unavailable. Please try again later." }, 403);
+  }
 
   const q = new URL(request.url).searchParams.get("q") || "";
   const all = (await listThreads(env, { q })).filter((t) => canSeeBrand(account, t.brand));

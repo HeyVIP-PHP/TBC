@@ -4,6 +4,7 @@ import { uploadAttachmentToR2, screenshotUrl } from "../_shared/r2.js";
 import { createThread } from "../_shared/threads.js";
 import { verifyRequest, canSeeBrand, canSeeModule } from "../_shared/accounts.js";
 import { getRouteOverride } from "../_shared/routes.js";
+import { getFeatureStatus, accountCanBypass } from "../_shared/featureStatus.js";
 import {
   resolveColumnValues, resolveSheetLayout, formatDateDDMMYYYY, buildTicketMessage, buildTitleAndSummary,
 } from "../_shared/messageBuilders.js";
@@ -57,6 +58,17 @@ async function handleSubmit({ request, env }) {
   // reason to even validate brandId for a module this account can't use.
   if (!canSeeModule(account, moduleId)) {
     return json({ ok: false, error: `Your account doesn't have access to the ${MODULE_META[moduleId]?.name || moduleId} topic.` }, 403);
+  }
+  // Settings (Maintenance / Coming soon) — a SEPARATE axis from
+  // allowedModules above: this can block an agent who otherwise DOES
+  // have access, while a toggle is on. Real enforcement, not just the
+  // sidebar graying it out and app.js blocking the form page — an agent
+  // who already had form.html open before the toggle flipped, or who
+  // hits this endpoint directly, still gets stopped here.
+  const featureStatus = await getFeatureStatus(env, moduleId);
+  if (featureStatus.status !== "active" && !accountCanBypass(account, featureStatus.bypassRank)) {
+    const label = featureStatus.status === "coming_soon" ? "not available yet" : "under maintenance";
+    return json({ ok: false, error: `${MODULE_META[moduleId]?.name || moduleId} is currently ${label}. Please try again later.` }, 403);
   }
   const brand = BRANDS[brandId];
   if (!brand) {

@@ -1388,18 +1388,41 @@
       document.getElementById("replyInput")?.focus();
     });
 
-    bootDashboard();
-
-    // Browsers throttle background-tab timers, so a poll can lag while the
-    // tab is hidden (e.g. agent switches to the Telegram app/tab). Catch up
-    // immediately the moment this tab becomes visible again. (Idle-timeout
-    // checking itself is authguard.js's job, not this page's.)
-    document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "visible") {
-        loadList(document.getElementById("threadSearch").value);
-        refreshOpenThread();
+    // Settings (Maintenance / Coming soon) — the server (functions/api/
+    // threads.js) re-checks this independently regardless, this is
+    // purely the friendly full-page message instead of a broken
+    // dashboard that 403s on every request.
+    (async function () {
+      try {
+        const res = await authFetch("/api/feature-status");
+        const data = await res.json();
+        const item = data.ok ? data.items.tg_reply_threads : null;
+        if (item && item.blocked) {
+          document.body.innerHTML = `<div style="max-width:480px;margin:120px auto;text-align:center;font-family:sans-serif;color:var(--ink,#eef1fb);">
+            <div style="font-size:40px;margin-bottom:12px;">${item.status === "coming_soon" ? "🔜" : "🚧"}</div>
+            <h2 style="margin:0 0 8px;">${item.status === "coming_soon" ? "Coming soon" : "Under maintenance"}</h2>
+            <p style="color:var(--ink-soft,#9aa3c4);">${item.status === "coming_soon" ? "TG Reply Threads isn't available yet. Check back later." : "TG Reply Threads is temporarily under maintenance. Please try again later."}</p>
+            <a href="/" style="color:#7c6cf0;">&larr; Back to hub</a>
+          </div>`;
+          return;
+        }
+      } catch {
+        // Status check failing shouldn't block a feature that's actually
+        // fine — the server endpoints are the real enforcement either way.
       }
-    });
+      bootDashboard();
+      // Browsers throttle background-tab timers, so a poll can lag while
+      // the tab is hidden (e.g. agent switches to the Telegram app/tab).
+      // Catch up immediately the moment this tab becomes visible again.
+      // (Idle-timeout checking itself is authguard.js's job, not this
+      // page's.)
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") {
+          loadList(document.getElementById("threadSearch").value);
+          refreshOpenThread();
+        }
+      });
+    })();
   </script>
 </body>
 </html>
