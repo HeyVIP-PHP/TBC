@@ -455,6 +455,146 @@ async function getCachedScan(env) {
   }
 }
 
+// ---- @ Tag Username — "who has ever replied in this brand+module's TG
+// group/topic" registry, so the reply box can suggest a username instead
+// of the agent having to go dig through Telegram for it. ----
+//
+// Telegram's Bot API has no "list this group's members" call — that's a
+// platform limitation, not something fixable here — so this can only ever
+// be "people who've actually said something here before," built up
+// opportunistically as replies come in (see appendMessage below) plus a
+// one-time admin backfill over existing tickets (see
+// functions/api/admin/mention-backfill.js) for history from before this
+// existed.
+//
+// Scoped per brand+module (mirrors routing.js: each brand+module pairing
+// is its own TG group/topic) rather than one global list — a name that's
+// only ever posted in Brand A's Withdraw Issue topic is very unlikely to
+// be reachable by @-tagging them from Brand B's Risk Issue topic, so a
+// single global list would just be full of names that don't resolve
+// where they're suggested.
+//
+// One key per brand+module: `mention-registry:<brandId>:<moduleId>` →
+// { "@handle": { from, lastSeen } }. Small, low-cardinality (a handful of
+// distinct people per group in practice), so a single JSON blob per group
+// is simpler than the per-thread metadata approach listThreads() uses,
+// and doesn't share a hot key across DIFFERENT brand+module pairs (each
+// has its own key) — only two replies in the exact same group within the
+// same request would ever contend, same low-risk shape as everything
+// else in this file that isn't the one shared LIST_CACHE_KEY.
+function mentionRegistryKey(brandId, moduleId) {
+  return `mention-registry:${brandId}:${moduleId}`;
+}
+
+// Best-effort, never throws — called inline with the message write in
+// appendMessage(); a missed mention-candidate update should never be the
+// reason a reply fails to save. Skips the KV write entirely if nothing
+// about this person actually changed since last time (same display name,
+// already seen today) — "同一个人重复回复,不会重复写KV" per the feature
+// spec — so a chatty regular replying many times a day only costs one
+// write, not one per reply.
+async function rememberMentionCandidate(env, { brandId, moduleId, handle, from }) {
+  if (!env.THREADS_KV || !brandId || !moduleId || !handle) return;
+  try {
+    const key = mentionRegistryKey(brandId, moduleId);
+    const raw = await env.THREADS_KV.get(key);
+    const registry = raw ? JSON.parse(raw) : {};
+    const today = utcDateString(new Date());
+    const existing = registry[handle];
+    if (existing && existing.from === from && existing.lastSeen === today) return; // nothing changed — skip the write
+    registry[handle] = { from: from || existing?.from || null, lastSeen: today };
+    await env.THREADS_KV.put(key, JSON.stringify(registry));
+  } catch {
+    // best-effort only, see comment above
+  }
+}
+
+// Read side for GET /api/mention-candidates — see that file for the
+// brandId/module → this call wiring, and threads.html's
+// loadMentionCandidatesForThread() for how the frontend merges this with
+// the currently-open thread's own conversation (covering the gap between
+// a reply landing and the registry write above becoming visible).
+export async function getMentionCandidates(env, brandId, moduleId) {
+  if (!env.THREADS_KV || !brandId || !moduleId) return [];
+  try {
+    const raw = await env.THREADS_KV.get(mentionRegistryKey(brandId, moduleId));
+    const registry = raw ? JSON.parse(raw) : {};
+    return Object.entries(registry).map(([handle, v]) => ({ handle, from: v.from || null, lastSeen: v.lastSeen || null }));
+  } catch {
+    return [];
+  }
+}
+
+// Merges a batch of { handle, from } sightings (one ticket's worth, from
+// the admin backfill's scan of pre-existing threads — see
+// functions/api/admin/mention-backfill.js) into one brand+module's
+// registry in a SINGLE read+write, instead of one rememberMentionCandidate()
+// KV round trip per handle — a historical ticket can easily have 5-10
+// replies from the same couple of people, and the backfill processes many
+// tickets per page, so batching here is what keeps it from burning
+// through the write budget on data the incremental path (appendMessage)
+// will keep just as current going forward anyway.
+async function mergeMentionCandidatesBatch(env, brandId, moduleId, sightings) {
+  if (!env.THREADS_KV || !brandId || !moduleId || !sightings.length) return;
+  try {
+    const key = mentionRegistryKey(brandId, moduleId);
+    const raw = await env.THREADS_KV.get(key);
+    const registry = raw ? JSON.parse(raw) : {};
+    let changed = false;
+    for (const { handle, from, lastSeen } of sightings) {
+      if (!handle) continue;
+      const existing = registry[handle];
+      if (!existing || existing.from !== from || (lastSeen && lastSeen > existing.lastSeen)) {
+        registry[handle] = { from: from || existing?.from || null, lastSeen: lastSeen || existing?.lastSeen || null };
+        changed = true;
+      }
+    }
+    if (changed) await env.THREADS_KV.put(key, JSON.stringify(registry));
+  } catch {
+    // best-effort — the backfill just re-scans this page again if run twice, no harm done
+  }
+}
+
+// One page of the one-time historical backfill — called repeatedly by
+// the admin UI (Account Management → Settings → "Run backfill") with the
+// cursor it got back, until `done`. Deliberately mirrors
+// scanThreadsFromKV()'s pagination shape but reads each thread's FULL
+// record (not just list() metadata) since the handles we need only live
+// inside `thread.messages`, which metadata doesn't carry.
+export async function backfillMentionCandidatesPage(env, cursor) {
+  const page = await env.THREADS_KV.list({ prefix: "thread:", cursor, limit: 100 });
+  const records = await Promise.all(page.keys.map((k) => env.THREADS_KV.get(k.name)));
+
+  // Group sightings by brand+module so each group gets ONE merged
+  // read+write for this whole page (see mergeMentionCandidatesBatch above),
+  // not one per handle or per thread.
+  const groups = new Map(); // "brandId|moduleId" -> [{handle, from, lastSeen}]
+  for (const raw of records) {
+    if (!raw) continue;
+    let thread;
+    try { thread = JSON.parse(raw); } catch { continue; }
+    if (!thread.brandId || !thread.module) continue; // pre-"Sync to Sheet" tickets have no brandId — can't scope these, skip
+    const groupKey = `${thread.brandId}|${thread.module}`;
+    const list = groups.get(groupKey) || [];
+    for (const m of thread.messages || []) {
+      if (m.self || !m.handle) continue;
+      list.push({ handle: m.handle, from: m.from || null, lastSeen: (m.ts || "").slice(0, 10) });
+    }
+    groups.set(groupKey, list);
+  }
+
+  for (const [groupKey, sightings] of groups) {
+    const [brandId, moduleId] = groupKey.split("|");
+    await mergeMentionCandidatesBatch(env, brandId, moduleId, sightings);
+  }
+
+  return {
+    scanned: page.keys.length,
+    done: page.list_complete,
+    cursor: page.list_complete ? null : page.cursor,
+  };
+}
+
 // ---- Instant sidebar updates for OUR OWN actions, decoupled from the
 // cron worker's refresh interval ----
 //
@@ -624,6 +764,11 @@ export async function appendMessage(env, threadId, message) {
   const writes = [saveThread(env, thread)];
   if (message.messageId) {
     writes.push(env.THREADS_KV.put(`msgid:${thread.chatId}:${message.messageId}`, thread.id));
+  }
+  // Only genuine incoming replies (not our own outgoing sends) teach the
+  // @ tag registry anything — see rememberMentionCandidate's comment.
+  if (!message.self && message.handle) {
+    writes.push(rememberMentionCandidate(env, { brandId: thread.brandId, moduleId: thread.module, handle: message.handle, from: message.from }));
   }
   await Promise.all(writes);
   await patchListCache(env, thread); // instant sidebar update — reply count / reopened status

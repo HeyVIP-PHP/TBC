@@ -41,13 +41,15 @@
         <input type="text" id="threadSearch" placeholder="Search username, TID, UID..." autocomplete="off" />
       </div>
 
+      <div class="threads-select-toolbar" id="selectToolbar" style="display:none;"></div>
+
       <div class="threads-section" id="activeSection">
-        <div class="threads-section-title" data-target="activeList"><span><span class="chev">▾</span> Active Threads</span><span class="count" id="activeCount">0</span></div>
+        <div class="threads-section-title" data-target="activeList"><span><input type="checkbox" class="section-select-all" id="activeSelectAll" title="Select all" /><span class="chev">▾</span> Active Threads</span><span class="count" id="activeCount">0</span></div>
         <div class="thread-list" id="activeList"></div>
       </div>
 
       <div class="threads-section collapsed" id="solvedSection">
-        <div class="threads-section-title collapsed" data-target="solvedList"><span><span class="chev">▾</span> Solved Chat History</span><span class="count" id="solvedCount">0</span></div>
+        <div class="threads-section-title collapsed" data-target="solvedList"><span><input type="checkbox" class="section-select-all" id="solvedSelectAll" title="Select all" /><span class="chev">▾</span> Solved Chat History</span><span class="count" id="solvedCount">0</span></div>
         <div class="thread-list" id="solvedList"></div>
       </div>
 
@@ -183,11 +185,14 @@
     const main = document.getElementById("threadsMain");
 
     document.querySelectorAll(".threads-section-title").forEach((el) => {
-      el.addEventListener("click", () => {
+      el.addEventListener("click", (e) => {
+        if (e.target.closest(".section-select-all")) return; // handled by its own listener below, not a collapse toggle
         el.classList.toggle("collapsed");
         document.getElementById(el.dataset.target).closest(".threads-section").classList.toggle("collapsed");
       });
     });
+    document.getElementById("activeSelectAll").addEventListener("click", (e) => { e.stopPropagation(); toggleSectionSelectAll(activeThreads); });
+    document.getElementById("solvedSelectAll").addEventListener("click", (e) => { e.stopPropagation(); toggleSectionSelectAll(solvedThreads); });
 
     const RECALL_TYPE_META = {
       "delete-thread": { icon: "🗑", badge: "Deleted" },
@@ -275,6 +280,142 @@
       });
     }
 
+    // ---- @ Tag Username ------------------------------------------------
+    // Telegram's Bot API has no "list group members" call (platform
+    // limitation, not something fixable here) — so this can only ever
+    // suggest people who've actually replied in this ticket's brand+module
+    // group/topic before. See rememberMentionCandidate() in
+    // functions/_shared/threads.js for the full writeup, and
+    // functions/api/admin/mention-backfill.js for the historical-data
+    // half of it.
+    //
+    // Cached per brandId+module in memory (a Promise, not just the
+    // resolved value, so two @ keystrokes in quick succession on the same
+    // ticket share one in-flight request instead of firing two) — a
+    // fresh page load starts empty, which is fine, this is just an
+    // autocomplete convenience, not a source of truth for anything.
+    const mentionCandidatesCache = new Map(); // "brandId|module" -> Promise<[{handle,from,lastSeen}]>
+    let mentionState = { candidates: [], open: false, filtered: [], activeIndex: 0, fragmentStart: -1 };
+
+    async function loadMentionCandidatesForThread(t) {
+      mentionState.candidates = []; // clear immediately — don't show the PREVIOUS thread's people while this one loads
+      if (!t.brandId || !t.module) return; // pre-"Sync to Sheet" tickets have no brandId — nothing to scope candidates to
+      const key = `${t.brandId}|${t.module}`;
+      if (!mentionCandidatesCache.has(key)) {
+        mentionCandidatesCache.set(key, (async () => {
+          try {
+            const res = await authFetch(`/api/mention-candidates?brandId=${encodeURIComponent(t.brandId)}&module=${encodeURIComponent(t.module)}`);
+            const data = await res.json();
+            return data.ok ? data.candidates : [];
+          } catch {
+            return [];
+          }
+        })());
+      }
+      const base = await mentionCandidatesCache.get(key);
+      if (!selectedThread || selectedThread.id !== t.id) return; // agent switched tickets while this was in flight — stale, drop it
+      // Merge in THIS ticket's own conversation participants too — covers
+      // the gap between a reply landing (webhook writes it instantly) and
+      // the registry write becoming visible via this cached fetch (KV
+      // eventual consistency, or simply an in-flight request that started
+      // before the newest reply's registry write finished).
+      const merged = new Map(base.map((c) => [c.handle, c]));
+      (t.messages || []).forEach((m) => {
+        if (!m.self && m.handle && !merged.has(m.handle)) {
+          merged.set(m.handle, { handle: m.handle, from: m.from || null, lastSeen: (m.ts || "").slice(0, 10) });
+        }
+      });
+      mentionState.candidates = Array.from(merged.values());
+    }
+
+    function wireMentionAutocomplete() {
+      const input = document.getElementById("replyInput");
+      if (!input) return;
+      input.addEventListener("input", () => {
+        const val = input.value;
+        const caret = input.selectionStart;
+        const match = val.slice(0, caret).match(/(?:^|\s)@(\w*)$/);
+        if (!match) { closeMentionDropdown(); return; }
+        const fragment = match[1];
+        mentionState.fragmentStart = caret - fragment.length - 1; // index of the '@' itself
+        const needle = fragment.toLowerCase();
+        mentionState.filtered = mentionState.candidates.filter((c) => c.handle.slice(1).toLowerCase().startsWith(needle));
+        if (!mentionState.filtered.length) { closeMentionDropdown(); return; }
+        mentionState.activeIndex = 0;
+        mentionState.open = true;
+        renderMentionDropdown();
+      });
+      // Registered here (before renderDetail's own Enter=send listener)
+      // specifically so Enter/Tab/Escape get swallowed via
+      // stopImmediatePropagation() while the dropdown is open, instead of
+      // ALSO triggering sendReply() or leaving the fragment text in place.
+      input.addEventListener("keydown", (e) => {
+        if (!mentionState.open) return;
+        if (e.key === "ArrowDown") {
+          e.preventDefault();
+          mentionState.activeIndex = (mentionState.activeIndex + 1) % mentionState.filtered.length;
+          renderMentionDropdown();
+        } else if (e.key === "ArrowUp") {
+          e.preventDefault();
+          mentionState.activeIndex = (mentionState.activeIndex - 1 + mentionState.filtered.length) % mentionState.filtered.length;
+          renderMentionDropdown();
+        } else if (e.key === "Enter" || e.key === "Tab") {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          pickMention(mentionState.filtered[mentionState.activeIndex]);
+        } else if (e.key === "Escape") {
+          closeMentionDropdown();
+        }
+      });
+      input.addEventListener("blur", () => {
+        // Slight delay: a mousedown on a dropdown option fires before
+        // this blur, but if we close synchronously here first, the
+        // option's own mousedown handler never gets to run.
+        setTimeout(closeMentionDropdown, 150);
+      });
+    }
+
+    function closeMentionDropdown() {
+      mentionState.open = false;
+      const dd = document.getElementById("mentionDropdown");
+      if (dd) dd.style.display = "none";
+    }
+
+    function renderMentionDropdown() {
+      const dd = document.getElementById("mentionDropdown");
+      if (!dd) return;
+      dd.style.display = "block";
+      dd.innerHTML = mentionState.filtered.map((c, i) => `
+        <div class="mention-option${i === mentionState.activeIndex ? " active" : ""}" data-idx="${i}">
+          <span class="mention-handle">${escapeHtml(c.handle)}</span>
+          ${c.from ? `<span class="mention-name">${escapeHtml(c.from)}</span>` : ""}
+        </div>`).join("");
+      dd.querySelectorAll(".mention-option").forEach((opt) => {
+        // mousedown (not click) + preventDefault — keeps focus in the
+        // input across the click, so the blur-close timer above never
+        // even fires for this interaction.
+        opt.addEventListener("mousedown", (e) => {
+          e.preventDefault();
+          pickMention(mentionState.filtered[Number(opt.dataset.idx)]);
+        });
+      });
+    }
+
+    function pickMention(candidate) {
+      if (!candidate) return;
+      const input = document.getElementById("replyInput");
+      const val = input.value;
+      const caret = input.selectionStart;
+      const before = val.slice(0, mentionState.fragmentStart);
+      const after = val.slice(caret);
+      const insert = `${candidate.handle} `;
+      input.value = before + insert + after;
+      const newCaret = before.length + insert.length;
+      input.setSelectionRange(newCaret, newCaret);
+      closeMentionDropdown();
+      input.focus();
+    }
+
     function renderAttachPreview() {
       const el = document.getElementById("replyAttachPreview");
       if (!el) return;
@@ -325,26 +466,173 @@
       localStorage.setItem(`lastseen:${id}`, String(count));
     }
 
+    // ---- ⋮ menu + Select batch mode ------------------------------------
+    let selectMode = false;
+    let selectedIds = new Set();
+    let openMenuId = null; // which single item's ⋮ menu is currently open (only ever one at a time)
+
+    function selectedThreadObjs() {
+      const all = [...activeThreads, ...solvedThreads];
+      return all.filter((t) => selectedIds.has(t.id));
+    }
+    function isUnread(t) {
+      return Math.max(0, (t.replyCount || 0) - getSeenCount(t.id)) > 0;
+    }
+
+    function enterSelectMode(initialId) {
+      selectMode = true;
+      selectedIds = new Set(initialId ? [initialId] : []);
+      openMenuId = null;
+      renderLists();
+    }
+    function exitSelectMode() {
+      selectMode = false;
+      selectedIds = new Set();
+      renderLists();
+    }
+    function toggleItemSelected(id) {
+      if (selectedIds.has(id)) selectedIds.delete(id); else selectedIds.add(id);
+      renderLists();
+    }
+    function toggleSectionSelectAll(list) {
+      if (!selectMode) selectMode = true;
+      const allSelected = list.length > 0 && list.every((t) => selectedIds.has(t.id));
+      list.forEach((t) => (allSelected ? selectedIds.delete(t.id) : selectedIds.add(t.id)));
+      renderLists();
+    }
+
+    async function setThreadSolved(id, solved) {
+      const res = await authFetch(`/api/threads/${id}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: solved ? "solve" : "unsolve" }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        patchLocalThread(data.thread);
+        if (selectedThread && selectedThread.id === id) {
+          selectedThread = data.thread;
+          updateThreadContent(selectedThread, true);
+        }
+      }
+      return data.ok;
+    }
+
+    async function batchSetSolved(solved) {
+      await Promise.all([...selectedIds].map((id) => setThreadSolved(id, solved)));
+      exitSelectMode();
+      loadList(document.getElementById("threadSearch").value);
+    }
+    function batchMarkRead(read) {
+      selectedThreadObjs().forEach((t) => markSeen(t.id, read ? (t.replyCount || 0) : 0));
+      exitSelectMode();
+    }
+
+    function renderSelectToolbar() {
+      const bar = document.getElementById("selectToolbar");
+      if (!selectMode) { bar.style.display = "none"; bar.innerHTML = ""; return; }
+      bar.style.display = "";
+      const n = selectedIds.size;
+      const anyUnread = selectedThreadObjs().some(isUnread);
+      const anyUnsolved = selectedThreadObjs().some((t) => !t.solved);
+      const readLabel = anyUnread ? "Mark as read" : "Mark as unread";
+      const solvedLabel = anyUnsolved ? "Solved" : "Not solved";
+      bar.innerHTML = `
+        <div class="select-toolbar-row1">
+          <span class="select-count-badge">${n}</span>
+          <button type="button" class="select-cancel-btn" id="selectCancelBtn">Cancel</button>
+        </div>
+        <div class="select-toolbar-row2">
+          <button type="button" class="select-action-btn" id="selectReadBtn" ${n ? "" : "disabled"}>${readLabel}</button>
+          <button type="button" class="select-action-btn" id="selectSolvedBtn" ${n ? "" : "disabled"}>${solvedLabel}</button>
+        </div>`;
+      document.getElementById("selectCancelBtn").addEventListener("click", exitSelectMode);
+      document.getElementById("selectReadBtn").addEventListener("click", () => batchMarkRead(anyUnread));
+      document.getElementById("selectSolvedBtn").addEventListener("click", () => batchSetSolved(anyUnsolved));
+    }
+
+    function buildItemMenuHTML(t, unread) {
+      return `
+        <div class="thread-item-menu">
+          <div class="thread-item-menu-option" data-act="select">☐ Select</div>
+          ${unread
+            ? '<div class="thread-item-menu-option" data-act="read">✓ Mark as read</div>'
+            : '<div class="thread-item-menu-option" data-act="unread">○ Mark as unread</div>'}
+          ${t.solved
+            ? '<div class="thread-item-menu-option" data-act="unsolve">✕ Not solved</div>'
+            : '<div class="thread-item-menu-option" data-act="solve">✅ Solved</div>'}
+        </div>`;
+    }
+
+    function wireItemMenu(el, t) {
+      el.querySelectorAll(".thread-item-menu-option").forEach((opt) => {
+        opt.addEventListener("click", async (e) => {
+          e.stopPropagation();
+          const act = opt.dataset.act;
+          openMenuId = null;
+          if (act === "select") {
+            enterSelectMode(t.id);
+          } else if (act === "read") {
+            markSeen(t.id, t.replyCount || 0);
+            renderLists();
+          } else if (act === "unread") {
+            markSeen(t.id, 0);
+            renderLists();
+          } else if (act === "solve" || act === "unsolve") {
+            renderLists(); // close the menu immediately, don't wait on the network
+            await setThreadSolved(t.id, act === "solve");
+            loadList(document.getElementById("threadSearch").value);
+          }
+        });
+      });
+    }
+
     function renderItem(t) {
       const el = document.createElement("div");
-      el.className = "thread-item" + (t.id === selectedId ? " selected" : "");
+      el.className = "thread-item" + (t.id === selectedId ? " selected" : "") + (selectMode ? " select-mode-item" : "");
       el.style.setProperty("--thread-accent", t.accent || "#7c6cf0");
-      const unread = Math.max(0, (t.replyCount || 0) - getSeenCount(t.id));
+      const unread = isUnread(t);
+      const checked = selectedIds.has(t.id);
       el.innerHTML = `
+        ${selectMode ? `<input type="checkbox" class="thread-item-check" ${checked ? "checked" : ""} tabindex="-1" />` : ""}
         <div class="icon" style="background:${(t.accent || "#7c6cf0")}33;">${t.icon || "🔔"}</div>
         <div class="meta">
           <div class="t-title">${escapeHtml(t.title)}</div>
           <div class="t-sub">${escapeHtml(t.submitter)} · ${timeAgo(t.lastActivity)}${t.replyCount ? " · " + t.replyCount + " reply" : ""}</div>
         </div>
-        ${unread > 0 ? `<span class="unread-badge">${unread > 99 ? "99+" : unread}</span>` : ""}
+        ${unread ? `<span class="unread-badge">${(t.replyCount - getSeenCount(t.id)) > 99 ? "99+" : t.replyCount - getSeenCount(t.id)}</span>` : ""}
         ${t.solved ? '<span class="t-done">✓</span>' : ""}
+        ${!selectMode ? `
+          <div class="thread-item-menu-wrap">
+            <button type="button" class="thread-item-menu-btn" title="More">⋮</button>
+            ${openMenuId === t.id ? buildItemMenuHTML(t, unread) : ""}
+          </div>` : ""}
       `;
-      el.addEventListener("click", () => {
-        if (t.id !== selectedId) { pendingAttachments = []; replyTarget = null; }
-        openThread(t.id);
-      });
+      if (selectMode) {
+        el.addEventListener("click", () => toggleItemSelected(t.id));
+      } else {
+        el.addEventListener("click", (e) => {
+          if (e.target.closest(".thread-item-menu-wrap")) return; // menu button/options handle their own clicks
+          if (t.id !== selectedId) { pendingAttachments = []; replyTarget = null; }
+          openThread(t.id);
+        });
+        const menuBtn = el.querySelector(".thread-item-menu-btn");
+        menuBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          openMenuId = openMenuId === t.id ? null : t.id;
+          renderLists();
+        });
+        if (openMenuId === t.id) wireItemMenu(el, t);
+      }
       return el;
     }
+
+    // Any click outside an open ⋮ menu closes it — the menu button itself
+    // calls stopPropagation() on its own click, so this only ever fires
+    // for genuine "clicked elsewhere" cases.
+    document.addEventListener("click", () => {
+      if (openMenuId !== null) { openMenuId = null; renderLists(); }
+    });
 
     function polishEmoji() {
       if (window.twemoji) window.twemoji.parse(document.body, { folder: "svg", ext: ".svg" });
@@ -361,6 +649,9 @@
       }
       solvedList.innerHTML = "";
       solvedThreads.forEach((t) => solvedList.appendChild(renderItem(t)));
+      document.getElementById("activeSelectAll").checked = activeThreads.length > 0 && activeThreads.every((t) => selectedIds.has(t.id));
+      document.getElementById("solvedSelectAll").checked = solvedThreads.length > 0 && solvedThreads.every((t) => selectedIds.has(t.id));
+      renderSelectToolbar();
       polishEmoji();
     }
 
@@ -599,7 +890,8 @@
             <div class="reply-input-wrap">
               <button class="attach-btn" id="attachBtn" title="Attach images, videos, or PDFs (multiple allowed, or paste an image directly into the box)">🔗</button>
               <input type="file" id="replyFileInput" accept="image/*,video/*,application/pdf" multiple hidden />
-              <input type="text" id="replyInput" placeholder="Reply into the Telegram thread..." autocomplete="off" />
+              <input type="text" id="replyInput" placeholder="Reply into the Telegram thread... (type @ to tag someone)" autocomplete="off" />
+              <div class="mention-dropdown" id="mentionDropdown" style="display:none;"></div>
             </div>
             <button id="replySend">Send</button>
           </div>
@@ -608,6 +900,7 @@
       wireTopButtons();
       wireConversationButtons();
       document.getElementById("replySend").addEventListener("click", sendReply);
+      wireMentionAutocomplete(); // MUST be wired before the Enter=send listener below, so it can swallow Enter first while the @ dropdown is open
       document.getElementById("replyInput").addEventListener("keydown", (e) => {
         if (e.key === "Enter") sendReply();
       });
@@ -622,6 +915,7 @@
       scrollConversation(true);
       polishEmoji();
       loadInlineAttachments();
+      loadMentionCandidatesForThread(t);
     }
 
     // Light refresh — used by polling and after in-place actions (solve,
@@ -689,19 +983,8 @@
     }
 
     async function toggleSolved() {
-      const action = selectedThread.solved ? "unsolve" : "solve";
-      const res = await authFetch(`/api/threads/${selectedThread.id}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action }),
-      });
-      const data = await res.json();
-      if (data.ok) {
-        selectedThread = data.thread;
-        updateThreadContent(selectedThread, true);
-        patchLocalThread(selectedThread);
-        loadList();
-      }
+      await setThreadSolved(selectedThread.id, !selectedThread.solved);
+      loadList();
     }
 
     async function deleteThread() {

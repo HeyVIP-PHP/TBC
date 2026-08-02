@@ -688,7 +688,18 @@
         <div class="fs-scroll"><div class="tgroute-modules">${rowsHtml}</div></div>
         <hr class="tgroute-divider" />
         ${canEditSettings ? "" : '<p class="edit-modal-note">View only.</p>'}
-        <p class="edit-modal-note tgroute-footnote">Maintenance/Coming soon blocks everyone whose role isn't checked in the second dropdown — Home page, form page, and the API itself. Owner is always allowed through even if unchecked. Changes apply immediately, no redeploy needed.</p>`;
+        <p class="edit-modal-note tgroute-footnote">Maintenance/Coming soon blocks everyone whose role isn't checked in the second dropdown — Home page, form page, and the API itself. Owner is always allowed through even if unchecked. Changes apply immediately, no redeploy needed.</p>
+        <hr class="tgroute-divider" />
+        <div class="mention-backfill-block">
+          <div class="mention-backfill-row">
+            <div>
+              <div class="mention-backfill-title">@ Tag Username — historical backfill</div>
+              <p class="edit-modal-note">One-time scan of every existing ticket so agents who replied before this feature shipped are also suggested when typing @ in TG Reply Threads. Safe to run more than once. Don't close this window or refresh while it's running.</p>
+            </div>
+            ${canEditSettings ? '<button type="button" class="tgroute-action-btn" id="mentionBackfillBtn">Run backfill</button>' : ""}
+          </div>
+          <p class="edit-modal-note mention-backfill-status" id="mentionBackfillStatus"></p>
+        </div>`;
 
       // Custom dropdowns (see .fs-dropdown in style.css for why these
       // aren't plain <select>s). Status is single-select (picking a
@@ -799,7 +810,50 @@
       acctBody.querySelectorAll(".fs-save").forEach((btn) => {
         btn.addEventListener("click", () => saveFeatureSettingRow(btn.closest(".tgroute-row")));
       });
+
+      const backfillBtn = document.getElementById("mentionBackfillBtn");
+      if (backfillBtn) backfillBtn.addEventListener("click", runMentionBackfill);
     }
+
+    // Loops POST /api/admin/mention-backfill, page by page, feeding each
+    // response's `cursor` back into the next call until `done` — see
+    // that endpoint's own comment for why this can't just be one call.
+    async function runMentionBackfill() {
+      const btn = document.getElementById("mentionBackfillBtn");
+      const status = document.getElementById("mentionBackfillStatus");
+      btn.disabled = true;
+      let cursor;
+      let total = 0;
+      status.className = "edit-modal-note mention-backfill-status";
+      try {
+        for (;;) {
+          status.textContent = `Scanning… ${total} threads so far.`;
+          const res = await window.AgentAuth.authFetch("/api/admin/mention-backfill", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ cursor }),
+          });
+          const data = await res.json();
+          if (!data.ok) {
+            status.textContent = data.error || "Backfill failed.";
+            status.className = "edit-modal-note mention-backfill-status err";
+            return;
+          }
+          total += data.scanned;
+          if (data.done) {
+            status.textContent = `Done — scanned ${total} threads.`;
+            return;
+          }
+          cursor = data.cursor;
+        }
+      } catch {
+        status.textContent = "Network error — you can just click Run backfill again, it picks up safely from a re-scan.";
+        status.className = "edit-modal-note mention-backfill-status err";
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
     document.addEventListener("click", () => {
       document.querySelectorAll(".fs-dropdown.open").forEach((dd) => {
         const menu = dd._fsMenu || dd.querySelector(".fs-dropdown-menu");
