@@ -72,7 +72,6 @@
           <p class="edit-modal-note" id="annNote"></p>
         </div>
         <div class="ann-form-footer">
-          <div class="ann-meta" id="annMeta"></div>
           <button type="button" class="btn-danger" id="annDelete" style="display:none;">Delete</button>
           <button type="button" class="ann-toggle-save" id="annSave"></button>
         </div>
@@ -130,15 +129,18 @@
       return String(str == null ? "" : str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     }
 
-    // Button shows the CURRENT pending state — green "Active" / muted
-    // "Inactive" — so clicking it (see the annSave handler below) flips
-    // to the opposite and saves: e.g. if it currently reads "Active",
-    // clicking saves the announcement as Inactive.
+    // Button shows the ACTION clicking it will take — the OPPOSITE of the
+    // announcement's current state — not the current state itself. So a
+    // currently-Active announcement shows "Inactive" (click to turn it
+    // off); a currently-Inactive one shows "Active" (click to turn it
+    // on). `pendingEnabled` tracks the actual current state; the click
+    // handler below flips it and saves that flipped value.
     function renderToggleSaveButton() {
       const btn = document.getElementById("annSave");
-      btn.textContent = pendingEnabled ? "Active" : "Inactive";
-      btn.classList.toggle("is-active", pendingEnabled);
-      btn.classList.toggle("is-inactive", !pendingEnabled);
+      const showAsActive = !pendingEnabled;
+      btn.textContent = showAsActive ? "Active" : "Inactive";
+      btn.classList.toggle("is-active", showAsActive);
+      btn.classList.toggle("is-inactive", !showAsActive);
     }
 
     // Same isEffectivelyActive() logic as _shared/announcements.js —
@@ -233,9 +235,9 @@
           <div class="thread-item ann-list-item${selected}" data-id="${esc(a.id)}">
             <div class="meta">
               <div class="t-title ann-item-topic">${esc(a.topic || "REMINDER")}</div>
-              <div class="ann-item-status"><span class="ann-status-dot ${status}"></span>${STATUS_LABEL[status]}</div>
               <div class="t-sub">${esc(a.updatedBy || a.createdBy || "")}${when ? " · " + esc(when) : ""}</div>
             </div>
+            <div class="ann-item-status"><span class="ann-status-dot ${status}"></span>${STATUS_LABEL[status]}</div>
           </div>`;
       }).join("");
       list.querySelectorAll(".thread-item").forEach((el) => {
@@ -278,14 +280,6 @@
       document.getElementById("annStartAt").value = a ? toDatetimeLocal(a.startAt) : "";
       document.getElementById("annEndAt").value = a ? toDatetimeLocal(a.endAt) : "";
 
-      // Created/updated info — shown in the footer, left of the buttons.
-      // Empty for a brand-new (not-yet-saved) announcement.
-      const meta = document.getElementById("annMeta");
-      meta.innerHTML = a
-        ? `<div>Created by ${esc(a.createdBy || "—")} · ${a.createdAt ? esc(new Date(a.createdAt).toLocaleString()) : "—"}</div>`
-          + `<div>Last updated by ${esc(a.updatedBy || "—")} · ${a.updatedAt ? esc(new Date(a.updatedAt).toLocaleString()) : "—"}</div>`
-        : "";
-
       note.textContent = "";
 
       document.getElementById("annFormScroll").scrollTop = 0;
@@ -309,10 +303,10 @@
         return;
       }
 
-      // The button doubles as the Active/Inactive toggle — clicking it
-      // flips the pending state (so a button reading "Active" saves it
-      // as Inactive, and vice versa), then saves everything else
-      // currently in the form alongside that new state.
+      // The button doubles as the Active/Inactive toggle — its label was
+      // showing the ACTION (opposite of the current state), so flipping
+      // pendingEnabled now makes it match what was just displayed, then
+      // that becomes what gets saved.
       pendingEnabled = !pendingEnabled;
       renderToggleSaveButton();
       const enabledToSave = pendingEnabled;

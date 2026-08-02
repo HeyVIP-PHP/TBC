@@ -1660,11 +1660,10 @@ body.announcements-page .threads-shell { flex: 1; height: auto; min-height: 0; }
   overflow: hidden;
 }
 .ann-form-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 30px 34px 26px; }
-.ann-message-textarea { min-height: 170px; }
-.ann-field-row { display: flex; gap: 16px; }
+.ann-message-textarea { min-height: 210px; }
+.ann-field-row { display: flex; gap: 16px; margin-top: 10px; }
 .ann-field-row .field { flex: 1; min-width: 0; }
 .ann-form-footer { flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end; gap: 10px; padding: 16px 34px; border-top: 1px solid var(--border); }
-.ann-meta { flex: 1; min-width: 0; font-size: 11px; color: var(--ink-soft); line-height: 1.5; }
 /* Merged Active/Inactive toggle + Save button — shows the CURRENT
    pending state; clicking flips it and saves (see announcements.html).
    Deliberately not .btn-submit — this needs its own compact sizing and
@@ -1711,9 +1710,9 @@ body.announcements-page .threads-shell { flex: 1; height: auto; min-height: 0; }
   transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
 }
 .ann-new-btn:hover { border-color: var(--accent-gold); color: var(--ink); background: var(--sidebar-item-hover); }
-.ann-list-item { align-items: flex-start; padding: 11px 12px; }
-.ann-list-item .meta { display: flex; flex-direction: column; gap: 4px; }
-.ann-item-status { display: flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 700; color: #34d399; }
+.ann-list-item { align-items: flex-start; justify-content: space-between; gap: 10px; padding: 11px 12px; }
+.ann-list-item .meta { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.ann-item-status { display: flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 700; color: #34d399; flex-shrink: 0; white-space: nowrap; margin-top: 2px; }
 .ann-item-status:has(.ann-status-dot.inactive) { color: var(--ink-soft); }
 .ann-item-status:has(.ann-status-dot.scheduled) { color: #60a5fa; }
 .ann-item-status:has(.ann-status-dot.expired) { color: #ef4a72; }
