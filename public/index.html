@@ -106,6 +106,7 @@
             <div class="t-icon" style="background:#f59e0b33;" id="announcementCardIcon">📢</div>
             <div class="t-name">Announcement</div>
             <div class="t-desc">Create and schedule the site-wide REMINDER banner</div>
+            <div class="t-sub-stat" id="announcementActiveStat"></div>
           </a>
           <a href="/threads.html" class="tool-card" id="threadsCard" style="--tool-accent:#38bdf8;">
             <div class="t-icon" style="background:#38bdf833;">💬<span class="t-badge" id="threadsUnreadBadge"></span></div>
@@ -456,10 +457,17 @@
       try {
         const res = await window.AgentAuth.authFetch("/api/announcements", { cache: "no-store" });
         const data = await res.json();
+        if (!data.ok) return;
+        const count = (data.announcements || []).length;
         const icon = document.getElementById("announcementCardIcon");
-        if (icon && data.ok) icon.classList.toggle("breathing", (data.announcements || []).length > 0);
+        if (icon) icon.classList.toggle("breathing", count > 0);
+        const stat = document.getElementById("announcementActiveStat");
+        if (stat) {
+          stat.textContent = count > 0 ? `${count} active` : "";
+          stat.classList.toggle("has-active", count > 0);
+        }
       } catch {
-        // Non-fatal — icon just doesn't breathe this cycle.
+        // Non-fatal — card just doesn't update this cycle.
       }
     }
     pollAnnouncementCardIcon();
@@ -754,7 +762,6 @@
               ? '<div style="display:flex;align-items:center;gap:8px;flex-shrink:0;"><input type="number" id="annRotateSeconds" min="1" step="1" style="width:70px;background:var(--field-bg);border:1px solid var(--border);border-radius:10px;padding:8px 10px;font-size:13px;color:var(--ink);" /><span class="edit-modal-note" style="margin:0;">seconds</span><button type="button" class="tgroute-action-btn" id="annRotateSaveBtn">Save</button></div>'
               : `<span class="edit-modal-note" style="margin:0;flex-shrink:0;">${Math.round(acctRotateIntervalMs / 1000)}s (view only)</span>`}
           </div>
-          <p class="edit-modal-note" id="annRotateStatus"></p>
         </div>`;
 
       // Custom dropdowns (see .fs-dropdown in style.css for why these
@@ -878,16 +885,13 @@
 
     async function saveAnnouncementRotateSpeed() {
       const input = document.getElementById("annRotateSeconds");
-      const status = document.getElementById("annRotateStatus");
+      const btn = document.getElementById("annRotateSaveBtn");
       const seconds = parseInt(input.value, 10);
       if (!Number.isFinite(seconds) || seconds < 1) {
-        status.textContent = "Enter at least 1 second.";
-        status.className = "edit-modal-note err";
         if (window.showToast) window.showToast("Enter at least 1 second.", "err");
         return;
       }
-      status.textContent = "Saving…";
-      status.className = "edit-modal-note";
+      btn.disabled = true;
       try {
         const res = await window.AgentAuth.authFetch("/api/admin/announcement-settings", {
           method: "POST",
@@ -897,16 +901,14 @@
         const data = await res.json();
         if (!data.ok) throw new Error(data.error || "Save failed.");
         acctRotateIntervalMs = data.rotateIntervalMs;
-        status.textContent = "Saved.";
-        status.className = "edit-modal-note ok";
         if (window.showToast) window.showToast("Saved.", "ok");
         // This device's banner picks up the new speed instantly instead
         // of waiting up to 60s for its next poll.
         if (window.refreshAnnouncementBanner) window.refreshAnnouncementBanner();
       } catch (err) {
-        status.textContent = err.message || "Save failed.";
-        status.className = "edit-modal-note err";
         if (window.showToast) window.showToast(err.message || "Save failed.", "err");
+      } finally {
+        btn.disabled = false;
       }
     }
 
