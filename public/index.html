@@ -24,6 +24,9 @@
 
   <nav class="brand-row" id="brandRow"><div class="brand-row-track" id="brandRowTrack"></div></nav>
 
+  <div id="announcementBanner"></div>
+  <script src="/assets/announcement-banner.js" defer></script>
+
   <div class="edit-modal-backdrop" id="editModalBackdrop">
     <div class="edit-modal">
       <button type="button" class="modal-close-btn" id="editModalClose" title="Close" aria-label="Close">✕</button>
@@ -98,6 +101,11 @@
     <main class="hub-main page-morph-in" data-transition-root>
       <div class="inner">
         <div class="tool-cards">
+          <a href="/announcements.html" class="tool-card" id="announcementCard" style="--tool-accent:#f59e0b;display:none;">
+            <div class="t-icon" style="background:#f59e0b33;" id="announcementCardIcon">📢</div>
+            <div class="t-name">Announcement</div>
+            <div class="t-desc">Create and schedule the site-wide REMINDER banner</div>
+          </a>
           <a href="/threads.html" class="tool-card" id="threadsCard" style="--tool-accent:#38bdf8;">
             <div class="t-icon" style="background:#38bdf833;">💬<span class="t-badge" id="threadsUnreadBadge"></span></div>
             <div class="t-name">TG Reply Threads</div>
@@ -434,6 +442,26 @@
     document.getElementById("subSettings").style.display = canSeeAdminSection("settings") ? "flex" : "none";
     document.getElementById("subAgentProfile").style.display = canSeeAdminSection("agentProfile") ? "flex" : "none";
 
+    // ---- Announcement tool card — shown only to accounts with access to
+    // the "announcements" Account Management section; icon "breathes"
+    // (reuses the app's existing pulse keyframe) while at least one
+    // announcement is currently active.
+    if (canSeeAdminSection("announcements")) {
+      document.getElementById("announcementCard").style.display = "";
+    }
+    async function pollAnnouncementCardIcon() {
+      try {
+        const res = await window.AgentAuth.authFetch("/api/announcements", { cache: "no-store" });
+        const data = await res.json();
+        const icon = document.getElementById("announcementCardIcon");
+        if (icon && data.ok) icon.classList.toggle("breathing", (data.announcements || []).length > 0);
+      } catch {
+        // Non-fatal — icon just doesn't breathe this cycle.
+      }
+    }
+    pollAnnouncementCardIcon();
+    setInterval(pollAnnouncementCardIcon, 30000);
+
     const acctToggle = document.getElementById("acctMgmtToggle");
     const acctSubitems = document.getElementById("acctMgmtSubitems");
     acctToggle.addEventListener("click", () => {
@@ -607,14 +635,20 @@
     // graying/blocking on this same page (see applyFeatureStatuses()
     // below) and on form.html/threads.html/promo.html.
     let acctFeatureItems = null;
+    let acctRotateIntervalMs = 5000;
 
     async function loadFeatureSettings() {
-      const res = await window.AgentAuth.authFetch("/api/admin/feature-status");
-      const data = await res.json();
+      const [statusRes, rotateRes] = await Promise.all([
+        window.AgentAuth.authFetch("/api/admin/feature-status"),
+        window.AgentAuth.authFetch("/api/admin/announcement-settings"),
+      ]);
+      const data = await statusRes.json();
       if (!data.ok) {
         acctBody.innerHTML = `<p class="edit-modal-note err">${acctEsc(data.error || "Failed to load.")}</p>`;
         return;
       }
+      const rotateData = await rotateRes.json();
+      if (rotateData.ok) acctRotateIntervalMs = rotateData.rotateIntervalMs;
       acctFeatureItems = data.items;
       renderFeatureSettings();
     }
@@ -689,6 +723,19 @@
         <hr class="tgroute-divider" />
         ${canEditSettings ? "" : '<p class="edit-modal-note">View only.</p>'}
         <p class="edit-modal-note tgroute-footnote">Maintenance/Coming soon blocks everyone whose role isn't checked in the second dropdown — Home page, form page, and the API itself. Owner is always allowed through even if unchecked. Changes apply immediately, no redeploy needed.</p>
+        <hr class="tgroute-divider" />
+        <div class="mention-backfill-block">
+          <div class="mention-backfill-row">
+            <div>
+              <div class="mention-backfill-title">📢 Announcement rotation speed</div>
+              <p class="edit-modal-note">How long each announcement stays on screen before the banner auto-rotates to the next one. Only matters when 2+ announcements are active at once.</p>
+            </div>
+            ${canEditSettings
+              ? '<div style="display:flex;align-items:center;gap:8px;flex-shrink:0;"><input type="number" id="annRotateSeconds" min="1" step="1" style="width:70px;background:var(--field-bg);border:1px solid var(--border);border-radius:10px;padding:8px 10px;font-size:13px;color:var(--ink);" /><span class="edit-modal-note" style="margin:0;">seconds</span><button type="button" class="tgroute-action-btn" id="annRotateSaveBtn">Save</button></div>'
+              : `<span class="edit-modal-note" style="margin:0;flex-shrink:0;">${Math.round(acctRotateIntervalMs / 1000)}s (view only)</span>`}
+          </div>
+          <p class="edit-modal-note" id="annRotateStatus"></p>
+        </div>
         <hr class="tgroute-divider" />
         <div class="mention-backfill-block">
           <div class="mention-backfill-row">
@@ -813,6 +860,42 @@
 
       const backfillBtn = document.getElementById("mentionBackfillBtn");
       if (backfillBtn) backfillBtn.addEventListener("click", runMentionBackfill);
+
+      const rotateInput = document.getElementById("annRotateSeconds");
+      if (rotateInput) rotateInput.value = Math.round(acctRotateIntervalMs / 1000);
+      const rotateSaveBtn = document.getElementById("annRotateSaveBtn");
+      if (rotateSaveBtn) rotateSaveBtn.addEventListener("click", saveAnnouncementRotateSpeed);
+    }
+
+    async function saveAnnouncementRotateSpeed() {
+      const input = document.getElementById("annRotateSeconds");
+      const status = document.getElementById("annRotateStatus");
+      const seconds = parseInt(input.value, 10);
+      if (!Number.isFinite(seconds) || seconds < 1) {
+        status.textContent = "Enter at least 1 second.";
+        status.className = "edit-modal-note err";
+        return;
+      }
+      status.textContent = "Saving…";
+      status.className = "edit-modal-note";
+      try {
+        const res = await window.AgentAuth.authFetch("/api/admin/announcement-settings", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ rotateIntervalMs: seconds * 1000 }),
+        });
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.error || "Save failed.");
+        acctRotateIntervalMs = data.rotateIntervalMs;
+        status.textContent = "Saved.";
+        status.className = "edit-modal-note ok";
+        // This device's banner picks up the new speed instantly instead
+        // of waiting up to 60s for its next poll.
+        if (window.refreshAnnouncementBanner) window.refreshAnnouncementBanner();
+      } catch (err) {
+        status.textContent = err.message || "Save failed.";
+        status.className = "edit-modal-note err";
+      }
     }
 
     // Loops POST /api/admin/mention-backfill, page by page, feeding each

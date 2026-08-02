@@ -1,0 +1,337 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Announcements</title>
+<link rel="stylesheet" href="/assets/style.css" />
+<script src="/assets/theme.js"></script>
+<script src="/assets/starfield.js" defer></script>
+<script src="/assets/authguard.js"></script>
+</head>
+<body class="announcements-page">
+  <header class="topbar">
+    <div class="topbar-left">
+      <img src="/assets/img/logo.webp" alt="HeyVIP" class="logo-img" />
+      <span class="wordmark">PHP CS TEAM - TBC</span>
+    </div>
+    <div class="topbar-right">
+      <span class="clock" id="liveClock"></span>
+      <button class="theme-pill" id="themeToggle"></button>
+      <span class="agent-whoami" id="agentWhoami"></span>
+    </div>
+  </header>
+
+  <div id="announcementBanner"></div>
+  <script src="/assets/announcement-banner.js" defer></script>
+
+  <div class="threads-topline">
+    <a href="/" class="back-pill">&larr; Back to Home</a>
+  </div>
+
+  <div class="threads-shell">
+    <aside class="threads-sidebar">
+      <div class="threads-section" id="annSection">
+        <div class="threads-section-title"><span>Announcements</span><span class="count" id="annCount">0</span></div>
+        <div class="thread-list" id="annList"></div>
+      </div>
+    </aside>
+
+    <main class="ann-main" data-transition-root>
+      <div class="form-card ann-form-card page-morph-in" id="annFormCard">
+        <div class="ann-form-scroll" id="annFormScroll">
+          <div class="form-header"><span class="icon">📢</span><span id="annFormTitle">New announcement</span></div>
+          <p class="form-hint">Shown as an amber banner below the topbar to every logged-in agent, on every page, while it's active.</p>
+          <hr class="form-divider" />
+
+          <div class="field">
+            <label>Topic</label>
+            <select id="annTopic"></select>
+          </div>
+
+          <div class="field">
+            <label>Message <span class="required">*</span></label>
+            <textarea id="annText" placeholder="Message shown in the banner…" autocomplete="off"></textarea>
+          </div>
+
+          <div class="field">
+            <label><input type="checkbox" id="annEnabled" /> Active</label>
+            <p class="form-hint" style="margin-top:6px;">Manual master switch — turning this off hides the banner immediately, regardless of the schedule below.</p>
+          </div>
+
+          <div class="field">
+            <label>Starts (optional)</label>
+            <input type="datetime-local" id="annStartAt" autocomplete="off" />
+          </div>
+          <div class="field">
+            <label>Ends (optional)</label>
+            <input type="datetime-local" id="annEndAt" autocomplete="off" />
+          </div>
+
+          <p class="form-hint" id="annMeta"></p>
+        </div>
+        <div class="ann-form-footer">
+          <p class="edit-modal-note" id="annNote"></p>
+          <button type="button" class="btn-danger" id="annDelete" style="display:none;">Delete</button>
+          <button type="button" class="btn-submit" id="annSave">Save</button>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="/assets/page-transition.js"></script>
+  <script>
+    window.initThemeToggle();
+    window.initClock();
+    window.AgentAuth.renderWhoami("agentWhoami");
+    const authFetch = window.AgentAuth.authFetch;
+
+    const ROLE_RANK = { agent: 0, senior: 1, admin: 2, superadmin: 3, owner: 4 };
+    const authInfo = window.AgentAuth.getAuth();
+
+    // Mirrors canSeeAdminSection()/canEditAdminSection() in
+    // functions/_shared/accounts.js exactly — UI convenience only, the
+    // server independently re-checks on every request regardless of
+    // what the client sends.
+    function canSee() {
+      if (!authInfo) return false;
+      if (authInfo.role === "owner") return true;
+      if (authInfo.allowedAdminSections === "all") return true;
+      return Array.isArray(authInfo.allowedAdminSections) && authInfo.allowedAdminSections.includes("announcements");
+    }
+    function canEdit() {
+      if (!authInfo) return false;
+      if (authInfo.role === "owner") return true;
+      if (!canSee()) return false;
+      if (authInfo.adminSectionEditAccess === "all") return true;
+      return Array.isArray(authInfo.adminSectionEditAccess) && authInfo.adminSectionEditAccess.includes("announcements");
+    }
+
+    if (!canSee()) {
+      document.querySelector(".threads-shell").innerHTML =
+        '<div class="threads-placeholder" style="margin:40px auto;">You don\'t have access to Announcements.</div>';
+    } else {
+      boot();
+    }
+
+    let announcements = [];
+    let topics = [];
+    let selectedId = null; // null = "new announcement" form
+    let listPollTimer = null;
+
+    function esc(str) {
+      return String(str == null ? "" : str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+
+    // Same isEffectivelyActive() logic as _shared/announcements.js —
+    // client-side mirror for immediate sidebar feedback; the server is
+    // still the source of truth for what actually shows in the banner.
+    function computeStatus(a) {
+      const now = Date.now();
+      if (!a.enabled) return "inactive";
+      if (a.startAt && now < new Date(a.startAt).getTime()) return "scheduled";
+      if (a.endAt && now > new Date(a.endAt).getTime()) return "expired";
+      return "active";
+    }
+    const STATUS_LABEL = { active: "Active", inactive: "Inactive", scheduled: "Scheduled", expired: "Expired" };
+
+    async function boot() {
+      const editable = canEdit();
+      document.getElementById("annDelete").style.display = editable ? "" : "none";
+      document.getElementById("annSave").style.display = editable ? "" : "none";
+      [...document.querySelectorAll("#annTopic, #annText, #annEnabled, #annStartAt, #annEndAt")].forEach((el) => {
+        el.disabled = !editable;
+      });
+
+      await loadAnnouncements();
+      listPollTimer = setInterval(pollAnnouncements, 30000);
+    }
+
+    // Full re-render (sidebar + form) — only called on initial load, or
+    // right after our own Save/Delete, i.e. only when there's genuinely
+    // nothing unsaved to lose.
+    async function loadAnnouncements() {
+      const res = await authFetch("/api/admin/announcements");
+      const data = await res.json();
+      if (!data.ok) {
+        document.getElementById("annList").innerHTML = `<p class="edit-modal-note err">${esc(data.error || "Failed to load.")}</p>`;
+        return;
+      }
+      announcements = data.announcements || [];
+      topics = data.topics || [];
+      renderList();
+
+      // Defaults to a blank "New announcement" form for accounts that can
+      // create one; view-only accounts land on the first existing
+      // announcement instead, since they have nothing to create.
+      if (canEdit()) {
+        openForm(null);
+      } else if (announcements.length) {
+        openForm(announcements[0].id);
+      } else {
+        openForm(null);
+      }
+    }
+
+    // The 30-second background poll never touches the form — only
+    // re-renders the sidebar list, so a poll landing while someone is
+    // mid-typing a new/edited announcement can't wipe their draft.
+    async function pollAnnouncements() {
+      const res = await authFetch("/api/admin/announcements");
+      const data = await res.json();
+      if (!data.ok) return;
+      announcements = data.announcements || [];
+      topics = data.topics || [];
+      renderList();
+    }
+
+    function renderList() {
+      const list = document.getElementById("annList");
+      document.getElementById("annCount").textContent = announcements.length;
+      if (!announcements.length) {
+        list.innerHTML = '<div class="threads-empty">No announcements yet.</div>';
+        return;
+      }
+      list.innerHTML = announcements.map((a) => {
+        const status = computeStatus(a);
+        const selected = a.id === selectedId ? " selected" : "";
+        return `
+          <div class="thread-item${selected}" data-id="${esc(a.id)}">
+            <span class="ann-status-dot ${status}" title="${STATUS_LABEL[status]}"></span>
+            <div class="meta">
+              <div class="t-title ann-item-topic">${esc(a.topic || "REMINDER")}</div>
+              <div class="t-sub">${STATUS_LABEL[status]} · ${esc(a.updatedBy || a.createdBy || "")}</div>
+            </div>
+          </div>`;
+      }).join("");
+      list.querySelectorAll(".thread-item").forEach((el) => {
+        el.addEventListener("click", () => openForm(el.dataset.id));
+      });
+    }
+
+    function toDatetimeLocal(iso) {
+      if (!iso) return "";
+      const d = new Date(iso);
+      if (isNaN(d.getTime())) return "";
+      const pad = (n) => String(n).padStart(2, "0");
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
+    function fromDatetimeLocal(val) {
+      if (!val) return null;
+      const d = new Date(val);
+      return isNaN(d.getTime()) ? null : d.toISOString();
+    }
+
+    function openForm(id) {
+      selectedId = id || null;
+      renderList(); // re-highlight selected row
+
+      const topicSelect = document.getElementById("annTopic");
+      topicSelect.innerHTML = topics.map((t) => `<option value="${esc(t)}">${esc(t)}</option>`).join("");
+
+      const note = document.getElementById("annNote");
+      note.textContent = "";
+      note.className = "edit-modal-note";
+
+      const a = selectedId ? announcements.find((x) => x.id === selectedId) : null;
+
+      document.getElementById("annFormTitle").textContent = a ? "Edit announcement" : "New announcement";
+      document.getElementById("annDelete").style.display = (a && canEdit()) ? "" : "none";
+
+      topicSelect.value = a ? (a.topic || topics[0]) : topics[0];
+      document.getElementById("annText").value = a ? a.text : "";
+      document.getElementById("annEnabled").checked = a ? !!a.enabled : true;
+      document.getElementById("annStartAt").value = a ? toDatetimeLocal(a.startAt) : "";
+      document.getElementById("annEndAt").value = a ? toDatetimeLocal(a.endAt) : "";
+
+      const meta = document.getElementById("annMeta");
+      meta.textContent = a
+        ? `Created by ${a.createdBy || "—"} · Last updated by ${a.updatedBy || "—"} at ${a.updatedAt ? new Date(a.updatedAt).toLocaleString() : "—"}`
+        : "";
+
+      document.getElementById("annFormScroll").scrollTop = 0;
+    }
+
+    document.getElementById("annSave").addEventListener("click", async () => {
+      if (!canEdit()) return;
+      const note = document.getElementById("annNote");
+      const saveBtn = document.getElementById("annSave");
+      const text = document.getElementById("annText").value.trim();
+      if (!text) {
+        note.textContent = "Message is required.";
+        note.className = "edit-modal-note err";
+        return;
+      }
+      const startAt = fromDatetimeLocal(document.getElementById("annStartAt").value);
+      const endAt = fromDatetimeLocal(document.getElementById("annEndAt").value);
+      if (startAt && endAt && new Date(endAt).getTime() <= new Date(startAt).getTime()) {
+        note.textContent = "End time must be after start time.";
+        note.className = "edit-modal-note err";
+        return;
+      }
+
+      saveBtn.disabled = true;
+      note.textContent = "Saving…";
+      note.className = "edit-modal-note";
+      try {
+        const res = await authFetch("/api/admin/announcements", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "save",
+            id: selectedId || undefined,
+            topic: document.getElementById("annTopic").value,
+            text,
+            enabled: document.getElementById("annEnabled").checked,
+            startAt,
+            endAt,
+          }),
+        });
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.error || "Save failed.");
+        selectedId = data.announcement.id;
+        await loadAnnouncements();
+        openForm(selectedId);
+        note.textContent = "Saved.";
+        note.className = "edit-modal-note ok";
+        // Same device updates instantly instead of waiting up to 60s for
+        // the banner's next poll — other devices/agents still only catch
+        // up on their own next poll.
+        if (window.refreshAnnouncementBanner) window.refreshAnnouncementBanner();
+      } catch (err) {
+        note.textContent = err.message || "Save failed.";
+        note.className = "edit-modal-note err";
+      } finally {
+        saveBtn.disabled = false;
+      }
+    });
+
+    document.getElementById("annDelete").addEventListener("click", async () => {
+      if (!canEdit() || !selectedId) return;
+      if (!confirm("Delete this announcement? This can't be undone.")) return;
+      const note = document.getElementById("annNote");
+      const delBtn = document.getElementById("annDelete");
+      delBtn.disabled = true;
+      note.textContent = "Deleting…";
+      note.className = "edit-modal-note";
+      try {
+        const res = await authFetch("/api/admin/announcements", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "delete", id: selectedId }),
+        });
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.error || "Delete failed.");
+        selectedId = null;
+        await loadAnnouncements();
+        if (window.refreshAnnouncementBanner) window.refreshAnnouncementBanner();
+      } catch (err) {
+        note.textContent = err.message || "Delete failed.";
+        note.className = "edit-modal-note err";
+      } finally {
+        delBtn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

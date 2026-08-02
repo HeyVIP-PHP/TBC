@@ -1544,3 +1544,132 @@ h1 {
 }
 .forward-link-card:hover { border-color: var(--accent-gold); background: rgba(255, 255, 255, 0.05); }
 .forward-link-time { color: var(--ink-soft); font-size: 11.5px; }
+
+/* ---- Announcement banner (all logged-in pages) ----
+   Sits as the first thing above the page's real content — right below
+   the topbar everywhere, or below Home's extra brand-marquee row on
+   index.html specifically (see where #announcementBanner is placed in
+   each page's markup, not a CSS concern). Not sticky — a normal block
+   in flow, same as the brand-row it sometimes follows. */
+#announcementBanner:empty { display: none; }
+.ann-banner {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 44px 10px 18px;
+  background: linear-gradient(90deg, rgba(245, 158, 11, 0.16), rgba(245, 158, 11, 0.07));
+  border-bottom: 1px solid rgba(245, 158, 11, 0.35);
+}
+[data-theme="light"] .ann-banner { background: linear-gradient(90deg, rgba(245, 158, 11, 0.14), rgba(245, 158, 11, 0.05)); }
+.ann-body { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 10px; }
+.ann-label {
+  flex-shrink: 0;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: #f59e0b;
+}
+.ann-text-stage {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: 18px;
+  overflow: hidden;
+}
+.ann-text {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ann-text-current { opacity: 1; transition: opacity 2.2s ease; }
+.ann-text-current.ann-fade-out { opacity: 0; }
+.ann-text-incoming { opacity: 0; transform: translateX(24px); transition: none; }
+.ann-text-incoming.ann-slide-in { opacity: 1; transform: translateX(0); transition: opacity 2.2s ease, transform 2.2s ease; }
+.ann-dots { display: flex; align-items: center; gap: 5px; flex-shrink: 0; }
+.ann-dot { width: 5px; height: 5px; border-radius: 50%; background: rgba(245, 158, 11, 0.35); transition: background 0.2s ease; }
+.ann-dot.active { background: #f59e0b; }
+.ann-dismiss {
+  position: absolute; top: 50%; right: 14px; transform: translateY(-50%);
+  width: 22px; height: 22px; border-radius: 50%; border: none;
+  background: transparent; color: var(--ink-soft);
+  font-size: 12px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.ann-dismiss:hover { background: rgba(245, 158, 11, 0.18); color: #f59e0b; }
+
+/* ---- Announcement icon "breathing" on the Home tool card — reuses the
+   app's own existing pulse keyframe (see @keyframes breathe above) for
+   consistency with how the rest of the app signals "this needs
+   attention", rather than inventing a new animation. */
+.tool-card .t-icon.breathing { animation: breathe 1.8s ease-in-out infinite; }
+
+/* ---- Announcement management page (public/announcements.html) ----
+   Same locked-to-viewport flex-column shell as threads.html — see
+   "body.threads-page" above for the identical pattern. Only the sidebar/
+   list/main classes are reused as-is (.threads-shell/.threads-sidebar/
+   .thread-list/.thread-item, .form-card); this block only adds the few
+   pieces that are genuinely new. */
+html:has(body.announcements-page), body.announcements-page {
+  height: 100%;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+body.announcements-page .topbar { flex-shrink: 0; }
+body.announcements-page #announcementBanner { flex-shrink: 0; }
+body.announcements-page .threads-topline { flex-shrink: 0; }
+body.announcements-page .threads-shell { flex: 1; height: auto; min-height: 0; }
+
+.ann-main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  justify-content: center;
+  padding: 22px;
+  overflow: hidden;
+}
+/* Fixed-size panel that exactly fills its flex parent's available
+   height, no guessed pixel offset — see PROJECT notes: any ancestor in
+   this chain that's flex-shrink:0 (topbar, banner, back-pill row) plus
+   flex:1; min-height:0 all the way down to here means height:100% is
+   always exactly right, banner showing or not, at any viewport size. */
+.ann-form-card {
+  width: 640px;
+  max-width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+}
+.ann-form-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 30px 34px 0; }
+.ann-form-footer {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 16px 34px;
+  border-top: 1px solid var(--border);
+}
+.ann-form-footer .edit-modal-note { margin: 0; flex: 1; text-align: left; }
+.btn-danger {
+  padding: 9px 18px; border-radius: 12px; border: 1.5px solid rgba(239, 68, 68, 0.4);
+  background: rgba(239, 68, 68, 0.1); color: #ef4444; font-weight: 700; font-size: 13px;
+  cursor: pointer; transition: background 0.15s ease;
+}
+.btn-danger:hover { background: rgba(239, 68, 68, 0.2); }
+.btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.ann-status-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.ann-status-dot.active { background: #34d399; }
+.ann-status-dot.scheduled { background: #60a5fa; }
+.ann-status-dot.expired { background: #ef4a72; }
+.ann-status-dot.inactive { background: var(--ink-soft); }
+.ann-item-topic { font-size: 15px; }

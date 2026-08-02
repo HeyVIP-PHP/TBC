@@ -4,6 +4,69 @@ Paste this whole document as the first message in a new conversation, along
 with the latest `telegram-issue-hub-updated.zip`. That gives the new chat
 the complete current state of the project.
 
+## 🆕 Added — Announcement banner + management page (ported from PKR's spec)
+
+Site-wide amber "REMINDER" banner (below the topbar on every logged-in
+page) plus a dedicated `/announcements.html` management page. Ported
+from a separate written spec (`announcement-feature-spec.md`), adapted
+to this project's actual permission model rather than the generic one
+described there — see below for what changed in the port.
+
+**New files:**
+- `functions/_shared/announcements.js` — KV layer (single `announcements`
+  JSON-array key + `announcement-settings` key, reusing `THREADS_KV`, no
+  new namespace). `isEffectivelyActive()` is evaluated fresh on every
+  read — no cron job, nothing writes to KV when a schedule window opens
+  or closes.
+- `functions/api/announcements.js` — public banner endpoint, any
+  logged-in account.
+- `functions/api/admin/announcements.js` — management CRUD.
+- `functions/api/admin/announcement-settings.js` — rotation-speed
+  control, gated by the pre-existing `"settings"` section (not
+  `"announcements"`) — same scope split as Maintenance/Coming-soon.
+- `public/assets/announcement-banner.js` — the banner itself, included
+  on `index.html`/`threads.html`/`promo.html`/`form.html`. Exposes
+  `window.refreshAnnouncementBanner()`.
+- `public/announcements.html` — two-pane management page (list +
+  form), reuses `.threads-shell`/`.thread-list`/`.form-card` CSS as-is.
+
+**Adapted from the spec, not copied verbatim:**
+- This project's Account Management Access (`allowedAdminSections`) is
+  DENY-by-default for every section, Owner opts each account in — there's
+  no separate "rank-based default tier" concept like the spec assumed.
+  `"announcements"` was just added to the existing `ADMIN_SECTIONS` /
+  `EDITABLE_ADMIN_SECTIONS` arrays in `_shared/accounts.js`, same as
+  every other section (`whitelistIp`, `tgRoutes`, `agentProfile`,
+  `settings`).
+- Hooked into the existing Maintenance/Coming-soon system
+  (`_shared/featureStatus.js`) as a new item id `"announcements"` — lets
+  the banner be toggled off entirely without touching who can manage it.
+  This is optional infrastructure the spec didn't have; used the
+  existing pattern since it was already generic.
+- The spec's centered-popup toast system and the "@ Tag Username
+  backfill" button are PKR-specific and unrelated to this feature — not
+  ported. Save/Delete status just uses the same inline `.edit-modal-note`
+  pattern already used everywhere else on this site.
+- Home page card: this project uses a `.tool-cards` grid (see
+  `threadsCard`/`promoCard`), not a sidebar sub-item, so "Announcement"
+  was added there instead, first in the grid, hidden unless
+  `canSeeAdminSection(account, "announcements")`.
+
+**New optional env vars** (Cloudflare Pages → Settings → Environment
+variables) — same "omit to skip" pattern as everything else Sheets-backed
+in this project:
+```
+ANNOUNCEMENT_LOG_SHEET_ID   # optional — omit to skip audit logging entirely
+ANNOUNCEMENT_LOG_TAB        # optional — defaults to "Log"
+```
+No new KV namespace, no new required secrets — everything else reuses
+`THREADS_KV` and the existing Sheets service account.
+
+**Not yet live-tested against a real deployment** — built and
+syntax-checked (`node --check` on every new/changed file, extracted
+inline `<script>` blocks checked too), but not click-tested against
+production Cloudflare/KV the way the sessions below were.
+
 ## 🐛 修复,2026-07-22 — Telegram 群里其他机器人的回复被静默吞掉
 
 **现象**：`BNAssistant`(群里另一个真正注册过的 Telegram Bot,不是普通

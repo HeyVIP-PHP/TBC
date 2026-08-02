@@ -44,6 +44,7 @@ export const FEATURE_STATUS_ITEMS = [
   { id: "deposit_request", emoji: "💳", name: "Deposit Request" },
   { id: "tg_reply_threads", emoji: "💬", name: "TG Reply Threads" },
   { id: "promo_code_search", emoji: "🎟️", name: "Promo Code Search" },
+  { id: "announcements", emoji: "📢", name: "Announcements" },
 ];
 const VALID_ITEM_IDS = new Set(FEATURE_STATUS_ITEMS.map((i) => i.id));
 const VALID_STATUSES = new Set(["maintenance", "coming_soon"]);
