@@ -978,7 +978,7 @@ a { color: inherit; text-decoration: none; }
 .thread-item-menu-option:hover { background: var(--sidebar-item-hover); }
 
 /* Select batch mode ---------------------------------------------------- */
-.section-select-all { margin-right: 8px; cursor: pointer; vertical-align: -2px; }
+.section-select-all { display: none; margin-right: 8px; cursor: pointer; vertical-align: -2px; }
 .thread-item.select-mode-item { cursor: pointer; }
 .thread-item-check { flex-shrink: 0; width: 15px; height: 15px; cursor: pointer; accent-color: var(--accent-gold); }
 

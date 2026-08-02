@@ -649,6 +649,8 @@
       }
       solvedList.innerHTML = "";
       solvedThreads.forEach((t) => solvedList.appendChild(renderItem(t)));
+      document.getElementById("activeSelectAll").style.display = selectMode ? "inline-block" : "none";
+      document.getElementById("solvedSelectAll").style.display = selectMode ? "inline-block" : "none";
       document.getElementById("activeSelectAll").checked = activeThreads.length > 0 && activeThreads.every((t) => selectedIds.has(t.id));
       document.getElementById("solvedSelectAll").checked = solvedThreads.length > 0 && solvedThreads.every((t) => selectedIds.has(t.id));
       renderSelectToolbar();
@@ -890,7 +892,7 @@
             <div class="reply-input-wrap">
               <button class="attach-btn" id="attachBtn" title="Attach images, videos, or PDFs (multiple allowed, or paste an image directly into the box)">🔗</button>
               <input type="file" id="replyFileInput" accept="image/*,video/*,application/pdf" multiple hidden />
-              <input type="text" id="replyInput" placeholder="Reply into the Telegram thread... (type @ to tag someone)" autocomplete="off" />
+              <input type="text" id="replyInput" placeholder="Write a message..." autocomplete="off" />
               <div class="mention-dropdown" id="mentionDropdown" style="display:none;"></div>
             </div>
             <button id="replySend">Send</button>
