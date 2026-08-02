@@ -544,7 +544,7 @@
         </div>
         <div class="select-toolbar-row2">
           <button type="button" class="select-action-btn" id="selectReadBtn" ${n ? "" : "disabled"}>${readLabel}</button>
-          <button type="button" class="select-action-btn" id="selectSolvedBtn" ${n ? "" : "disabled"}>${solvedLabel}</button>
+          <button type="button" class="select-action-btn ${anyUnsolved ? "tone-solve" : "tone-unsolve"}" id="selectSolvedBtn" ${n ? "" : "disabled"}>${solvedLabel}</button>
         </div>`;
       document.getElementById("selectCancelBtn").addEventListener("click", exitSelectMode);
       document.getElementById("selectReadBtn").addEventListener("click", () => batchMarkRead(anyUnread));
