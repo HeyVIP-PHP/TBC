@@ -1342,13 +1342,14 @@
       { id: "tgRoutes", icon: "📤", name: "TG Group / Channel" },
       { id: "agentProfile", icon: "🪪", name: "Agent Profile" },
       { id: "settings", icon: "⚙️", name: "Settings" },
+      { id: "announcements", icon: "📢", name: "Announcement" },
     ];
 
-    // The 4 sections where View vs Edit is a meaningful, separately
+    // The 5 sections where View vs Edit is a meaningful, separately
     // grantable choice — mirrors EDITABLE_ADMIN_SECTIONS in
     // _shared/accounts.js exactly. "createAccount" isn't here: creating
     // an account IS the action, there's no view-only version of it.
-    const EDITABLE_ADMIN_SECTIONS = ["whitelistIp", "tgRoutes", "agentProfile", "settings"];
+    const EDITABLE_ADMIN_SECTIONS = ["whitelistIp", "tgRoutes", "agentProfile", "settings", "announcements"];
 
     function openAgentProfileModal(username) {
       const a = acctAccounts.find((acc) => acc.username === username);
@@ -1417,7 +1418,7 @@
             <input type="checkbox" class="ap-admin-section-checkbox" value="${acctEsc(s.id)}" ${isChecked ? "checked" : ""} ${canEditAdminSections ? "" : "disabled"} />
             ${s.icon} ${acctEsc(s.name)}
           </label>`;
-          // View only / Can Edit — only for the 3 sections where that
+          // View only / Can Edit — only for the sections where that
           // distinction exists (see EDITABLE_ADMIN_SECTIONS above).
           // COMPLETELY REPLACES the old rank-based split (explicit
           // business-owner decision) — this radio pair is the only thing
