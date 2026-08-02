@@ -509,6 +509,7 @@
         ? "Submitted — posted to Telegram and logged to sheet."
         : `Submitted to Telegram, but sheet logging failed: ${data.sheetError || "unknown error"}`;
       status.className = data.sheetAttempted && !data.sheetLogged ? "status-msg err" : "status-msg ok";
+      if (window.showToast) window.showToast(status.textContent, data.sheetAttempted && !data.sheetLogged ? "err" : "ok");
       form.reset();
       brandSelect.selectedIndex = 0;
       files = [];
@@ -517,6 +518,7 @@
     } catch (err) {
       status.textContent = err.message || "Something went wrong. Try again.";
       status.className = "status-msg err";
+      if (window.showToast) window.showToast(status.textContent, "err");
     } finally {
       submitInFlight = false;
       // Only re-enable if the TID isn't (still) flagged as a duplicate —

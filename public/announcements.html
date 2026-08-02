@@ -8,6 +8,7 @@
 <script src="/assets/theme.js"></script>
 <script src="/assets/starfield.js" defer></script>
 <script src="/assets/authguard.js"></script>
+<script src="/assets/toast.js"></script>
 </head>
 <body class="announcements-page">
   <header class="topbar">
@@ -31,6 +32,11 @@
 
   <div class="threads-shell">
     <aside class="threads-sidebar">
+      <button type="button" class="ann-new-btn" id="annNewBtn" style="display:none;">+ New announcement</button>
+      <div class="threads-search">
+        <span>🔍</span>
+        <input type="text" id="annSearch" placeholder="Search topic or message…" autocomplete="off" />
+      </div>
       <div class="threads-section" id="annSection">
         <div class="threads-section-title"><span>Announcements</span><span class="count" id="annCount">0</span></div>
         <div class="thread-list" id="annList"></div>
@@ -49,7 +55,7 @@
 
           <div class="field">
             <label>Message <span class="required">*</span></label>
-            <textarea id="annText" placeholder="Message shown in the banner" autocomplete="off"></textarea>
+            <textarea id="annText" class="ann-message-textarea" placeholder="Message shown in the banner" autocomplete="off"></textarea>
           </div>
 
           <div class="ann-field-row">
@@ -63,15 +69,12 @@
             </div>
           </div>
 
-          <div class="field ann-active-field">
-            <label class="ann-active-label"><input type="checkbox" id="annEnabled" /> Active</label>
-          </div>
-
-          <p class="edit-modal-note" id="annNote">Not saved yet.</p>
+          <p class="edit-modal-note" id="annNote"></p>
         </div>
         <div class="ann-form-footer">
+          <div class="ann-meta" id="annMeta"></div>
           <button type="button" class="btn-danger" id="annDelete" style="display:none;">Delete</button>
-          <button type="button" class="btn-submit" id="annSave">Save</button>
+          <button type="button" class="ann-toggle-save" id="annSave"></button>
         </div>
       </div>
     </main>
@@ -116,9 +119,26 @@
     let topics = [];
     let selectedId = null; // null = "new announcement" form
     let listPollTimer = null;
+    // The Active checkbox was merged into the Save button itself — this
+    // tracks the value that will actually be saved. Defaults to whatever
+    // the loaded announcement's `enabled` is (or true for a brand-new
+    // one); clicking the button flips this AND immediately saves.
+    let pendingEnabled = true;
+    let annSearchQuery = "";
 
     function esc(str) {
       return String(str == null ? "" : str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+
+    // Button shows the CURRENT pending state — green "Active" / muted
+    // "Inactive" — so clicking it (see the annSave handler below) flips
+    // to the opposite and saves: e.g. if it currently reads "Active",
+    // clicking saves the announcement as Inactive.
+    function renderToggleSaveButton() {
+      const btn = document.getElementById("annSave");
+      btn.textContent = pendingEnabled ? "Active" : "Inactive";
+      btn.classList.toggle("is-active", pendingEnabled);
+      btn.classList.toggle("is-inactive", !pendingEnabled);
     }
 
     // Same isEffectivelyActive() logic as _shared/announcements.js —
@@ -137,8 +157,15 @@
       const editable = canEdit();
       document.getElementById("annDelete").style.display = editable ? "" : "none";
       document.getElementById("annSave").style.display = editable ? "" : "none";
-      [...document.querySelectorAll("#annTopic, #annText, #annEnabled, #annStartAt, #annEndAt")].forEach((el) => {
+      document.getElementById("annNewBtn").style.display = editable ? "" : "none";
+      [...document.querySelectorAll("#annTopic, #annText, #annStartAt, #annEndAt")].forEach((el) => {
         el.disabled = !editable;
+      });
+
+      document.getElementById("annNewBtn").addEventListener("click", () => openForm(null));
+      document.getElementById("annSearch").addEventListener("input", (e) => {
+        annSearchQuery = e.target.value.trim().toLowerCase();
+        renderList();
       });
 
       await loadAnnouncements();
@@ -190,15 +217,24 @@
         list.innerHTML = '<div class="threads-empty">No announcements yet.</div>';
         return;
       }
-      list.innerHTML = announcements.map((a) => {
+      const q = annSearchQuery;
+      const filtered = !q
+        ? announcements
+        : announcements.filter((a) => (a.topic || "").toLowerCase().includes(q) || (a.text || "").toLowerCase().includes(q));
+      if (!filtered.length) {
+        list.innerHTML = '<div class="threads-empty">No matches.</div>';
+        return;
+      }
+      list.innerHTML = filtered.map((a) => {
         const status = computeStatus(a);
         const selected = a.id === selectedId ? " selected" : "";
+        const when = a.updatedAt ? new Date(a.updatedAt).toLocaleString() : "";
         return `
-          <div class="thread-item${selected}" data-id="${esc(a.id)}">
-            <span class="ann-status-dot ${status}" title="${STATUS_LABEL[status]}"></span>
+          <div class="thread-item ann-list-item${selected}" data-id="${esc(a.id)}">
             <div class="meta">
               <div class="t-title ann-item-topic">${esc(a.topic || "REMINDER")}</div>
-              <div class="t-sub">${STATUS_LABEL[status]} · ${esc(a.updatedBy || a.createdBy || "")}</div>
+              <div class="ann-item-status"><span class="ann-status-dot ${status}"></span>${STATUS_LABEL[status]}</div>
+              <div class="t-sub">${esc(a.updatedBy || a.createdBy || "")}${when ? " · " + esc(when) : ""}</div>
             </div>
           </div>`;
       }).join("");
@@ -237,17 +273,20 @@
 
       topicSelect.value = a ? (a.topic || topics[0]) : topics[0];
       document.getElementById("annText").value = a ? a.text : "";
-      document.getElementById("annEnabled").checked = a ? !!a.enabled : true;
+      pendingEnabled = a ? !!a.enabled : true;
+      renderToggleSaveButton();
       document.getElementById("annStartAt").value = a ? toDatetimeLocal(a.startAt) : "";
       document.getElementById("annEndAt").value = a ? toDatetimeLocal(a.endAt) : "";
 
-      // Created/updated info still shown (as a tooltip on the status
-      // note, hover to see) — the sidebar row already shows a short
-      // version of this, so it doesn't need its own line in the form.
-      note.textContent = "Not saved yet.";
-      note.title = a
-        ? `Created by ${a.createdBy || "—"} · Last updated by ${a.updatedBy || "—"} at ${a.updatedAt ? new Date(a.updatedAt).toLocaleString() : "—"}`
+      // Created/updated info — shown in the footer, left of the buttons.
+      // Empty for a brand-new (not-yet-saved) announcement.
+      const meta = document.getElementById("annMeta");
+      meta.innerHTML = a
+        ? `<div>Created by ${esc(a.createdBy || "—")} · ${a.createdAt ? esc(new Date(a.createdAt).toLocaleString()) : "—"}</div>`
+          + `<div>Last updated by ${esc(a.updatedBy || "—")} · ${a.updatedAt ? esc(new Date(a.updatedAt).toLocaleString()) : "—"}</div>`
         : "";
+
+      note.textContent = "";
 
       document.getElementById("annFormScroll").scrollTop = 0;
     }
@@ -270,6 +309,14 @@
         return;
       }
 
+      // The button doubles as the Active/Inactive toggle — clicking it
+      // flips the pending state (so a button reading "Active" saves it
+      // as Inactive, and vice versa), then saves everything else
+      // currently in the form alongside that new state.
+      pendingEnabled = !pendingEnabled;
+      renderToggleSaveButton();
+      const enabledToSave = pendingEnabled;
+
       saveBtn.disabled = true;
       note.textContent = "Saving…";
       note.className = "edit-modal-note";
@@ -282,7 +329,7 @@
             id: selectedId || undefined,
             topic: document.getElementById("annTopic").value,
             text,
-            enabled: document.getElementById("annEnabled").checked,
+            enabled: enabledToSave,
             startAt,
             endAt,
           }),
@@ -294,13 +341,17 @@
         openForm(selectedId);
         note.textContent = "Saved.";
         note.className = "edit-modal-note ok";
+        if (window.showToast) window.showToast("Saved.", "ok");
         // Same device updates instantly instead of waiting up to 60s for
         // the banner's next poll — other devices/agents still only catch
         // up on their own next poll.
         if (window.refreshAnnouncementBanner) window.refreshAnnouncementBanner();
       } catch (err) {
+        pendingEnabled = !pendingEnabled; // revert the optimistic flip — nothing was actually saved
+        renderToggleSaveButton();
         note.textContent = err.message || "Save failed.";
         note.className = "edit-modal-note err";
+        if (window.showToast) window.showToast(err.message || "Save failed.", "err");
       } finally {
         saveBtn.disabled = false;
       }
@@ -324,10 +375,12 @@
         if (!data.ok) throw new Error(data.error || "Delete failed.");
         selectedId = null;
         await loadAnnouncements();
+        if (window.showToast) window.showToast("Deleted.", "ok");
         if (window.refreshAnnouncementBanner) window.refreshAnnouncementBanner();
       } catch (err) {
         note.textContent = err.message || "Delete failed.";
         note.className = "edit-modal-note err";
+        if (window.showToast) window.showToast(err.message || "Delete failed.", "err");
       } finally {
         delBtn.disabled = false;
       }

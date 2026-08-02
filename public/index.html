@@ -8,6 +8,7 @@
 <script src="/assets/theme.js"></script>
 <script src="/assets/starfield.js" defer></script>
 <script src="/assets/authguard.js"></script>
+<script src="/assets/toast.js"></script>
 </head>
 <body>
   <header class="topbar">
@@ -282,10 +283,12 @@
         renderBrandRow();
         modalNote.textContent = "Saved.";
         modalNote.className = "edit-modal-note ok";
+        if (window.showToast) window.showToast("Saved.", "ok");
         setTimeout(closeEditModal, 600);
       } catch (err) {
         modalNote.textContent = err.message || "Save failed.";
         modalNote.className = "edit-modal-note err";
+        if (window.showToast) window.showToast(err.message || "Save failed.", "err");
       }
     });
 
@@ -493,6 +496,12 @@
     function setAcctNote(msg, cls) {
       acctNote.textContent = msg || "";
       acctNote.className = "edit-modal-note" + (cls ? " " + cls : "");
+      // Only the terminal result gets a toast — "Saving…"/"Deleting…"/
+      // etc (called with no cls) are transient and would just double up
+      // with the toast that follows a moment later.
+      if ((cls === "ok" || cls === "err") && msg && window.showToast) {
+        window.showToast(msg, cls);
+      }
     }
 
     function timeAgoLocal(iso) {
@@ -727,6 +736,17 @@
         <div class="mention-backfill-block">
           <div class="mention-backfill-row">
             <div>
+              <div class="mention-backfill-title">@ Tag Username — historical backfill</div>
+              <p class="edit-modal-note">One-time scan of every existing ticket so agents who replied before this feature shipped are also suggested when typing @ in TG Reply Threads. Safe to run more than once. Don't close this window or refresh while it's running.</p>
+            </div>
+            ${canEditSettings ? '<button type="button" class="tgroute-action-btn" id="mentionBackfillBtn">Run backfill</button>' : ""}
+          </div>
+          <p class="edit-modal-note mention-backfill-status" id="mentionBackfillStatus"></p>
+        </div>
+        <hr class="tgroute-divider" />
+        <div class="mention-backfill-block">
+          <div class="mention-backfill-row">
+            <div>
               <div class="mention-backfill-title">📢 Announcement rotation speed</div>
               <p class="edit-modal-note">How long each announcement stays on screen before the banner auto-rotates to the next one. Only matters when 2+ announcements are active at once.</p>
             </div>
@@ -735,17 +755,6 @@
               : `<span class="edit-modal-note" style="margin:0;flex-shrink:0;">${Math.round(acctRotateIntervalMs / 1000)}s (view only)</span>`}
           </div>
           <p class="edit-modal-note" id="annRotateStatus"></p>
-        </div>
-        <hr class="tgroute-divider" />
-        <div class="mention-backfill-block">
-          <div class="mention-backfill-row">
-            <div>
-              <div class="mention-backfill-title">@ Tag Username — historical backfill</div>
-              <p class="edit-modal-note">One-time scan of every existing ticket so agents who replied before this feature shipped are also suggested when typing @ in TG Reply Threads. Safe to run more than once. Don't close this window or refresh while it's running.</p>
-            </div>
-            ${canEditSettings ? '<button type="button" class="tgroute-action-btn" id="mentionBackfillBtn">Run backfill</button>' : ""}
-          </div>
-          <p class="edit-modal-note mention-backfill-status" id="mentionBackfillStatus"></p>
         </div>`;
 
       // Custom dropdowns (see .fs-dropdown in style.css for why these
@@ -874,6 +883,7 @@
       if (!Number.isFinite(seconds) || seconds < 1) {
         status.textContent = "Enter at least 1 second.";
         status.className = "edit-modal-note err";
+        if (window.showToast) window.showToast("Enter at least 1 second.", "err");
         return;
       }
       status.textContent = "Saving…";
@@ -889,12 +899,14 @@
         acctRotateIntervalMs = data.rotateIntervalMs;
         status.textContent = "Saved.";
         status.className = "edit-modal-note ok";
+        if (window.showToast) window.showToast("Saved.", "ok");
         // This device's banner picks up the new speed instantly instead
         // of waiting up to 60s for its next poll.
         if (window.refreshAnnouncementBanner) window.refreshAnnouncementBanner();
       } catch (err) {
         status.textContent = err.message || "Save failed.";
         status.className = "edit-modal-note err";
+        if (window.showToast) window.showToast(err.message || "Save failed.", "err");
       }
     }
 
@@ -920,11 +932,13 @@
           if (!data.ok) {
             status.textContent = data.error || "Backfill failed.";
             status.className = "edit-modal-note mention-backfill-status err";
+            if (window.showToast) window.showToast(data.error || "Backfill failed.", "err");
             return;
           }
           total += data.scanned;
           if (data.done) {
             status.textContent = `Done — scanned ${total} threads.`;
+            if (window.showToast) window.showToast(`Done — scanned ${total} threads.`, "ok");
             return;
           }
           cursor = data.cursor;
@@ -932,6 +946,7 @@
       } catch {
         status.textContent = "Network error — you can just click Run backfill again, it picks up safely from a re-scan.";
         status.className = "edit-modal-note mention-backfill-status err";
+        if (window.showToast) window.showToast("Network error — click Run backfill again.", "err");
       } finally {
         btn.disabled = false;
       }

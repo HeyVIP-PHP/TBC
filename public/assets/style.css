@@ -775,7 +775,7 @@ a { color: inherit; text-decoration: none; }
   position: relative;
   padding: 36px 40px;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   text-align: center;
 }
@@ -824,7 +824,6 @@ a { color: inherit; text-decoration: none; }
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 14px;
-  margin-top: 30px;
   max-width: 520px;
 }
 .tool-card {
@@ -1661,23 +1660,28 @@ body.announcements-page .threads-shell { flex: 1; height: auto; min-height: 0; }
   overflow: hidden;
 }
 .ann-form-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 30px 34px 26px; }
+.ann-message-textarea { min-height: 170px; }
 .ann-field-row { display: flex; gap: 16px; }
 .ann-field-row .field { flex: 1; min-width: 0; }
-.ann-active-field { margin-bottom: 14px; }
-.ann-active-label {
-  display: flex; align-items: center; gap: 8px;
-  font-size: 13px; font-weight: 600; letter-spacing: normal; text-transform: none;
-  color: var(--ink); cursor: pointer; margin-bottom: 0;
+.ann-form-footer { flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end; gap: 10px; padding: 16px 34px; border-top: 1px solid var(--border); }
+.ann-meta { flex: 1; min-width: 0; font-size: 11px; color: var(--ink-soft); line-height: 1.5; }
+/* Merged Active/Inactive toggle + Save button — shows the CURRENT
+   pending state; clicking flips it and saves (see announcements.html).
+   Deliberately not .btn-submit — this needs its own compact sizing and
+   a state-dependent color instead of the site-wide blue/indigo gradient. */
+.ann-toggle-save {
+  border: none; border-radius: 12px; padding: 9px 20px;
+  font-size: 13px; font-weight: 800; cursor: pointer;
+  transition: transform 0.12s ease, background 0.15s ease;
 }
-.ann-active-label input[type="checkbox"] { width: 15px; height: 15px; accent-color: #38bdf8; cursor: pointer; }
-.ann-form-footer {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 10px;
-  padding: 16px 34px;
-  border-top: 1px solid var(--border);
+.ann-toggle-save:hover { transform: translateY(-1px); }
+.ann-toggle-save:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+.ann-toggle-save.is-active {
+  background: linear-gradient(90deg, #1a9c6e, #34d399); color: #06170f;
+  box-shadow: 0 10px 20px -10px rgba(26, 156, 110, 0.6);
+}
+.ann-toggle-save.is-inactive {
+  background: var(--field-bg); color: var(--ink-soft); border: 1.5px solid var(--border);
 }
 .btn-danger {
   padding: 9px 18px; border-radius: 12px; border: 1.5px solid rgba(239, 68, 68, 0.4);
@@ -1693,3 +1697,60 @@ body.announcements-page .threads-shell { flex: 1; height: auto; min-height: 0; }
 .ann-status-dot.expired { background: #ef4a72; }
 .ann-status-dot.inactive { background: var(--ink-soft); }
 .ann-item-topic { font-size: 15px; }
+.ann-new-btn {
+  width: 100%;
+  background: transparent;
+  border: 1.5px dashed var(--border);
+  border-radius: 12px;
+  padding: 11px 12px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink-soft);
+  cursor: pointer;
+  margin-bottom: 12px;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+.ann-new-btn:hover { border-color: var(--accent-gold); color: var(--ink); background: var(--sidebar-item-hover); }
+.ann-list-item { align-items: flex-start; padding: 11px 12px; }
+.ann-list-item .meta { display: flex; flex-direction: column; gap: 4px; }
+.ann-item-status { display: flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 700; color: #34d399; }
+.ann-item-status:has(.ann-status-dot.inactive) { color: var(--ink-soft); }
+.ann-item-status:has(.ann-status-dot.scheduled) { color: #60a5fa; }
+.ann-item-status:has(.ann-status-dot.expired) { color: #ef4a72; }
+
+/* ---- Toast notification (assets/toast.js) ----
+   Centered popup, dims the backdrop briefly, never blocks clicks
+   underneath (pointer-events:none throughout — it's a notification, not
+   a modal). Used for the terminal result ("Saved."/"Submitted."/
+   "<reason> failed.") of every Save/Delete/Create action across the
+   admin modal and the submission form. */
+.toast-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  background: rgba(6, 8, 20, 0);
+  transition: background 0.25s ease;
+}
+.toast-overlay.toast-show { background: rgba(6, 8, 20, 0.35); }
+.toast-card {
+  background: var(--card-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  padding: 14px 28px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink);
+  text-align: center;
+  max-width: min(420px, 80vw);
+  opacity: 0;
+  transform: translateY(-8px) scale(0.96);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.toast-overlay.toast-show .toast-card { opacity: 1; transform: translateY(0) scale(1); }
+.toast-card.toast-ok { border-color: rgba(26, 156, 110, 0.4); color: #1a9c6e; }
+.toast-card.toast-err { border-color: rgba(224, 87, 122, 0.4); color: #e0577a; }
