@@ -473,15 +473,32 @@ async function sendReplySingleWithCaption(env, thread, text, attachment, replyId
   const method = kind === "photo" ? "sendPhoto" : kind === "video" ? "sendVideo" : "sendDocument";
   const field = kind; // "photo" | "video" | "document" — same names as the FormData field Telegram expects
 
-  const form = new FormData();
-  form.append("chat_id", thread.chatId);
-  if (thread.topicId) form.append("message_thread_id", String(thread.topicId));
-  form.append("reply_to_message_id", String(replyId));
-  form.append(field, blob, name || "attachment");
-  if (text) form.append("caption", text);
+  const buildForm = (fieldName) => {
+    const form = new FormData();
+    form.append("chat_id", thread.chatId);
+    if (thread.topicId) form.append("message_thread_id", String(thread.topicId));
+    form.append("reply_to_message_id", String(replyId));
+    form.append(fieldName, blob, name || "attachment");
+    if (text) form.append("caption", text);
+    return form;
+  };
 
-  const res = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/${method}`, { method: "POST", body: form });
-  const data = await res.json();
+  let res = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/${method}`, { method: "POST", body: buildForm(field) });
+  let data = await res.json();
+  let sentAsDocument = false;
+  // A genuine image can still be a photo Telegram itself refuses to send
+  // as a "photo" — most commonly PHOTO_INVALID_DIMENSIONS (extreme
+  // aspect-ratio screenshots, e.g. a long stitched scroll capture, or a
+  // corrupt/zero-dimension file). Same fallback forward.js's
+  // sendOnePhotoOrDocument() already uses for carried-over file_ids —
+  // this brings the "fresh upload" reply path in line with it, so the
+  // reply (and the agent's typed text) isn't lost outright: it goes out
+  // as a downloadable document instead of an inline thumbnail.
+  if (!data.ok && method === "sendPhoto") {
+    res = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendDocument`, { method: "POST", body: buildForm("document") });
+    data = await res.json();
+    sentAsDocument = true;
+  }
   if (!data.ok) throw new Error(data.description || "Telegram send failed.");
 
   // sendPhoto returns an ARRAY of sizes (Telegram auto-generates several
@@ -491,11 +508,13 @@ async function sendReplySingleWithCaption(env, thread, text, attachment, replyId
   // what functions/api/attachment/[fileId].js needs later to fetch the
   // actual bytes on demand — see the comment where this function is
   // called for why nothing is stored/uploaded anywhere at send time.
-  const fileId = kind === "photo"
-    ? data.result.photo?.[data.result.photo.length - 1]?.file_id || null
-    : kind === "video"
-      ? data.result.video?.file_id || null
-      : data.result.document?.file_id || null;
+  const fileId = sentAsDocument
+    ? data.result.document?.file_id || null
+    : kind === "photo"
+      ? data.result.photo?.[data.result.photo.length - 1]?.file_id || null
+      : kind === "video"
+        ? data.result.video?.file_id || null
+        : data.result.document?.file_id || null;
 
   return { messageId: data.result.message_id, fileId, name: name || null };
 }

@@ -376,23 +376,38 @@ async function sendOneFreshUpload({ botToken, route, text, attachment }) {
   const blob = new Blob([bytes], { type: type || "application/octet-stream" });
   const isImage = looksLikeImage(type, name);
   const method = isImage ? "sendPhoto" : "sendDocument";
-  const field = isImage ? "photo" : "document";
 
-  const form = new FormData();
-  form.append("chat_id", route.chatId);
-  if (route.topicId) form.append("message_thread_id", String(route.topicId));
-  form.append(field, blob, name || "attachment");
-  if (text) {
-    form.append("caption", text);
-    form.append("parse_mode", "HTML");
+  const buildForm = (fieldName) => {
+    const form = new FormData();
+    form.append("chat_id", route.chatId);
+    if (route.topicId) form.append("message_thread_id", String(route.topicId));
+    form.append(fieldName, blob, name || "attachment");
+    if (text) {
+      form.append("caption", text);
+      form.append("parse_mode", "HTML");
+    }
+    return form;
+  };
+
+  let res = await fetch(`https://api.telegram.org/bot${botToken}/${method}`, { method: "POST", body: buildForm(isImage ? "photo" : "document") });
+  let data = await res.json();
+  let sentAsDocument = false;
+  // Same PHOTO_INVALID_DIMENSIONS-and-friends fallback sendOnePhotoOrDocument()
+  // below already has for carried-over file_ids — this is the "fresh
+  // upload" counterpart, so a newly-added forward attachment Telegram
+  // won't accept as a photo still goes out (as a document) instead of
+  // failing the whole forward.
+  if (!data.ok && method === "sendPhoto") {
+    res = await fetch(`https://api.telegram.org/bot${botToken}/sendDocument`, { method: "POST", body: buildForm("document") });
+    data = await res.json();
+    sentAsDocument = true;
   }
-
-  const res = await fetch(`https://api.telegram.org/bot${botToken}/${method}`, { method: "POST", body: form });
-  const data = await res.json();
   if (!data.ok) throw new Error(data.description || "unknown Telegram error");
-  const fileId = isImage
-    ? data.result.photo?.[data.result.photo.length - 1]?.file_id
-    : data.result.document?.file_id;
+  const fileId = sentAsDocument
+    ? data.result.document?.file_id
+    : isImage
+      ? data.result.photo?.[data.result.photo.length - 1]?.file_id
+      : data.result.document?.file_id;
   return { messageId: data.result.message_id, messageIds: [data.result.message_id], attachmentFileIds: fileId ? [fileId] : [] };
 }
 

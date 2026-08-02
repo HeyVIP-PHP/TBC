@@ -480,10 +480,30 @@ async function getCachedScan(env) {
 // problem the cron interval was raised to fix. If there's no cache yet
 // (nobody's loaded the sidebar since the last full scan), this is a
 // harmless no-op — the next real scan builds it fresh anyway.
-async function patchListCache(env, thread, { remove } = {}) {
+// Cloudflare KV has no conditional/compare-and-swap put, so this can't be
+// made truly atomic — but a blind get→modify→put (the original version of
+// this function) has a real, observed race: two calls landing close
+// together (most commonly two genuine, independent ticket submissions —
+// e.g. an agent double-tapping Submit during a slow request, or two agents
+// submitting within the same second) can both read the cache BEFORE
+// either write lands, each apply their own patch on top of that same
+// stale snapshot, and whichever put() finishes last simply overwrites the
+// other — silently dropping the other thread's entry from the sidebar
+// list, even though its `thread:<id>` record and Telegram message both
+// went through fine (this is why "1 record on the dashboard, 2 messages
+// in Telegram" can happen from something that isn't a Telegram-side bug
+// at all). `rev` is a monotonically increasing counter written alongside
+// the cache; before committing, we re-read and check it hasn't moved
+// since our read — if it has, someone else won the race, so we retry the
+// WHOLE read-modify-write against the fresh data instead of overwriting
+// it. A few retries closes the window down to "both puts landing in the
+// same KV write" which is not realistically reachable from normal usage.
+async function patchListCache(env, thread, { remove } = {}, attempt = 0) {
+  const MAX_ATTEMPTS = 5;
   try {
     const cached = await getCachedScan(env);
     if (!cached) return; // nothing to patch yet — fine, next real scan builds it
+    const baseRev = cached.rev || 0;
     const idx = cached.entries.findIndex((e) => e.id === thread.id);
     if (remove) {
       if (idx >= 0) cached.entries.splice(idx, 1);
@@ -492,11 +512,21 @@ async function patchListCache(env, thread, { remove } = {}) {
       if (idx >= 0) cached.entries[idx] = meta;
       else cached.entries.unshift(meta); // new ticket — put it at the front, sorting happens on read anyway
     }
+    cached.rev = baseRev + 1;
     // generatedAt is deliberately left untouched — this is a targeted
     // patch, not a fresh scan, and keeping the original timestamp means
     // the periodic full re-scan (which also heals/cleans up drift) still
     // runs on its normal schedule rather than being perpetually pushed
     // back by ongoing activity.
+
+    // Re-check right before writing: if someone else already bumped `rev`
+    // since our read above, our snapshot is stale — don't overwrite their
+    // change, re-read and reapply our patch on top of the latest data.
+    const latest = await getCachedScan(env);
+    if (latest && (latest.rev || 0) !== baseRev) {
+      if (attempt < MAX_ATTEMPTS) return patchListCache(env, thread, { remove }, attempt + 1);
+      return; // gave up after several retries — next full re-scan will heal it
+    }
     await env.THREADS_KV.put(LIST_CACHE_KEY, JSON.stringify(cached));
   } catch {
     // Best-effort only — worst case, this specific update shows up on

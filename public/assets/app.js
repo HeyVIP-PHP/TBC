@@ -437,8 +437,26 @@
   const btn = document.getElementById("submitBtn");
   const status = document.getElementById("statusMsg");
 
+  // True for the entire duration of an in-flight submission, set the
+  // instant the handler starts running (synchronously, before any
+  // `await`) and cleared in `finally`. `btn.disabled` alone isn't enough
+  // of a guard: on a slow/loading submit (the up-to-1-minute case agents
+  // hit) a fast double-tap, or Enter-key-submit racing a button click,
+  // can dispatch a SECOND "submit" event before this handler's first
+  // `await` yields control back to the event loop — since the handler is
+  // `async`, JS doesn't re-enter it until then, so without this flag two
+  // overlapping runs can both sail past the `btn.disabled = true` line
+  // and each fire a full, independent ticket submission (own
+  // idempotencyKey, so the server's dedupe correctly treats them as two
+  // separate legitimate submits — it has no way to know they're actually
+  // the same click). That's what produces "one ticket, two Telegram
+  // messages": both submissions go through in full.
+  let submitInFlight = false;
+
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
+    if (submitInFlight) return; // already submitting — ignore this duplicate trigger
+    submitInFlight = true;
     status.textContent = "";
     status.className = "status-msg";
     btn.disabled = true;
@@ -500,6 +518,7 @@
       status.textContent = err.message || "Something went wrong. Try again.";
       status.className = "status-msg err";
     } finally {
+      submitInFlight = false;
       // Only re-enable if the TID isn't (still) flagged as a duplicate —
       // otherwise this would silently undo the "found" state's button-disable.
       if (!tidDuplicateInfo) btn.disabled = false;

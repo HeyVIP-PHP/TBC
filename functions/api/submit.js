@@ -399,23 +399,40 @@ async function sendSingleWithCaption({ botToken, route, text, attachment }) {
 
   const isImage = looksLikeImage(type, name);
   const method = isImage ? "sendPhoto" : "sendDocument";
-  const field = isImage ? "photo" : "document";
 
-  const form = new FormData();
-  form.append("chat_id", route.chatId);
-  if (route.topicId) form.append("message_thread_id", String(route.topicId));
-  form.append(field, blob, name || "attachment");
-  if (text) {
-    form.append("caption", text);
-    form.append("parse_mode", "HTML");
+  const buildForm = (fieldName) => {
+    const form = new FormData();
+    form.append("chat_id", route.chatId);
+    if (route.topicId) form.append("message_thread_id", String(route.topicId));
+    form.append(fieldName, blob, name || "attachment");
+    if (text) {
+      form.append("caption", text);
+      form.append("parse_mode", "HTML");
+    }
+    return form;
+  };
+
+  let res = await fetch(`https://api.telegram.org/bot${botToken}/${method}`, { method: "POST", body: buildForm(isImage ? "photo" : "document") });
+  let data = await res.json();
+  let sentAsDocument = false;
+  // Telegram can reject a genuine image as a "photo" for reasons that
+  // have nothing to do with it being a valid file — most commonly
+  // PHOTO_INVALID_DIMENSIONS for an extreme aspect-ratio screenshot.
+  // Without this, the whole ticket used to fall all the way back to the
+  // attachment-less plain-text branch in handleSubmit()'s catch, losing
+  // the screenshot entirely. Same fallback forward.js's
+  // sendOnePhotoOrDocument() already uses for carried-over file_ids.
+  if (!data.ok && method === "sendPhoto") {
+    res = await fetch(`https://api.telegram.org/bot${botToken}/sendDocument`, { method: "POST", body: buildForm("document") });
+    data = await res.json();
+    sentAsDocument = true;
   }
-
-  const res = await fetch(`https://api.telegram.org/bot${botToken}/${method}`, { method: "POST", body: form });
-  const data = await res.json();
   if (!data.ok) throw new Error(data.description || "unknown Telegram error");
-  const fileId = isImage
-    ? data.result.photo?.[data.result.photo.length - 1]?.file_id || null
-    : data.result.document?.file_id || null;
+  const fileId = sentAsDocument
+    ? data.result.document?.file_id || null
+    : isImage
+      ? data.result.photo?.[data.result.photo.length - 1]?.file_id || null
+      : data.result.document?.file_id || null;
   return { messageId: data.result.message_id, fileId, name: name || null };
 }
 
