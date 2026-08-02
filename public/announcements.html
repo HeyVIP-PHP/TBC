@@ -41,37 +41,35 @@
       <div class="form-card ann-form-card page-morph-in" id="annFormCard">
         <div class="ann-form-scroll" id="annFormScroll">
           <div class="form-header"><span class="icon">📢</span><span id="annFormTitle">New announcement</span></div>
-          <p class="form-hint">Shown as an amber banner below the topbar to every logged-in agent, on every page, while it's active.</p>
-          <hr class="form-divider" />
 
           <div class="field">
-            <label>Topic</label>
+            <label>Topic <span class="required">*</span></label>
             <select id="annTopic"></select>
           </div>
 
           <div class="field">
             <label>Message <span class="required">*</span></label>
-            <textarea id="annText" placeholder="Message shown in the banner…" autocomplete="off"></textarea>
+            <textarea id="annText" placeholder="Message shown in the banner" autocomplete="off"></textarea>
           </div>
 
-          <div class="field">
-            <label><input type="checkbox" id="annEnabled" /> Active</label>
-            <p class="form-hint" style="margin-top:6px;">Manual master switch — turning this off hides the banner immediately, regardless of the schedule below.</p>
+          <div class="ann-field-row">
+            <div class="field">
+              <label>Start (optional)</label>
+              <input type="datetime-local" id="annStartAt" autocomplete="off" />
+            </div>
+            <div class="field">
+              <label>End (optional)</label>
+              <input type="datetime-local" id="annEndAt" autocomplete="off" />
+            </div>
           </div>
 
-          <div class="field">
-            <label>Starts (optional)</label>
-            <input type="datetime-local" id="annStartAt" autocomplete="off" />
-          </div>
-          <div class="field">
-            <label>Ends (optional)</label>
-            <input type="datetime-local" id="annEndAt" autocomplete="off" />
+          <div class="field ann-active-field">
+            <label class="ann-active-label"><input type="checkbox" id="annEnabled" /> Active</label>
           </div>
 
-          <p class="form-hint" id="annMeta"></p>
+          <p class="edit-modal-note" id="annNote">Not saved yet.</p>
         </div>
         <div class="ann-form-footer">
-          <p class="edit-modal-note" id="annNote"></p>
           <button type="button" class="btn-danger" id="annDelete" style="display:none;">Delete</button>
           <button type="button" class="btn-submit" id="annSave">Save</button>
         </div>
@@ -230,7 +228,6 @@
       topicSelect.innerHTML = topics.map((t) => `<option value="${esc(t)}">${esc(t)}</option>`).join("");
 
       const note = document.getElementById("annNote");
-      note.textContent = "";
       note.className = "edit-modal-note";
 
       const a = selectedId ? announcements.find((x) => x.id === selectedId) : null;
@@ -244,8 +241,11 @@
       document.getElementById("annStartAt").value = a ? toDatetimeLocal(a.startAt) : "";
       document.getElementById("annEndAt").value = a ? toDatetimeLocal(a.endAt) : "";
 
-      const meta = document.getElementById("annMeta");
-      meta.textContent = a
+      // Created/updated info still shown (as a tooltip on the status
+      // note, hover to see) — the sidebar row already shows a short
+      // version of this, so it doesn't need its own line in the form.
+      note.textContent = "Not saved yet.";
+      note.title = a
         ? `Created by ${a.createdBy || "—"} · Last updated by ${a.updatedBy || "—"} at ${a.updatedAt ? new Date(a.updatedAt).toLocaleString() : "—"}`
         : "";
 

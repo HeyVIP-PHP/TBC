@@ -59,14 +59,15 @@
       : "";
     container.innerHTML = `
       <div class="ann-banner">
+        <div class="ann-icon breathing" aria-hidden="true">📢</div>
         <div class="ann-body">
-          <div class="ann-label" id="annLabel"></div>
+          <div class="ann-label breathing" id="annLabel"></div>
           <div class="ann-text-stage">
             <div class="ann-text ann-text-current" id="annTextCurrent"></div>
             <div class="ann-text ann-text-incoming" id="annTextIncoming"></div>
           </div>
+          ${dotsHtml}
         </div>
-        ${dotsHtml}
         <button type="button" class="ann-dismiss" id="annDismiss" title="Dismiss" aria-label="Dismiss">✕</button>
       </div>`;
     document.getElementById("annDismiss").addEventListener("click", () => {
@@ -98,7 +99,11 @@
     } else {
       // Outgoing: fade out in place. Incoming: slide in as a complete
       // block from the right. Both run concurrently via CSS transitions
-      // on these two persistent nodes.
+      // on these two persistent nodes. `currentEl` stays in normal flow
+      // throughout (so it keeps controlling the stage's real height as
+      // the message wraps to however many lines it needs) — `incomingEl`
+      // only ever overlays it as an absolutely-positioned element during
+      // the transition, then gets emptied once the swap below lands.
       incomingEl.textContent = a.text;
       currentEl.classList.add("ann-fade-out");
       incomingEl.classList.add("ann-slide-in");

@@ -1555,16 +1555,27 @@ h1 {
 .ann-banner {
   position: relative;
   display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 10px 44px 10px 18px;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 44px 12px 18px;
   background: linear-gradient(90deg, rgba(245, 158, 11, 0.16), rgba(245, 158, 11, 0.07));
   border-bottom: 1px solid rgba(245, 158, 11, 0.35);
 }
 [data-theme="light"] .ann-banner { background: linear-gradient(90deg, rgba(245, 158, 11, 0.14), rgba(245, 158, 11, 0.05)); }
-.ann-body { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 10px; }
-.ann-label {
+.ann-icon {
   flex-shrink: 0;
+  font-size: 17px;
+  line-height: 1;
+  margin-top: 2px;
+}
+/* "Breathing" — reuses the app's own existing pulse keyframe (see
+   @keyframes breathe in the tool-cards section above) for consistency
+   with how the rest of the app signals "this needs attention", rather
+   than a new animation. Icon + label pulse in sync (same animation,
+   same start time). */
+.ann-icon.breathing, .ann-label.breathing { animation: breathe 1.8s ease-in-out infinite; }
+.ann-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.ann-label {
   font-size: 10.5px;
   font-weight: 800;
   letter-spacing: 0.06em;
@@ -1572,30 +1583,31 @@ h1 {
 }
 .ann-text-stage {
   position: relative;
-  flex: 1;
-  min-width: 0;
-  height: 18px;
   overflow: hidden;
 }
 .ann-text {
-  position: absolute;
-  top: 0; left: 0; right: 0;
   font-size: 13px;
   font-weight: 600;
+  line-height: 1.4;
   color: var(--ink);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  word-break: break-word;
 }
-.ann-text-current { opacity: 1; transition: opacity 2.2s ease; }
+/* `.ann-text-current` stays in NORMAL flow at all times — it's what
+   actually controls the stage's height as the message wraps to however
+   many lines it needs. `.ann-text-incoming` only ever becomes an
+   absolutely-positioned overlay DURING a rotation transition (see
+   showItem() in announcement-banner.js) — a full innerHTML replace every
+   tick would leave no "from" state for either transition to animate. */
+.ann-text-current { position: relative; opacity: 1; transition: opacity 2.2s ease; }
 .ann-text-current.ann-fade-out { opacity: 0; }
-.ann-text-incoming { opacity: 0; transform: translateX(24px); transition: none; }
+.ann-text-incoming { position: absolute; top: 0; left: 0; right: 0; opacity: 0; transform: translateX(24px); transition: none; }
 .ann-text-incoming.ann-slide-in { opacity: 1; transform: translateX(0); transition: opacity 2.2s ease, transform 2.2s ease; }
-.ann-dots { display: flex; align-items: center; gap: 5px; flex-shrink: 0; }
+.ann-dots { display: flex; align-items: center; gap: 5px; margin-top: 2px; }
 .ann-dot { width: 5px; height: 5px; border-radius: 50%; background: rgba(245, 158, 11, 0.35); transition: background 0.2s ease; }
 .ann-dot.active { background: #f59e0b; }
 .ann-dismiss {
-  position: absolute; top: 50%; right: 14px; transform: translateY(-50%);
+  position: absolute; top: 12px; right: 14px;
   width: 22px; height: 22px; border-radius: 50%; border: none;
   background: transparent; color: var(--ink-soft);
   font-size: 12px; cursor: pointer; display: flex; align-items: center; justify-content: center;
@@ -1648,7 +1660,16 @@ body.announcements-page .threads-shell { flex: 1; height: auto; min-height: 0; }
   padding: 0;
   overflow: hidden;
 }
-.ann-form-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 30px 34px 0; }
+.ann-form-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 30px 34px 26px; }
+.ann-field-row { display: flex; gap: 16px; }
+.ann-field-row .field { flex: 1; min-width: 0; }
+.ann-active-field { margin-bottom: 14px; }
+.ann-active-label {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 13px; font-weight: 600; letter-spacing: normal; text-transform: none;
+  color: var(--ink); cursor: pointer; margin-bottom: 0;
+}
+.ann-active-label input[type="checkbox"] { width: 15px; height: 15px; accent-color: #38bdf8; cursor: pointer; }
 .ann-form-footer {
   flex-shrink: 0;
   display: flex;
@@ -1658,7 +1679,6 @@ body.announcements-page .threads-shell { flex: 1; height: auto; min-height: 0; }
   padding: 16px 34px;
   border-top: 1px solid var(--border);
 }
-.ann-form-footer .edit-modal-note { margin: 0; flex: 1; text-align: left; }
 .btn-danger {
   padding: 9px 18px; border-radius: 12px; border: 1.5px solid rgba(239, 68, 68, 0.4);
   background: rgba(239, 68, 68, 0.1); color: #ef4444; font-weight: 700; font-size: 13px;
