@@ -336,7 +336,7 @@
         // Toast-only on success — no persistent duplicate text (openForm()
         // above already cleared the note, matching the "Saving…" -> clean
         // slate transition; the toast alone confirms it saved).
-        if (window.showToast) window.showToast("Saved.", "ok");
+        if (window.showToast) window.showToast("Active success.", "ok");
         // Same device updates instantly instead of waiting up to 60s for
         // the banner's next poll — other devices/agents still only catch
         // up on their own next poll.
@@ -370,7 +370,7 @@
         if (!data.ok) throw new Error(data.error || "Delete failed.");
         selectedId = null;
         await loadAnnouncements();
-        if (window.showToast) window.showToast("Deleted.", "ok");
+        if (window.showToast) window.showToast("Delete success.", "ok");
         if (window.refreshAnnouncementBanner) window.refreshAnnouncementBanner();
       } catch (err) {
         note.textContent = err.message || "Delete failed.";

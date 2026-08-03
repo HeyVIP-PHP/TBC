@@ -503,34 +503,29 @@
       const data = await res.json();
       if (!res.ok || !data.ok) throw new Error(data.error || "Submission failed");
 
-      const successMsg = !data.sheetAttempted
-        ? "Submitted — posted to Telegram."
-        : data.sheetLogged
-        ? "Submitted — posted to Telegram and logged to sheet."
-        : `Submitted to Telegram, but sheet logging failed: ${data.sheetError || "unknown error"}`;
-      const isErr = data.sheetAttempted && !data.sheetLogged;
-      if (isErr) {
-        // Sheet logging failing is worth a moment to actually read (which
-        // brand/module, what the error was) — a 2s toast alone isn't
-        // enough time, so this keeps the persistent status line for that
-        // case only. A clean submit is toast-only, same as every other
-        // success across the app now.
-        status.textContent = successMsg;
-        status.className = "status-msg err";
-      } else {
-        status.textContent = "";
-        status.className = "status-msg";
-      }
-      if (window.showToast) window.showToast(successMsg, isErr ? "err" : "ok");
+      // Sheet logging failing specifically gets the FULL detail (which
+      // brand/module, what the error was) put directly in the toast
+      // message — toast.js now keeps "err" toasts up until the next
+      // click anywhere on the page, so there's no need for a separate
+      // persistent status line just to give this enough time to read.
+      // A clean submit is the short, consistent "Submit success." every
+      // other action in the app uses.
+      const sheetFailed = data.sheetAttempted && !data.sheetLogged;
+      const toastMsg = sheetFailed
+        ? `Submit failed — sheet logging error: ${data.sheetError || "unknown error"}`
+        : "Submit success.";
+      status.textContent = "";
+      status.className = "status-msg";
+      if (window.showToast) window.showToast(toastMsg, sheetFailed ? "err" : "ok");
       form.reset();
       brandSelect.selectedIndex = 0;
       files = [];
       renderFileList();
       refreshConditionals();
     } catch (err) {
-      status.textContent = err.message || "Something went wrong. Try again.";
-      status.className = "status-msg err";
-      if (window.showToast) window.showToast(status.textContent, "err");
+      status.textContent = "";
+      status.className = "status-msg";
+      if (window.showToast) window.showToast(err.message || "Submit failed.", "err");
     } finally {
       submitInFlight = false;
       // Only re-enable if the TID isn't (still) flagged as a duplicate —

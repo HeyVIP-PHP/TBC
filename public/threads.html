@@ -10,6 +10,7 @@
 <script src="/assets/authguard.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/twemoji.min.js"></script>
 <script src="/assets/schemas.js"></script>
+<script src="/assets/toast.js"></script>
 </head>
 <body class="threads-page">
   <!-- Attachment lightbox — populated live by viewAttachment() below.
@@ -1074,7 +1075,7 @@
       });
       const data = await res.json();
       if (!data.ok) {
-        alert(data.error || "Delete failed.");
+        if (window.showToast) window.showToast(data.error || "Delete failed.", "err");
         return;
       }
       selectedId = null;
@@ -1082,6 +1083,7 @@
       main.innerHTML = `<div class="threads-placeholder">Pick a thread on the left, or submit a form to start one.</div>`;
       removeLocalThread(deletedId);
       loadList();
+      if (window.showToast) window.showToast("Delete success.", "ok");
     }
 
     // True while a sendReply() call is actually in flight. The Send
@@ -1147,11 +1149,12 @@
     async function editRoot() {
       const newText = prompt("Edit the original Telegram message text:\n(This edits the exact message, including any formatting tags.)", selectedThread.rootText || "");
       if (newText === null) return; // cancelled
-      if (!newText.trim()) return alert("Text can't be empty.");
+      if (!newText.trim()) { if (window.showToast) window.showToast("Text can't be empty.", "err"); return; }
       const res = await postAction({ action: "editRoot", text: newText });
-      if (!res.ok) return alert(res.error || "Edit failed.");
+      if (!res.ok) { if (window.showToast) window.showToast(res.error || "Edit failed.", "err"); return; }
       selectedThread = res.thread;
       updateThreadContent(selectedThread);
+      if (window.showToast) window.showToast("Edit success.", "ok");
     }
 
     // "🔄 Sync to Sheet" flow — a real per-field form (built straight off
@@ -1166,7 +1169,7 @@
     function openEditDetailsModal() {
       const t = selectedThread;
       const module = (window.MODULES || []).find((m) => m.id === t.module);
-      if (!module) return alert(`Unknown module "${t.module}" — can't build an edit form for this ticket.`);
+      if (!module) { if (window.showToast) window.showToast(`Unknown module "${t.module}" — can't build an edit form for this ticket.`, "err"); return; }
       const fieldMap = t.fieldMap || {};
 
       const overlay = document.createElement("div");
@@ -1283,6 +1286,7 @@
         if (!res.ok) {
           statusEl.textContent = res.error || "Save failed.";
           statusEl.className = "edit-details-status err";
+          if (window.showToast) window.showToast(res.error || "Save failed.", "err");
           saveBtn.disabled = false;
           saveBtn.textContent = "Save & Sync";
           return;
@@ -1292,7 +1296,9 @@
         patchLocalThread(selectedThread);
         loadList();
         if (res.sheetHasRef && !res.sheetSynced) {
-          alert("Telegram message updated, but the Sheet row couldn't be updated:\n" + (res.sheetError || "unknown error") + "\n\nYou may need to fix that row manually.");
+          if (window.showToast) window.showToast("Telegram updated, but the Sheet row couldn't be updated: " + (res.sheetError || "unknown error"), "err");
+        } else {
+          if (window.showToast) window.showToast("Save success.", "ok");
         }
         close();
       });
@@ -1301,11 +1307,12 @@
     async function recallRoot() {
       if (!confirm("Recall the original ticket message from Telegram? This removes it from the group. Your tracking record, the Sheet row, and this conversation stay.")) return;
       const res = await postAction({ action: "recallRoot" });
-      if (!res.ok) return alert(res.error || "Recall failed.");
+      if (!res.ok) { if (window.showToast) window.showToast(res.error || "Recall failed.", "err"); return; }
       selectedThread = res.thread;
       updateThreadContent(selectedThread);
       patchLocalThread(selectedThread);
       loadList();
+      if (window.showToast) window.showToast("Recall success.", "ok");
     }
 
     // "↗️ Generate to another Topic" — creates a brand-new ticket in a
@@ -1322,7 +1329,7 @@
     function openForwardModal() {
       const source = selectedThread;
       const otherModules = (window.MODULES || []).filter((m) => m.id !== source.module);
-      if (!otherModules.length) return alert("There are no other Topics to forward this to.");
+      if (!otherModules.length) { if (window.showToast) window.showToast("There are no other Topics to forward this to.", "err"); return; }
 
       const overlay = document.createElement("div");
       overlay.className = "edit-details-overlay";
@@ -1565,6 +1572,7 @@
         if (!res.ok) {
           statusEl.textContent = res.error || "Forwarding failed.";
           statusEl.className = "edit-details-status err";
+          if (window.showToast) window.showToast(res.error || "Forward failed.", "err");
           sendBtn.disabled = false;
           sendBtn.textContent = "Generate & Send";
           return;
@@ -1580,7 +1588,9 @@
         patchLocalThread(selectedThread);
         loadList();
         if (res.sheetAttempted && !res.sheetLogged) {
-          alert("Sent to Telegram, but the Sheet write failed:\n" + (res.sheetError || "unknown error"));
+          if (window.showToast) window.showToast("Sent to Telegram, but the Sheet write failed: " + (res.sheetError || "unknown error"), "err");
+        } else {
+          if (window.showToast) window.showToast("Forward success.", "ok");
         }
         window.removeEventListener("paste", onPaste);
         openThread(res.thread.id); // jump straight to the newly-created ticket
@@ -1590,19 +1600,21 @@
     async function editReply(messageId, currentText) {
       const newText = prompt("Edit this reply:", currentText || "");
       if (newText === null) return;
-      if (!newText.trim()) return alert("Text can't be empty.");
+      if (!newText.trim()) { if (window.showToast) window.showToast("Text can't be empty.", "err"); return; }
       const res = await postAction({ action: "editReply", messageId: Number(messageId), text: newText });
-      if (!res.ok) return alert(res.error || "Edit failed.");
+      if (!res.ok) { if (window.showToast) window.showToast(res.error || "Edit failed.", "err"); return; }
       selectedThread = res.thread;
       updateThreadContent(selectedThread);
+      if (window.showToast) window.showToast("Edit success.", "ok");
     }
 
     async function recallReply(messageId) {
       if (!confirm("Recall this reply from Telegram?")) return;
       const res = await postAction({ action: "recallReply", messageId: Number(messageId) });
-      if (!res.ok) return alert(res.error || "Recall failed.");
+      if (!res.ok) { if (window.showToast) window.showToast(res.error || "Recall failed.", "err"); return; }
       selectedThread = res.thread;
       updateThreadContent(selectedThread);
+      if (window.showToast) window.showToast("Recall success.", "ok");
     }
 
     async function postAction(payload) {

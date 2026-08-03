@@ -306,7 +306,7 @@
         if (!res.ok || !data.ok) throw new Error(data.error || "Save failed.");
         brandConfig = data.config;
         renderBrandRow();
-        if (window.showToast) window.showToast("Saved.", "ok");
+        if (window.showToast) window.showToast("Save success.", "ok");
         setTimeout(closeEditModal, 600);
       } catch (err) {
         modalNote.textContent = err.message || "Save failed.";
@@ -969,7 +969,7 @@
         const data = await res.json();
         if (!data.ok) throw new Error(data.error || "Save failed.");
         acctRotateIntervalMs = data.rotateIntervalMs;
-        setAcctNote("Saved.", "ok");
+        setAcctNote("Save success.", "ok");
         // This device's banner picks up the new speed instantly instead
         // of waiting up to 60s for its next poll.
         if (window.refreshAnnouncementBanner) window.refreshAnnouncementBanner();
@@ -1062,7 +1062,7 @@
       if (!data.ok) return setAcctNote(data.error || "Save failed.", "err");
       const idx = acctFeatureItems.findIndex((i) => i.id === itemId);
       if (idx >= 0) acctFeatureItems[idx] = { ...acctFeatureItems[idx], ...data.item };
-      setAcctNote("Saved.", "ok");
+      setAcctNote("Save success.", "ok");
       // Home page (sidebar + TG Reply Threads/Promo Code Search cards)
       // was already rendered before this save — without this, an agent
       // would see the OLD status until a manual page reload, which looks
@@ -1235,7 +1235,7 @@
       // badge flip (see renderTgRoutes()). Errors above still go through
       // setAcctNote(), which shows both the persistent line and a toast
       // — that's the existing app-wide convention for errors.
-      setAcctNote("Saved.", "ok");
+      setAcctNote("Save success.", "ok");
       // renderTgRoutes() below fully rebuilds .tgroute-modules (the
       // scrollable right-hand column) from scratch, which resets its
       // scroll position to the top — jarring when you're editing the 7th
@@ -1262,7 +1262,7 @@
         acctRoutesData.routes[`${acctRoutesSelectedBrand}|${moduleId}`] = data.route;
       }
       // Same toast-only feedback as saveTgRouteRow() above.
-      setAcctNote("Reset to default.", "ok");
+      setAcctNote("Reset success.", "ok");
       // Same scroll-position fix as saveTgRouteRow() above — see that
       // comment.
       const scroller = acctBody.querySelector(".tgroute-modules");
@@ -1372,7 +1372,7 @@
       const data = await res.json();
       if (!data.ok) return setAcctNote(data.error || "Save failed.", "err");
       acctSheetData.sheets[`${acctSheetSelectedBrand}|${moduleId}`] = data.sheet;
-      setAcctNote("Saved.", "ok");
+      setAcctNote("Save success.", "ok");
       const scroller = acctBody.querySelector(".tgroute-modules");
       const scrollTop = scroller ? scroller.scrollTop : 0;
       renderIssueSheetRoutes();
@@ -1389,7 +1389,7 @@
       const data = await res.json();
       if (!data.ok) return setAcctNote(data.error || "Reset failed.", "err");
       acctSheetData.sheets[`${acctSheetSelectedBrand}|${moduleId}`] = data.sheet;
-      setAcctNote("Reset to default.", "ok");
+      setAcctNote("Reset success.", "ok");
       const scroller = acctBody.querySelector(".tgroute-modules");
       const scrollTop = scroller ? scroller.scrollTop : 0;
       renderIssueSheetRoutes();
@@ -1457,7 +1457,7 @@
       });
       const data = await res.json();
       if (!data.ok) return setAcctNote(data.error || "Save failed.", "err");
-      setAcctNote("Saved.", "ok");
+      setAcctNote("Save success.", "ok");
       renderPromoCodeSheet(data.promoCode);
     }
 
@@ -1468,7 +1468,7 @@
       });
       const data = await res.json();
       if (!data.ok) return setAcctNote(data.error || "Reset failed.", "err");
-      setAcctNote("Reset to default.", "ok");
+      setAcctNote("Reset success.", "ok");
       renderPromoCodeSheet(data.promoCode);
     }
 
@@ -1943,8 +1943,10 @@
       if (!data.ok) {
         statusEl.textContent = data.error || "Save failed.";
         statusEl.className = "edit-details-status err";
+        if (window.showToast) window.showToast(data.error || "Save failed.", "err");
         return;
       }
+      if (window.showToast) window.showToast("Save success.", "ok");
       document.getElementById("agentProfileOverlay")?.remove();
       await loadAgentProfileTable();
     }
@@ -2019,8 +2021,8 @@
         }),
       });
       const data = await res.json();
-      if (!data.ok) return setAcctNote(data.error || "Save failed.", "err");
-      setAcctNote("Account created.", "ok");
+      if (!data.ok) return setAcctNote(data.error || "Create failed.", "err");
+      setAcctNote("Create success.", "ok");
       setTimeout(closeAcctModal, 700);
     }
 
@@ -2036,7 +2038,7 @@
       });
       const data = await res.json();
       if (!data.ok) return setAcctNote(data.error || "Save failed.", "err");
-      setAcctNote("Office saved.", "ok");
+      setAcctNote("Save success.", "ok");
       setTimeout(closeAcctModal, 700);
     }
 
@@ -2057,7 +2059,7 @@
       });
       const data = await res.json();
       if (!data.ok) return setAcctNote(data.error || "Reset failed.", "err");
-      setAcctNote("Password reset.", "ok");
+      setAcctNote("Save success.", "ok");
       setTimeout(closeAcctModal, 700);
     }
 
@@ -2073,9 +2075,9 @@
         body: JSON.stringify({ currentPassword, newPassword: newPass }),
       });
       const data = await res.json();
-      if (!data.ok) return setAcctNote(data.error || "Password change failed.", "err");
+      if (!data.ok) return setAcctNote(data.error || "Save failed.", "err");
       window.AgentAuth.updateStoredToken(data.token);
-      setAcctNote("Password changed.", "ok");
+      setAcctNote("Save success.", "ok");
       setTimeout(closeAcctModal, 700);
     }
   </script>
