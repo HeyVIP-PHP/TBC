@@ -900,11 +900,17 @@ a { color: inherit; text-decoration: none; }
 .t-sub-stat.has-unsolved {
   color: #ef4a72;
   font-weight: 800;
+  animation: breathe 1.8s ease-in-out infinite;
 }
 .t-sub-stat.has-active {
   font-weight: 800;
+  animation: breathe 1.8s ease-in-out infinite;
 }
+
 @keyframes breathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) {
+  .t-sub-stat.has-unsolved, .t-sub-stat.has-active { animation: none; }
+}
 @media (max-width: 560px) {
   .tool-cards { grid-template-columns: 1fr; }
 }
