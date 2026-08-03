@@ -1130,8 +1130,7 @@
             </div>
           </div>
           <hr class="tgroute-divider" />
-          ${canEditRoutes ? "" : '<p class="edit-modal-note">View only.</p>'}
-          <p class="edit-modal-note tgroute-footnote">This isn't a brand — it's where login sends a Telegram alert on every failed login attempt (wrong password, unrecognized IP, or no office assigned), or when an account gets auto-locked (5 combined failures within an hour). Login stays blocked exactly the same either way; this only controls where the heads-up message goes. "default" is whatever's set in the SECURITY_ALERTS_CHAT_ID Cloudflare secret (empty = no alerts sent yet).</p>`;
+          ${canEditRoutes ? "" : '<p class="edit-modal-note">View only.</p>'}`;
         acctBody.querySelectorAll(".tgroute-brand").forEach((el) => {
           el.addEventListener("click", () => {
             acctRoutesSelectedBrand = el.dataset.brand;
@@ -1187,8 +1186,7 @@
           <div class="tgroute-modules">${moduleRowsHtml}</div>
         </div>
         <hr class="tgroute-divider" />
-        ${canEditRoutes ? "" : '<p class="edit-modal-note">View only.</p>'}
-        <p class="edit-modal-note tgroute-footnote">Changes apply to the very next form submission — no redeploy needed. "default" rows are still using the value built into the code; "custom" rows have been overridden here.</p>`;
+        ${canEditRoutes ? "" : '<p class="edit-modal-note">View only.</p>'}`;
 
       acctBody.querySelectorAll(".tgroute-brand").forEach((el) => {
         el.addEventListener("click", () => {
@@ -1330,8 +1328,7 @@
           <div class="tgroute-modules">${moduleRowsHtml}</div>
         </div>
         <hr class="tgroute-divider" />
-        ${canEditSheets ? "" : '<p class="edit-modal-note">View only.</p>'}
-        <p class="edit-modal-note tgroute-footnote">Changes apply to the very next submission, edit, or lookup for that brand+topic — no redeploy needed. "default" rows are empty here and use the sheet built into the code behind the scenes; "custom" rows show the sheet/tab actually saved. Column layout (which field lands in which column) always comes from the code — pointing a topic at a new sheet only works if that sheet's tab has the same column order.</p>`;
+        ${canEditSheets ? "" : '<p class="edit-modal-note">View only.</p>'}`;
 
       acctBody.querySelectorAll(".tgroute-brand").forEach((el) => {
         el.addEventListener("click", () => {
@@ -1423,8 +1420,7 @@
           </div>
         </div>
         <hr class="tgroute-divider" />
-        ${canEditSheets ? "" : '<p class="edit-modal-note">View only.</p>'}
-        <p class="edit-modal-note tgroute-footnote">Changes apply to the very next search — no redeploy needed. "default" rows are empty here and use the sheet + tab list built into the code behind the scenes; "custom" rows show what's actually saved. Tab names must match the sheet's real tab titles exactly (case-insensitive, extra spaces ignored) — a name that doesn't match any real tab is skipped silently and listed as "missing" in search results, not a hard error. Saving replaces the ENTIRE tab list, not just one tab — enter the full set you want searched, not just the ones changing. Leaving Tab names blank while setting a new Sheet ID keeps using the default tab list.</p>`;
+        ${canEditSheets ? "" : '<p class="edit-modal-note">View only.</p>'}`;
 
       const saveBtn = acctBody.querySelector(".promosheet-save");
       if (saveBtn) saveBtn.addEventListener("click", savePromoCodeSheet);
