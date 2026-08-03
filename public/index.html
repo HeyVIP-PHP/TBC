@@ -1299,14 +1299,24 @@
       const renderModuleRow = (m) => {
         const key = `${acctSheetSelectedBrand}|${m.id}`;
         const r = sheets[key] || { sheetId: "", tab: "", isOverride: false };
+        // DEFAULT rows show an EMPTY input (not the old code-default value)
+        // so typing a new sheetId doesn't require clearing existing text
+        // first — the default value is still visible as a placeholder for
+        // reference, just not sitting in the field as if it were already
+        // entered. CUSTOM rows show the real saved value, since that's
+        // something you deliberately configured and need to see/edit.
+        const sheetIdValue = r.isOverride ? r.sheetId : "";
+        const tabValue = r.isOverride ? r.tab : "";
+        const sheetIdPlaceholder = r.isOverride ? "Google Sheet ID" : (r.sheetId || "Google Sheet ID");
+        const tabPlaceholder = r.isOverride ? "Tab name" : (r.tab || "Tab name");
         return `
           <div class="tgroute-row" data-module="${acctEsc(m.id)}">
             <div class="tgroute-mod-name">${m.emoji} ${acctEsc(m.name)}
               <span class="route-tag${r.isOverride ? " custom" : ""}">${r.isOverride ? "custom" : "default"}</span>
             </div>
             <div class="tgroute-fields">
-              <input type="text" class="sheetroute-sheetid" placeholder="Google Sheet ID" value="${acctEsc(r.sheetId)}" autocomplete="off" ${roAttr} />
-              <input type="text" class="sheetroute-tab" placeholder="Tab name" value="${acctEsc(r.tab)}" autocomplete="off" ${roAttr} />
+              <input type="text" class="sheetroute-sheetid" placeholder="${acctEsc(sheetIdPlaceholder)}" value="${acctEsc(sheetIdValue)}" autocomplete="off" ${roAttr} />
+              <input type="text" class="sheetroute-tab" placeholder="${acctEsc(tabPlaceholder)}" value="${acctEsc(tabValue)}" autocomplete="off" ${roAttr} />
               <div class="tgroute-row-actions">
                 ${canEditSheets ? '<button type="button" class="tgroute-action-btn sheetroute-save">Save</button>' : ""}
                 ${canEditSheets && r.isOverride ? '<button type="button" class="tgroute-action-btn tgroute-action-secondary sheetroute-reset">Reset</button>' : ""}
@@ -1323,7 +1333,7 @@
         </div>
         <hr class="tgroute-divider" />
         ${canEditSheets ? "" : '<p class="edit-modal-note">View only.</p>'}
-        <p class="edit-modal-note tgroute-footnote">Changes apply to the very next submission, edit, or lookup for that brand+topic — no redeploy needed. "default" rows still use the sheet built into the code; "custom" rows point at a sheet/tab entered here. Column layout (which field lands in which column) always comes from the code — pointing a topic at a new sheet only works if that sheet's tab has the same column order.</p>`;
+        <p class="edit-modal-note tgroute-footnote">Changes apply to the very next submission, edit, or lookup for that brand+topic — no redeploy needed. "default" rows use the sheet built into the code (shown as the grey placeholder text, not pre-filled — type a new value to override); "custom" rows show the sheet/tab actually saved here. Column layout (which field lands in which column) always comes from the code — pointing a topic at a new sheet only works if that sheet's tab has the same column order.</p>`;
 
       acctBody.querySelectorAll(".tgroute-brand").forEach((el) => {
         el.addEventListener("click", () => {
@@ -1395,23 +1405,30 @@
     function renderPromoCodeSheet(r) {
       const canEditSheets = canEditAdminSection("integrations");
       const roAttr = canEditSheets ? "" : "disabled";
-      const tabsValue = (r.tabs || []).join(", ");
+      // Same DEFAULT-shows-empty / CUSTOM-shows-real-value logic as
+      // Issue Submission Gsheet above — see that comment.
+      const sheetIdValue = r.isOverride ? r.sheetId : "";
+      const tabsValue = r.isOverride ? (r.tabs || []).join(", ") : "";
+      const sheetIdPlaceholder = r.isOverride ? "Google Sheet URL or ID" : (r.sheetId || "Google Sheet URL or ID");
+      const tabsPlaceholder = r.isOverride ? "Tab names, comma-separated" : ((r.tabs || []).join(", ") || "Tab names, comma-separated");
       acctBody.innerHTML = `
         <div class="tgroute-row" data-standalone="promoCode">
           <div class="tgroute-mod-name">🎟️ Promo code search sheet
             <span class="route-tag${r.isOverride ? " custom" : ""}">${r.isOverride ? "custom" : "default"}</span>
           </div>
           <p class="edit-modal-note" style="margin:0 0 10px;">Shared across all teams, not brand specific — searched the same way regardless of which brand is selected on the Promo Code Search page.</p>
-          <div class="field"><label>Google Sheet URL or ID</label><input type="text" class="promosheet-sheetid" placeholder="Google Sheet URL or ID" value="${acctEsc(r.sheetId)}" autocomplete="off" ${roAttr} /></div>
-          <div class="field"><label>Tab names</label><input type="text" class="promosheet-tabs" placeholder="Tab names, comma-separated" value="${acctEsc(tabsValue)}" autocomplete="off" ${roAttr} /></div>
-          <div class="tgroute-row-actions" style="justify-content:flex-start;gap:8px;margin-top:4px;">
-            ${canEditSheets ? '<button type="button" class="tgroute-action-btn promosheet-save">Save</button>' : ""}
-            ${canEditSheets && r.isOverride ? '<button type="button" class="tgroute-action-btn tgroute-action-secondary promosheet-reset">Reset</button>' : ""}
+          <div class="tgroute-fields">
+            <input type="text" class="promosheet-sheetid" placeholder="${acctEsc(sheetIdPlaceholder)}" value="${acctEsc(sheetIdValue)}" autocomplete="off" style="flex:1;" ${roAttr} />
+            <input type="text" class="promosheet-tabs" placeholder="${acctEsc(tabsPlaceholder)}" value="${acctEsc(tabsValue)}" autocomplete="off" style="flex:2;" ${roAttr} />
+            <div class="tgroute-row-actions">
+              ${canEditSheets ? '<button type="button" class="tgroute-action-btn promosheet-save">Save</button>' : ""}
+              ${canEditSheets && r.isOverride ? '<button type="button" class="tgroute-action-btn tgroute-action-secondary promosheet-reset">Reset</button>' : ""}
+            </div>
           </div>
         </div>
         <hr class="tgroute-divider" />
         ${canEditSheets ? "" : '<p class="edit-modal-note">View only.</p>'}
-        <p class="edit-modal-note tgroute-footnote">Changes apply to the very next search — no redeploy needed. "default" is the sheet + tab list built into the code. Tab names must match the sheet's real tab titles exactly (case-insensitive, extra spaces ignored) — a name that doesn't match any real tab is skipped silently and listed as "missing" in search results, not a hard error. Saving replaces the ENTIRE tab list, not just one tab — leave it matching the full set you want searched.</p>`;
+        <p class="edit-modal-note tgroute-footnote">Changes apply to the very next search — no redeploy needed. "default" is the sheet + tab list built into the code (shown as the grey placeholder text, not pre-filled). Tab names must match the sheet's real tab titles exactly (case-insensitive, extra spaces ignored) — a name that doesn't match any real tab is skipped silently and listed as "missing" in search results, not a hard error. Saving replaces the ENTIRE tab list, not just one tab — enter the full set you want searched, not just the ones changing.</p>`;
 
       const saveBtn = acctBody.querySelector(".promosheet-save");
       if (saveBtn) saveBtn.addEventListener("click", savePromoCodeSheet);
@@ -1421,9 +1438,14 @@
 
     async function savePromoCodeSheet() {
       const sheetId = acctBody.querySelector(".promosheet-sheetid").value.trim();
-      const tabs = acctBody.querySelector(".promosheet-tabs").value.split(",").map((t) => t.trim()).filter(Boolean);
+      const tabsRaw = acctBody.querySelector(".promosheet-tabs").value.trim();
+      // Leaving Tab names empty is valid — it means "keep using the
+      // default tab list, just override the sheet ID" (see
+      // savePromoCodeSheetOverride()/resolvePromoCodeTarget() in
+      // _shared/sheetRoutes.js — an empty tabs array falls back to the
+      // code default rather than searching zero tabs).
+      const tabs = tabsRaw ? tabsRaw.split(",").map((t) => t.trim()).filter(Boolean) : [];
       if (!sheetId) return setAcctNote("Sheet ID is required.", "err");
-      if (!tabs.length) return setAcctNote("At least one tab name is required.", "err");
       setAcctNote("Saving…");
       const res = await window.AgentAuth.authFetch("/api/admin/sheet-routes", {
         method: "POST", headers: { "Content-Type": "application/json" },
