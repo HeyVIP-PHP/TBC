@@ -1084,10 +1084,24 @@
       loadList();
     }
 
+    // True while a sendReply() call is actually in flight. The Send
+    // button's own `disabled` attribute only blocks a second *click* on
+    // that button — it does nothing for the separate Enter-key listener
+    // below, which calls sendReply() directly with no check at all. A
+    // little bit of OS/keyboard key-repeat on Enter (easy to trigger
+    // right after picking a mention candidate and pressing Enter to send)
+    // fires several keydown events in quick succession, each starting its
+    // own concurrent sendReply() call — each one a real, separate POST to
+    // Telegram. This flag is the actual re-entrancy guard; the button
+    // disable below is now just its (still useful) visual side effect.
+    let sendingReply = false;
+
     async function sendReply() {
       const input = document.getElementById("replyInput");
       const text = input.value.trim();
       if (!text && !pendingAttachments.length) return;
+      if (sendingReply) return; // a send is already in flight — ignore this call entirely
+      sendingReply = true;
       const btn = document.getElementById("replySend");
       btn.disabled = true;
       btn.textContent = "Sending…";
@@ -1123,6 +1137,7 @@
       } catch {
         alert("❌ Send failed: network error.\n\nYour message wasn't sent — try again.");
       } finally {
+        sendingReply = false;
         btn.disabled = false;
         btn.textContent = "Send";
       }

@@ -362,7 +362,15 @@ const MODULES = [
       },
       {
         key: "remark", label: "Remark", type: "textarea", required: false,
-        showIf: { field: "issueType", oneOf: ["Bonus Auto Force", "Bonus Manual Force", "Return To Main", "Account Suspend / Inactive", "Bonus Cancel Related Issue"] },
+        // Was two separate field entries with the same key "remark" (one for
+        // the bonus/account issue types below, one further down for Verify
+        // Bank Detail). app.js keys its field lookup (fieldEls) by f.key, so
+        // the second definition silently overwrote the first there — the
+        // show/hide logic then always toggled the Verify Bank Detail node,
+        // permanently hiding this field for every other issue type
+        // (Bonus Cancel Related Issue included). Merged into one definition
+        // with the union of both oneOf lists.
+        showIf: { field: "issueType", oneOf: ["Bonus Auto Force", "Bonus Manual Force", "Return To Main", "Account Suspend / Inactive", "Bonus Cancel Related Issue", "Verify Bank Detail"] },
       },
       {
         key: "issueDescription", label: "Issue Description", type: "textarea", required: false,
@@ -386,10 +394,6 @@ const MODULES = [
       },
       {
         key: "bankName", label: "Bank Name", type: "text", required: true,
-        showIf: { field: "issueType", oneOf: ["Verify Bank Detail"] },
-      },
-      {
-        key: "remark", label: "Remark", type: "textarea", required: false,
         showIf: { field: "issueType", oneOf: ["Verify Bank Detail"] },
       },
     ],
