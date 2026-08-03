@@ -595,7 +595,11 @@ a { color: inherit; text-decoration: none; }
   border: 1px solid transparent;
   border-left: 3px solid transparent;
   margin-bottom: 8px;
+  position: relative; /* anchors the ::before sweep / ::after twinkle below */
+  overflow: hidden; /* keeps them clipped to the card's rounded corners */
   transition: background 0.15s ease, transform 0.12s ease, border-color 0.15s ease;
+  --card-accent: var(--item-accent, #7c6cf0);
+  animation: card-glow 2.6s ease-in-out infinite;
 }
 .sidebar-item:hover {
   background: var(--sidebar-item-hover);
@@ -603,6 +607,38 @@ a { color: inherit; text-decoration: none; }
   border-left-color: var(--item-accent, var(--accent-gold));
   transform: translateX(2px);
 }
+
+/* Same three decorative effects as .thread-item (see that block for how
+   each one works) — reused here so the sidebar module list and the
+   threads sidebar read as the same visual language. Colors derive from
+   each item's own --item-accent (already set inline per row) instead of
+   --thread-accent. */
+.sidebar-item::after {
+  content: "";
+  position: absolute; top: 8px; right: 10px;
+  width: 4px; height: 4px; border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 4px 1px rgba(255, 255, 255, 0.75);
+  animation: card-twinkle 2.2s ease-in-out infinite;
+  pointer-events: none;
+}
+.sidebar-item::before {
+  content: "";
+  position: absolute; inset: 0;
+  background: linear-gradient(115deg, transparent 40%, rgba(255,255,255,0.08) 50%, transparent 60%);
+  background-size: 250% 100%;
+  animation: card-sweep 3.4s ease-in-out infinite;
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-item { animation: none; }
+  .sidebar-item::before, .sidebar-item::after { display: none; }
+}
+/* Disabled/dimmed modules ("coming soon" / "under maintenance") shouldn't
+   look lively — same reasoning as .recall-item over on .thread-item. */
+.sidebar-item.feature-status-dim { animation: none; }
+.sidebar-item.feature-status-dim::before, .sidebar-item.feature-status-dim::after { display: none; }
+
 .feature-status-dim { position: relative; opacity: 0.5; cursor: not-allowed; }
 .feature-status-dim:hover { transform: none; }
 .feature-status-badge {
@@ -864,11 +900,9 @@ a { color: inherit; text-decoration: none; }
 .t-sub-stat.has-unsolved {
   color: #ef4a72;
   font-weight: 800;
-  animation: breathe 1.8s ease-in-out infinite;
 }
 .t-sub-stat.has-active {
   font-weight: 800;
-  animation: breathe 1.8s ease-in-out infinite;
 }
 @keyframes breathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
 @media (max-width: 560px) {
@@ -947,6 +981,7 @@ a { color: inherit; text-decoration: none; }
      so at rest they just floated directly on the starfield photo with text
      sitting on whatever busy/bright patch of sky happened to be behind it. */
   background: var(--sidebar-item-bg);
+  --card-accent: var(--thread-accent, #7c6cf0);
   transition: background 0.15s ease;
   animation: card-glow 2.6s ease-in-out infinite;
 }
@@ -955,8 +990,8 @@ a { color: inherit; text-decoration: none; }
 
 /* Breathing edge glow, tinted to each thread's own accent color. */
 @keyframes card-glow {
-  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--thread-accent, #7c6cf0) 0%, transparent); }
-  50%      { box-shadow: 0 0 14px 1px color-mix(in srgb, var(--thread-accent, #7c6cf0) 40%, transparent); }
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--card-accent, #7c6cf0) 0%, transparent); }
+  50%      { box-shadow: 0 0 14px 1px color-mix(in srgb, var(--card-accent, #7c6cf0) 40%, transparent); }
 }
 
 /* Corner twinkle — a plain ::after dot, doesn't touch real markup. */
@@ -1679,11 +1714,11 @@ h1 {
 }
 .ann-dismiss:hover { background: rgba(245, 158, 11, 0.18); color: #f59e0b; }
 
-/* ---- Announcement icon "breathing" on the Home tool card — reuses the
-   app's own existing pulse keyframe (see @keyframes breathe above) for
-   consistency with how the rest of the app signals "this needs
-   attention", rather than inventing a new animation. */
-.tool-card .t-icon.breathing { animation: breathe 1.8s ease-in-out infinite; }
+/* Home tool-card "breathing" icon animation removed — decorative motion
+   on the small overview cards (Announcement / TG Reply Threads) moved to
+   the sidebar module list instead, see .sidebar-item below. The
+   .breathing class is still toggled by index.html's JS (harmless,
+   just has no visual effect now) rather than touching that logic. */
 
 /* ---- Announcement management page (public/announcements.html) ----
    Same locked-to-viewport flex-column shell as threads.html — see
