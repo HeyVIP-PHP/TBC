@@ -807,13 +807,11 @@
         <div class="fs-scroll"><div class="tgroute-modules">${rowsHtml}</div></div>
         <hr class="tgroute-divider" />
         ${canEditSettings ? "" : '<p class="edit-modal-note">View only.</p>'}
-        <p class="edit-modal-note tgroute-footnote">Maintenance/Coming soon blocks everyone whose role isn't checked in the second dropdown — Home page, form page, and the API itself. Owner is always allowed through even if unchecked. Changes apply immediately, no redeploy needed.</p>
         <hr class="tgroute-divider" />
         <div class="mention-backfill-block">
           <div class="mention-backfill-row">
             <div>
               <div class="mention-backfill-title">@ Tag Username — historical backfill</div>
-              <p class="edit-modal-note">One-time scan of every existing ticket so agents who replied before this feature shipped are also suggested when typing @ in TG Reply Threads. Safe to run more than once. Don't close this window or refresh while it's running.</p>
             </div>
             ${canEditSettings ? '<button type="button" class="tgroute-action-btn" id="mentionBackfillBtn">Run backfill</button>' : ""}
           </div>
@@ -824,7 +822,6 @@
           <div class="mention-backfill-row">
             <div>
               <div class="mention-backfill-title">📢 Announcement rotation speed</div>
-              <p class="edit-modal-note">How long each announcement stays on screen before the banner auto-rotates to the next one. Only matters when 2+ announcements are active at once.</p>
             </div>
             ${canEditSettings
               ? '<div style="display:flex;align-items:center;gap:8px;flex-shrink:0;"><input type="number" id="annRotateSeconds" min="1" step="1" style="width:70px;background:var(--field-bg);border:1px solid var(--border);border-radius:10px;padding:8px 10px;font-size:13px;color:var(--ink);" /><span class="edit-modal-note" style="margin:0;">seconds</span><button type="button" class="tgroute-action-btn" id="annRotateSaveBtn">Save</button></div>'
@@ -1062,7 +1059,13 @@
       if (!data.ok) return setAcctNote(data.error || "Save failed.", "err");
       const idx = acctFeatureItems.findIndex((i) => i.id === itemId);
       if (idx >= 0) acctFeatureItems[idx] = { ...acctFeatureItems[idx], ...data.item };
-      setAcctNote("Save success.", "ok");
+      // Reflects the ACTUAL status just saved, not a generic "Save
+      // success." — same reasoning as the Announcement Active/Inactive
+      // fix: a 3-state dropdown (Active/Maintenance/Coming soon) needs
+      // the toast to say which one it ended up as, not a label that's
+      // right for one of the three and misleading for the other two.
+      const statusLabel = { active: "Active", maintenance: "Maintenance", coming_soon: "Coming soon" }[status] || status;
+      setAcctNote(`Save ${statusLabel} success.`, "ok");
       // Home page (sidebar + TG Reply Threads/Promo Code Search cards)
       // was already rendered before this save — without this, an agent
       // would see the OLD status until a manual page reload, which looks
@@ -1582,7 +1585,8 @@
         body: JSON.stringify({ action: locked ? "lock" : "unlock", username }),
       });
       const data = await res.json();
-      if (!data.ok) { alert(data.error || `${verb} failed.`); return; }
+      if (!data.ok) { if (window.showToast) window.showToast(data.error || `${verb} failed.`, "err"); return; }
+      if (window.showToast) window.showToast(`${verb} success.`, "ok");
       await loadAgentProfileTable();
     }
 

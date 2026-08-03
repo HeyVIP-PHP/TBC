@@ -336,7 +336,7 @@
         // Toast-only on success — no persistent duplicate text (openForm()
         // above already cleared the note, matching the "Saving…" -> clean
         // slate transition; the toast alone confirms it saved).
-        if (window.showToast) window.showToast("Active success.", "ok");
+        if (window.showToast) window.showToast(enabledToSave ? "Active success." : "Inactive success.", "ok");
         // Same device updates instantly instead of waiting up to 60s for
         // the banner's next poll — other devices/agents still only catch
         // up on their own next poll.
