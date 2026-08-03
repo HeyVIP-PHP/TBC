@@ -576,14 +576,15 @@
       acctBody.innerHTML = '<p class="edit-modal-note">Loading…</p>';
       acctBackdrop.classList.add("is-open");
       const modalEl = acctBackdrop.querySelector(".edit-modal");
-      modalEl.classList.toggle("wide", mode === "profile" || mode === "tgroutes" || mode === "settings");
-      // "profile", "tgroutes", and "settings" all use per-row inline save
-      // buttons instead of one global footer Save (too many
-      // independently-editable rows for a single "Save" to mean anything
-      // useful). With Cancel removed (closing is via the X button now),
-      // the whole actions row would otherwise just be dead space when
-      // Save is hidden — hide the row itself, not just the button inside it.
-      const showFooterSave = mode !== "profile" && mode !== "tgroutes" && mode !== "settings";
+      modalEl.classList.toggle("wide", mode === "profile" || mode === "tgroutes" || mode === "settings" || mode === "issuesheet" || mode === "promosheet");
+      // "profile", "tgroutes", "settings", "issuesheet", and "promosheet"
+      // all use per-row inline save buttons instead of one global footer
+      // Save (too many independently-editable rows for a single "Save"
+      // to mean anything useful). With Cancel removed (closing is via
+      // the X button now), the whole actions row would otherwise just be
+      // dead space when Save is hidden — hide the row itself, not just
+      // the button inside it.
+      const showFooterSave = mode !== "profile" && mode !== "tgroutes" && mode !== "settings" && mode !== "issuesheet" && mode !== "promosheet";
       document.getElementById("acctModalSave").style.display = showFooterSave ? "" : "none";
       document.getElementById("acctModalActions").style.display = showFooterSave ? "" : "none";
       const roleFilterEl = document.getElementById("acctProfileRoleFilter");
