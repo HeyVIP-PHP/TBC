@@ -940,10 +940,70 @@ a { color: inherit; text-decoration: none; }
   padding: 9px 10px; border-radius: 12px;
   border-left: 3px solid transparent;
   cursor: pointer;
+  position: relative; /* anchors the ::before sweep / ::after twinkle below */
+  overflow: hidden; /* keeps the sweep + twinkle clipped to the card's rounded corners */
+  /* --sidebar-item-bg was already defined per-theme above but never actually
+     applied here — cards had no background at all outside :hover/.selected,
+     so at rest they just floated directly on the starfield photo with text
+     sitting on whatever busy/bright patch of sky happened to be behind it. */
+  background: var(--sidebar-item-bg);
   transition: background 0.15s ease;
+  animation: card-glow 2.6s ease-in-out infinite;
 }
 .thread-item:hover { background: var(--sidebar-item-hover); }
 .thread-item.selected { background: var(--sidebar-item-hover); border-left-color: var(--thread-accent, var(--accent-gold)); }
+
+/* Breathing edge glow, tinted to each thread's own accent color. */
+@keyframes card-glow {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--thread-accent, #7c6cf0) 0%, transparent); }
+  50%      { box-shadow: 0 0 14px 1px color-mix(in srgb, var(--thread-accent, #7c6cf0) 40%, transparent); }
+}
+
+/* Corner twinkle — a plain ::after dot, doesn't touch real markup. */
+.thread-item::after {
+  content: "";
+  position: absolute; top: 8px; right: 10px;
+  width: 4px; height: 4px; border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 4px 1px rgba(255, 255, 255, 0.75);
+  animation: card-twinkle 2.2s ease-in-out infinite;
+  pointer-events: none; /* must not steal the card's own click/hover */
+}
+@keyframes card-twinkle {
+  0%, 100% { opacity: 0.25; transform: scale(0.8); }
+  50%      { opacity: 1;    transform: scale(1.25); }
+}
+
+/* Light band sweeping across the card. Three effects here (2.2s / 2.6s /
+   3.4s) are deliberately non-integer-multiples of each other so they never
+   phase-align into one big simultaneous "flash" — see starfield doc §3.4. */
+.thread-item::before {
+  content: "";
+  position: absolute; inset: 0;
+  background: linear-gradient(115deg, transparent 40%, rgba(255,255,255,0.08) 50%, transparent 60%);
+  background-size: 250% 100%;
+  animation: card-sweep 3.4s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes card-sweep {
+  0%        { background-position: 200% 0; }
+  60%, 100% { background-position: -50% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .thread-item { animation: none; }
+  .thread-item::before, .thread-item::after { display: none; }
+}
+
+/* Recall Chat History rows reuse .thread-item for layout but are a
+   sensitive/warning surface (deletion log) — the decorative breathing glow
+   / twinkle / sweep reads as "lively" which is the wrong tone here, so they
+   get switched off outright rather than toned down. display: none (not
+   opacity: 0 / animation: none piecemeal) so the pseudo-elements stop
+   occupying layout/paint entirely, matching the plain red-tinted styling
+   .recall-item already has elsewhere in this file. */
+.thread-item.recall-item { animation: none; }
+.thread-item.recall-item::before, .thread-item.recall-item::after { display: none; }
 .thread-item .icon {
   width: 30px; height: 30px; border-radius: 10px; display: flex; align-items: center; justify-content: center;
   font-size: 14px; flex-shrink: 0;

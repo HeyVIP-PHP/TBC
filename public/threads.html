@@ -4,6 +4,24 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>TG Reply Threads</title>
+<style>
+  /* See index.html's copy of this block for the full explanation — same
+     placeholder, kept in sync, only on <html> never <body>. */
+  html {
+    background-color: #dbe7fb;
+    background-image:
+      radial-gradient(900px 500px at 90% 0%, #eaf1ff 0%, transparent 55%),
+      linear-gradient(160deg, #dbe7fb 0%, #d9cef4 45%, #cdbdf2 75%, #c4b2ee 100%);
+    background-attachment: fixed;
+  }
+  html[data-theme="dark"] {
+    background-color: #090c1c;
+    background-image:
+      radial-gradient(650px 320px at 18% 100%, rgba(124, 108, 240, 0.28), transparent 70%),
+      radial-gradient(650px 320px at 82% 100%, rgba(56, 130, 240, 0.24), transparent 70%),
+      linear-gradient(160deg, #090c1c 0%, #10143a 45%, #191c4a 75%, #221a45 100%);
+  }
+</style>
 <link rel="stylesheet" href="/assets/style.css" />
 <script src="/assets/theme.js"></script>
 <script src="/assets/starfield.js" defer></script>
@@ -186,6 +204,61 @@
     const activeCount = document.getElementById("activeCount");
     const solvedCount = document.getElementById("solvedCount");
     const main = document.getElementById("threadsMain");
+
+    // ---- Diffed sidebar rendering ----------------------------------------
+    // renderLists() used to do `list.innerHTML = ""` + rebuild every row from
+    // scratch on every poll tick / select-mode toggle / menu open-close —
+    // fine at a handful of threads, but it means every 30s poll (and every
+    // click) tears down and rebuilds the *entire* sidebar DOM even when only
+    // one thread actually changed, which gets janky once there are a few
+    // hundred threads. renderedItemEls tracks one live DOM node per thread
+    // id across BOTH lists (a thread moves from here to solvedList when it
+    // gets solved, or back when reopened — same Map, so the move is just an
+    // insertBefore into the other container, not a delete+recreate).
+    const renderedItemEls = new Map(); // id -> { el, key }
+
+    // Fingerprint of everything renderItem()'s output actually depends on.
+    // If this string is unchanged since last render, the existing DOM node
+    // is reused as-is (just repositioned if needed) instead of rebuilt.
+    function itemRenderKey(t) {
+      return [
+        t.title, t.submitter, t.lastActivity, t.replyCount, t.solved,
+        t.icon, t.accent, isUnread(t), getSeenCount(t.id),
+        t.id === selectedId, selectedIds.has(t.id), selectMode,
+        openMenuId === t.id,
+      ].join("|");
+    }
+
+    // Reconciles one <div class="thread-list"> against the `items` array
+    // that should be in it, right now, in that order.
+    function reconcileSection(container, items) {
+      let prevEl = null;
+      items.forEach((item) => {
+        const key = itemRenderKey(item);
+        let entry = renderedItemEls.get(item.id);
+        if (!entry || entry.key !== key) {
+          // Content changed (or first time seeing this id) — build a fresh
+          // node. Critical: detach the OLD node before swapping the Map's
+          // pointer to the new one. Skipping this leaves the old node
+          // physically in the DOM (it was insertBefore'd in on a previous
+          // render) with nothing left that can ever find it again to
+          // reposition or delete it — a permanent duplicate "ghost" row
+          // that piles up once per update on whichever thread is busiest.
+          if (entry) entry.el.remove();
+          entry = { el: renderItem(item), key };
+          renderedItemEls.set(item.id, entry);
+        }
+        // insertBefore on a node that's already exactly there is a no-op;
+        // on a node currently in the OTHER list (cross-group move, e.g.
+        // solved -> reopened) it detaches it from there first automatically
+        // — never two copies live at once.
+        const wantPos = prevEl ? prevEl.nextSibling : container.firstChild;
+        if (entry.el.parentNode !== container || entry.el !== wantPos) {
+          container.insertBefore(entry.el, wantPos);
+        }
+        prevEl = entry.el;
+      });
+    }
 
     document.querySelectorAll(".threads-section-title").forEach((el) => {
       el.addEventListener("click", (e) => {
@@ -644,14 +717,31 @@
     function renderLists() {
       activeCount.textContent = activeThreads.length;
       solvedCount.textContent = solvedThreads.length;
-      activeList.innerHTML = "";
+
       if (!activeThreads.length) {
+        // Genuinely empty — nothing to diff against, just show the
+        // placeholder. (Any previously-tracked nodes get swept up by the
+        // orphan cleanup pass below since their ids won't be in liveIds.)
         activeList.innerHTML = '<div class="threads-empty">No active threads.<br/>Submit a form to start one.</div>';
       } else {
-        activeThreads.forEach((t) => activeList.appendChild(renderItem(t)));
+        const emptyEl = activeList.querySelector(".threads-empty");
+        if (emptyEl) emptyEl.remove();
+        reconcileSection(activeList, activeThreads);
       }
-      solvedList.innerHTML = "";
-      solvedThreads.forEach((t) => solvedList.appendChild(renderItem(t)));
+      reconcileSection(solvedList, solvedThreads);
+
+      // Sweep any tracked id that's no longer in either list (thread got
+      // deleted, or fell out of both arrays some other way) — without this,
+      // reconcileSection alone has no reason to ever visit a removed id
+      // again, so its node would just sit there forever.
+      const liveIds = new Set([...activeThreads.map((t) => t.id), ...solvedThreads.map((t) => t.id)]);
+      renderedItemEls.forEach((entry, id) => {
+        if (!liveIds.has(id)) {
+          entry.el.remove();
+          renderedItemEls.delete(id);
+        }
+      });
+
       document.getElementById("activeSelectAll").style.display = selectMode ? "inline-block" : "none";
       document.getElementById("solvedSelectAll").style.display = selectMode ? "inline-block" : "none";
       document.getElementById("activeSelectAll").checked = activeThreads.length > 0 && activeThreads.every((t) => selectedIds.has(t.id));
