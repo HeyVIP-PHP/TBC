@@ -41,6 +41,20 @@ function sheetKey(brandId, moduleId) {
 
 const PROMO_CODE_KEY = "sheet:promoCode";
 
+// Both save entry points accept "Google Sheet URL or ID" per their
+// placeholder text — but a raw Sheets URL
+// (https://docs.google.com/spreadsheets/d/<ID>/edit?gid=0) is NOT a
+// valid sheetId on its own; the Sheets API only wants the <ID> segment.
+// Pasting the full URL used to get stored verbatim and produce a
+// malformed API request (a URL glued onto the end of another URL),
+// which 404s — this extracts the real ID either way, so the input
+// genuinely accepts both forms like the placeholder promises.
+function extractSheetId(input) {
+  const trimmed = String(input || "").trim();
+  const match = trimmed.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
+  return match ? match[1] : trimmed;
+}
+
 function parseSheetTarget(raw) {
   if (!raw) return null;
   try {
@@ -95,7 +109,7 @@ export async function getAllSheetOverrides(env, brandIds, moduleIds) {
 }
 
 export async function saveSheetOverride(env, brandId, moduleId, { sheetId, tab }) {
-  const trimmedSheetId = String(sheetId || "").trim();
+  const trimmedSheetId = extractSheetId(sheetId);
   if (!trimmedSheetId) throw new Error("Sheet ID is required.");
   const value = { sheetId: trimmedSheetId, tab: String(tab || "").trim() };
   await env.THREADS_KV.put(sheetKey(brandId, moduleId), JSON.stringify(value));
@@ -137,7 +151,7 @@ export async function getPromoCodeSheetOverride(env) {
 }
 
 export async function savePromoCodeSheetOverride(env, { sheetId, tabs }) {
-  const trimmedSheetId = String(sheetId || "").trim();
+  const trimmedSheetId = extractSheetId(sheetId);
   if (!trimmedSheetId) throw new Error("Sheet ID is required.");
   const cleanTabs = Array.isArray(tabs) ? tabs.map((t) => String(t).trim()).filter(Boolean) : [];
   const value = { sheetId: trimmedSheetId, tabs: cleanTabs };
