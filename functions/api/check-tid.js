@@ -28,6 +28,7 @@
 import { BRANDS, SHEET_LAYOUT } from "../_shared/routing.js";
 import { batchGetValues } from "../_shared/googleSheets.js";
 import { verifyRequest, canSeeBrand } from "../_shared/accounts.js";
+import { resolveSheetTarget } from "../_shared/sheetRoutes.js";
 
 export async function onRequestGet(context) {
   try {
@@ -57,7 +58,12 @@ async function handleGet({ request, env }) {
   // that isn't the agent's problem; this is effectively "duplicate
   // checking isn't available right now."
   const layout = SHEET_LAYOUT.withdraw_issue;
-  if (!brand.sheetId || !layout || !layout.columns.includes("tid")) {
+  // Integrations admin page override takes priority over the hardcoded
+  // brand.sheetId/layout.tab default — same lookup submit.js/forward.js
+  // use, so a manually-configured Withdraw Issue sheet is checked here
+  // too, not just written to on submit.
+  const sheetTarget = await resolveSheetTarget(env, brandId, "withdraw_issue", brand.sheetId, layout?.tab || "");
+  if (!sheetTarget.sheetId || !layout || !layout.columns.includes("tid")) {
     return json({ ok: true, found: false });
   }
 
@@ -70,11 +76,11 @@ async function handleGet({ request, env }) {
 
   // Row 2 onward (row 1 is headers) — one batchGet call fetches all the
   // columns we need in one round trip instead of three.
-  const ranges = [`${layout.tab}!${tidCol}2:${tidCol}`];
-  if (dateCol) ranges.push(`${layout.tab}!${dateCol}2:${dateCol}`);
-  if (picCol) ranges.push(`${layout.tab}!${picCol}2:${picCol}`);
+  const ranges = [`${sheetTarget.tab}!${tidCol}2:${tidCol}`];
+  if (dateCol) ranges.push(`${sheetTarget.tab}!${dateCol}2:${dateCol}`);
+  if (picCol) ranges.push(`${sheetTarget.tab}!${picCol}2:${picCol}`);
 
-  const valueRanges = await batchGetValues(env, brand.sheetId, ranges);
+  const valueRanges = await batchGetValues(env, sheetTarget.sheetId, ranges);
   const tidValues = (valueRanges[0]?.values || []).map((r) => (r[0] || "").trim());
   let i = 1;
   const dateValues = dateCol ? (valueRanges[i++]?.values || []).map((r) => r[0] || "") : [];

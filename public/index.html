@@ -92,10 +92,34 @@
         <div class="sidebar-subitems" id="acctMgmtSubitems">
           <div class="sidebar-subitem" id="subCreateAccount" style="display:none;--sub-accent:#a78bfa33;"><span class="sub-icon">➕</span> Create Account</div>
           <div class="sidebar-subitem" id="subWhitelistIp" style="display:none;--sub-accent:#60a5fa33;"><span class="sub-icon">🌐</span> Whitelist IP</div>
-          <div class="sidebar-subitem" id="subTgRoutes" style="display:none;--sub-accent:#38bdf833;"><span class="sub-icon">📤</span> TG Group / Channel</div>
           <div class="sidebar-subitem" id="subSettings" style="display:none;--sub-accent:#f59e0b33;"><span class="sub-icon">⚙️</span> Settings</div>
           <div class="sidebar-subitem" id="subResetPassword" style="--sub-accent:#f3c46333;"><span class="sub-icon">🔑</span> Reset Password</div>
           <div class="sidebar-subitem" id="subAgentProfile" style="display:none;--sub-accent:#f472b633;"><span class="sub-icon">🪪</span> Agent Profile</div>
+        </div>
+      </div>
+
+      <!-- Integrations — TG Group/Channel routing + Google Sheet targets
+           (Issue Submission Gsheet, Promo Code Gsheet). Own group,
+           separate from Account Management, because visibility works
+           differently: SuperAdmin and above see this automatically (no
+           Owner opt-in needed), while every Account Management section
+           stays Owner-opt-in-only for everyone but the Owner — see
+           canSeeAdminSection("integrations") below and the matching
+           server-side rule in _shared/accounts.js. Still delegable to a
+           lower-ranked account the same way as any other section. -->
+      <div class="am-group" id="integrationsGroup" style="display:none;">
+        <div class="sidebar-item am-toggle expandable" id="integrationsToggle">
+          <div class="icon" style="background:#60a5fa33;">🔌</div>
+          <div class="text">
+            <div class="name">Integrations</div>
+            <div class="desc">Sheets and TG routing</div>
+          </div>
+          <span class="arrow">&rarr;</span>
+        </div>
+        <div class="sidebar-subitems" id="integrationsSubitems">
+          <div class="sidebar-subitem" id="subIntegrationsTg" style="--sub-accent:#38bdf833;"><span class="sub-icon">📤</span> TG Group / Channel</div>
+          <div class="sidebar-subitem" id="subIntegrationsIssueSheet" style="--sub-accent:#4ade8033;"><span class="sub-icon">📋</span> Issue Submission Gsheet</div>
+          <div class="sidebar-subitem" id="subIntegrationsPromoSheet" style="--sub-accent:#f472b633;"><span class="sub-icon">🎟️</span> Promo Code Gsheet</div>
         </div>
       </div>
     </aside>
@@ -413,6 +437,12 @@
     function canSeeAdminSection(sectionId) {
       if (!authInfo) return false;
       if (authInfo.role === "owner") return true;
+      // "integrations" is the ONE section with a rank floor baked in on
+      // top of the usual opt-in model — mirrors the server-side rule in
+      // _shared/accounts.js exactly. SuperAdmin+ see it automatically;
+      // every other section stays Owner-opt-in for everyone but the
+      // Owner.
+      if (sectionId === "integrations" && myRank >= ROLE_RANK.superadmin) return true;
       if (authInfo.allowedAdminSections === "all") return true;
       return Array.isArray(authInfo.allowedAdminSections) && authInfo.allowedAdminSections.includes(sectionId);
     }
@@ -429,6 +459,9 @@
       if (!authInfo) return false;
       if (authInfo.role === "owner") return true;
       if (!canSeeAdminSection(sectionId)) return false;
+      // Same SuperAdmin-auto exception as canSeeAdminSection() above —
+      // see the matching comment there and in _shared/accounts.js.
+      if (sectionId === "integrations" && myRank >= ROLE_RANK.superadmin) return true;
       if (authInfo.adminSectionEditAccess === "all") return true;
       return Array.isArray(authInfo.adminSectionEditAccess) && authInfo.adminSectionEditAccess.includes(sectionId);
     }
@@ -442,9 +475,13 @@
     // per-account checkbox — no rank floor at all (see
     // canEditAdminSection() above for the matching Can-Edit replacement).
     document.getElementById("subWhitelistIp").style.display = canSeeAdminSection("whitelistIp") ? "flex" : "none";
-    document.getElementById("subTgRoutes").style.display = canSeeAdminSection("tgRoutes") ? "flex" : "none";
     document.getElementById("subSettings").style.display = canSeeAdminSection("settings") ? "flex" : "none";
     document.getElementById("subAgentProfile").style.display = canSeeAdminSection("agentProfile") ? "flex" : "none";
+    // Integrations is one group, one permission check — all 3 subitems
+    // (TG Group/Channel, Issue Submission Gsheet, Promo Code Gsheet)
+    // show or hide together, unlike Account Management's per-item checks
+    // above, since they share the same "integrations" section.
+    document.getElementById("integrationsGroup").style.display = canSeeAdminSection("integrations") ? "" : "none";
 
     // ---- Announcement tool card — shown only to accounts with access to
     // the "announcements" Account Management section; icon "breathes"
@@ -480,12 +517,21 @@
       acctSubitems.classList.toggle("open");
     });
 
+    const integrationsToggle = document.getElementById("integrationsToggle");
+    const integrationsSubitems = document.getElementById("integrationsSubitems");
+    integrationsToggle.addEventListener("click", () => {
+      integrationsToggle.classList.toggle("open");
+      integrationsSubitems.classList.toggle("open");
+    });
+
     document.getElementById("subCreateAccount").addEventListener("click", () => openAcctModal("create"));
     document.getElementById("subWhitelistIp").addEventListener("click", () => openAcctModal("whitelist"));
-    document.getElementById("subTgRoutes").addEventListener("click", () => openAcctModal("tgroutes"));
     document.getElementById("subSettings").addEventListener("click", () => openAcctModal("settings"));
     document.getElementById("subResetPassword").addEventListener("click", () => openAcctModal("reset"));
     document.getElementById("subAgentProfile").addEventListener("click", () => openAcctModal("profile"));
+    document.getElementById("subIntegrationsTg").addEventListener("click", () => openAcctModal("tgroutes"));
+    document.getElementById("subIntegrationsIssueSheet").addEventListener("click", () => openAcctModal("issuesheet"));
+    document.getElementById("subIntegrationsPromoSheet").addEventListener("click", () => openAcctModal("promosheet"));
     document.getElementById("acctProfileRoleFilter").addEventListener("change", () => renderAgentProfileTable());
     document.getElementById("acctProfileSearch").addEventListener("input", () => renderAgentProfileTable());
 
@@ -635,6 +681,16 @@
       if (mode === "tgroutes") {
         acctTitle.textContent = "TG Group / Channel";
         await loadTgRoutes();
+      }
+
+      if (mode === "issuesheet") {
+        acctTitle.textContent = "Issue Submission Gsheet";
+        await loadIssueSheetRoutes();
+      }
+
+      if (mode === "promosheet") {
+        acctTitle.textContent = "Promo Code Gsheet";
+        await loadPromoCodeSheet();
       }
 
       if (mode === "settings") {
@@ -1051,7 +1107,7 @@
         const r = securityAlerts || { chatId: "", topicId: null, isOverride: false };
         // Can-Edit on "tgRoutes" now decides editability here too — no
         // more SuperAdmin-only floor (see canEditAdminSection() above).
-        const canEditRoutes = canEditAdminSection("tgRoutes");
+        const canEditRoutes = canEditAdminSection("integrations");
         const roAttr = canEditRoutes ? "" : "disabled";
         acctBody.innerHTML = `
           <div class="tgroute-layout">
@@ -1091,7 +1147,7 @@
         return;
       }
 
-      const canEditRoutes = canEditAdminSection("tgRoutes");
+      const canEditRoutes = canEditAdminSection("integrations");
       const roAttr = canEditRoutes ? "" : "disabled";
       const renderModuleRow = (m) => {
         const key = `${acctRoutesSelectedBrand}|${m.id}`;
@@ -1200,6 +1256,194 @@
       renderTgRoutes();
       const newScroller = acctBody.querySelector(".tgroute-modules");
       if (newScroller) newScroller.scrollTop = scrollTop;
+    }
+
+    // ---- Issue Submission Gsheet (live-editable per brand+topic Sheet
+    // targets) ----
+    // Same left-brand / right-topic layout as TG Group/Channel, reusing
+    // the exact same .tgroute-* CSS — only the fields differ (Sheet ID +
+    // Tab name instead of Chat ID + Topic ID). Backed by
+    // /api/admin/sheet-routes, which merges hardcoded defaults
+    // (_shared/routing.js's brand.sheetId / SHEET_LAYOUT /
+    // PROMOTION_SHEET_CONFIG) with any live KV overrides — see
+    // _shared/sheetRoutes.js. Only the DESTINATION is editable here;
+    // column layout always comes from the code, never this page.
+    let acctSheetData = null;
+    let acctSheetSelectedBrand = null;
+
+    async function loadIssueSheetRoutes() {
+      const res = await window.AgentAuth.authFetch("/api/admin/sheet-routes");
+      const data = await res.json();
+      if (!data.ok) {
+        acctBody.innerHTML = `<p class="edit-modal-note err">${acctEsc(data.error || "Failed to load.")}</p>`;
+        return;
+      }
+      acctSheetData = data;
+      if (!acctSheetSelectedBrand || !data.brands.some((b) => b.id === acctSheetSelectedBrand)) {
+        acctSheetSelectedBrand = data.brands[0]?.id || null;
+      }
+      renderIssueSheetRoutes();
+    }
+
+    function renderIssueSheetRoutes() {
+      if (!acctSheetData) return;
+      const { brands, modules, sheets } = acctSheetData;
+      const canEditSheets = canEditAdminSection("integrations");
+      const roAttr = canEditSheets ? "" : "disabled";
+
+      const brandListHtml = brands.map((b) => `
+        <div class="tgroute-brand${b.id === acctSheetSelectedBrand ? " selected" : ""}" data-brand="${acctEsc(b.id)}">${acctEsc(b.name)}</div>
+      `).join("");
+
+      const renderModuleRow = (m) => {
+        const key = `${acctSheetSelectedBrand}|${m.id}`;
+        const r = sheets[key] || { sheetId: "", tab: "", isOverride: false };
+        return `
+          <div class="tgroute-row" data-module="${acctEsc(m.id)}">
+            <div class="tgroute-mod-name">${m.emoji} ${acctEsc(m.name)}
+              <span class="route-tag${r.isOverride ? " custom" : ""}">${r.isOverride ? "custom" : "default"}</span>
+            </div>
+            <div class="tgroute-fields">
+              <input type="text" class="sheetroute-sheetid" placeholder="Google Sheet ID" value="${acctEsc(r.sheetId)}" autocomplete="off" ${roAttr} />
+              <input type="text" class="sheetroute-tab" placeholder="Tab name" value="${acctEsc(r.tab)}" autocomplete="off" ${roAttr} />
+              <div class="tgroute-row-actions">
+                ${canEditSheets ? '<button type="button" class="tgroute-action-btn sheetroute-save">Save</button>' : ""}
+                ${canEditSheets && r.isOverride ? '<button type="button" class="tgroute-action-btn tgroute-action-secondary sheetroute-reset">Reset</button>' : ""}
+              </div>
+            </div>
+          </div>`;
+      };
+      const moduleRowsHtml = modules.map(renderModuleRow).join("");
+
+      acctBody.innerHTML = `
+        <div class="tgroute-layout">
+          <div class="tgroute-brands">${brandListHtml}</div>
+          <div class="tgroute-modules">${moduleRowsHtml}</div>
+        </div>
+        <hr class="tgroute-divider" />
+        ${canEditSheets ? "" : '<p class="edit-modal-note">View only.</p>'}
+        <p class="edit-modal-note tgroute-footnote">Changes apply to the very next submission, edit, or lookup for that brand+topic — no redeploy needed. "default" rows still use the sheet built into the code; "custom" rows point at a sheet/tab entered here. Column layout (which field lands in which column) always comes from the code — pointing a topic at a new sheet only works if that sheet's tab has the same column order.</p>`;
+
+      acctBody.querySelectorAll(".tgroute-brand").forEach((el) => {
+        el.addEventListener("click", () => {
+          acctSheetSelectedBrand = el.dataset.brand;
+          setAcctNote("");
+          renderIssueSheetRoutes();
+        });
+      });
+      acctBody.querySelectorAll(".sheetroute-save").forEach((btn) => {
+        btn.addEventListener("click", () => saveSheetRouteRow(btn.closest(".tgroute-row")));
+      });
+      acctBody.querySelectorAll(".sheetroute-reset").forEach((btn) => {
+        btn.addEventListener("click", () => resetSheetRouteRow(btn.closest(".tgroute-row")));
+      });
+    }
+
+    async function saveSheetRouteRow(row) {
+      const moduleId = row.dataset.module;
+      const sheetId = row.querySelector(".sheetroute-sheetid").value.trim();
+      const tab = row.querySelector(".sheetroute-tab").value.trim();
+      if (!sheetId) return setAcctNote("Sheet ID is required.", "err");
+      setAcctNote("Saving…");
+      const res = await window.AgentAuth.authFetch("/api/admin/sheet-routes", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "save", brandId: acctSheetSelectedBrand, moduleId, sheetId, tab }),
+      });
+      const data = await res.json();
+      if (!data.ok) return setAcctNote(data.error || "Save failed.", "err");
+      acctSheetData.sheets[`${acctSheetSelectedBrand}|${moduleId}`] = data.sheet;
+      setAcctNote("Saved.", "ok");
+      const scroller = acctBody.querySelector(".tgroute-modules");
+      const scrollTop = scroller ? scroller.scrollTop : 0;
+      renderIssueSheetRoutes();
+      const newScroller = acctBody.querySelector(".tgroute-modules");
+      if (newScroller) newScroller.scrollTop = scrollTop;
+    }
+
+    async function resetSheetRouteRow(row) {
+      const moduleId = row.dataset.module;
+      setAcctNote("Resetting…");
+      const res = await window.AgentAuth.authFetch("/api/admin/sheet-routes", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "reset", brandId: acctSheetSelectedBrand, moduleId }),
+      });
+      const data = await res.json();
+      if (!data.ok) return setAcctNote(data.error || "Reset failed.", "err");
+      acctSheetData.sheets[`${acctSheetSelectedBrand}|${moduleId}`] = data.sheet;
+      setAcctNote("Reset to default.", "ok");
+      const scroller = acctBody.querySelector(".tgroute-modules");
+      const scrollTop = scroller ? scroller.scrollTop : 0;
+      renderIssueSheetRoutes();
+      const newScroller = acctBody.querySelector(".tgroute-modules");
+      if (newScroller) newScroller.scrollTop = scrollTop;
+    }
+
+    // ---- Promo Code Gsheet (single, NOT brand-specific — one shared
+    // workbook searched across every team's tab regardless of which
+    // brand is selected on promo.html) ----
+    async function loadPromoCodeSheet() {
+      const res = await window.AgentAuth.authFetch("/api/admin/sheet-routes");
+      const data = await res.json();
+      if (!data.ok) {
+        acctBody.innerHTML = `<p class="edit-modal-note err">${acctEsc(data.error || "Failed to load.")}</p>`;
+        return;
+      }
+      renderPromoCodeSheet(data.promoCode || { sheetId: "", isOverride: false });
+    }
+
+    function renderPromoCodeSheet(r) {
+      const canEditSheets = canEditAdminSection("integrations");
+      const roAttr = canEditSheets ? "" : "disabled";
+      const tabsValue = (r.tabs || []).join(", ");
+      acctBody.innerHTML = `
+        <div class="tgroute-row" data-standalone="promoCode">
+          <div class="tgroute-mod-name">🎟️ Promo code search sheet
+            <span class="route-tag${r.isOverride ? " custom" : ""}">${r.isOverride ? "custom" : "default"}</span>
+          </div>
+          <p class="edit-modal-note" style="margin:0 0 10px;">Shared across all teams, not brand specific — searched the same way regardless of which brand is selected on the Promo Code Search page.</p>
+          <div class="field"><label>Google Sheet URL or ID</label><input type="text" class="promosheet-sheetid" placeholder="Google Sheet URL or ID" value="${acctEsc(r.sheetId)}" autocomplete="off" ${roAttr} /></div>
+          <div class="field"><label>Tab names</label><input type="text" class="promosheet-tabs" placeholder="Tab names, comma-separated" value="${acctEsc(tabsValue)}" autocomplete="off" ${roAttr} /></div>
+          <div class="tgroute-row-actions" style="justify-content:flex-start;gap:8px;margin-top:4px;">
+            ${canEditSheets ? '<button type="button" class="tgroute-action-btn promosheet-save">Save</button>' : ""}
+            ${canEditSheets && r.isOverride ? '<button type="button" class="tgroute-action-btn tgroute-action-secondary promosheet-reset">Reset</button>' : ""}
+          </div>
+        </div>
+        <hr class="tgroute-divider" />
+        ${canEditSheets ? "" : '<p class="edit-modal-note">View only.</p>'}
+        <p class="edit-modal-note tgroute-footnote">Changes apply to the very next search — no redeploy needed. "default" is the sheet + tab list built into the code. Tab names must match the sheet's real tab titles exactly (case-insensitive, extra spaces ignored) — a name that doesn't match any real tab is skipped silently and listed as "missing" in search results, not a hard error. Saving replaces the ENTIRE tab list, not just one tab — leave it matching the full set you want searched.</p>`;
+
+      const saveBtn = acctBody.querySelector(".promosheet-save");
+      if (saveBtn) saveBtn.addEventListener("click", savePromoCodeSheet);
+      const resetBtn = acctBody.querySelector(".promosheet-reset");
+      if (resetBtn) resetBtn.addEventListener("click", resetPromoCodeSheet);
+    }
+
+    async function savePromoCodeSheet() {
+      const sheetId = acctBody.querySelector(".promosheet-sheetid").value.trim();
+      const tabs = acctBody.querySelector(".promosheet-tabs").value.split(",").map((t) => t.trim()).filter(Boolean);
+      if (!sheetId) return setAcctNote("Sheet ID is required.", "err");
+      if (!tabs.length) return setAcctNote("At least one tab name is required.", "err");
+      setAcctNote("Saving…");
+      const res = await window.AgentAuth.authFetch("/api/admin/sheet-routes", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "savePromoCode", sheetId, tabs }),
+      });
+      const data = await res.json();
+      if (!data.ok) return setAcctNote(data.error || "Save failed.", "err");
+      setAcctNote("Saved.", "ok");
+      renderPromoCodeSheet(data.promoCode);
+    }
+
+    async function resetPromoCodeSheet() {
+      setAcctNote("Resetting…");
+      const res = await window.AgentAuth.authFetch("/api/admin/sheet-routes", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "resetPromoCode" }),
+      });
+      const data = await res.json();
+      if (!data.ok) return setAcctNote(data.error || "Reset failed.", "err");
+      setAcctNote("Reset to default.", "ok");
+      renderPromoCodeSheet(data.promoCode);
     }
 
     let acctOfficesById = {};
@@ -1336,10 +1580,16 @@
     // Must match ADMIN_SECTIONS in functions/_shared/accounts.js exactly —
     // add new ids to both places together if another admin page ever
     // needs this same per-account gating.
+    // Must match ADMIN_SECTIONS in functions/_shared/accounts.js exactly —
+    // add new ids to both places together if another admin page ever
+    // needs this same per-account gating. "tgRoutes" was folded into
+    // "integrations" (2026-08) — TG Group/Channel, Issue Submission
+    // Gsheet, and Promo Code Gsheet all share this one delegable section
+    // now instead of TG Group/Channel having its own separate checkbox.
     const ADMIN_SECTIONS_LIST = [
       { id: "createAccount", icon: "➕", name: "Create Account" },
       { id: "whitelistIp", icon: "🌐", name: "Whitelist IP" },
-      { id: "tgRoutes", icon: "📤", name: "TG Group / Channel" },
+      { id: "integrations", icon: "🔌", name: "Integrations (TG routing, Sheets)" },
       { id: "agentProfile", icon: "🪪", name: "Agent Profile" },
       { id: "settings", icon: "⚙️", name: "Settings" },
       { id: "announcements", icon: "📢", name: "Announcement" },
@@ -1349,7 +1599,7 @@
     // grantable choice — mirrors EDITABLE_ADMIN_SECTIONS in
     // _shared/accounts.js exactly. "createAccount" isn't here: creating
     // an account IS the action, there's no view-only version of it.
-    const EDITABLE_ADMIN_SECTIONS = ["whitelistIp", "tgRoutes", "agentProfile", "settings", "announcements"];
+    const EDITABLE_ADMIN_SECTIONS = ["whitelistIp", "integrations", "agentProfile", "settings", "announcements"];
 
     function openAgentProfileModal(username) {
       const a = acctAccounts.find((acc) => acc.username === username);

@@ -24,7 +24,14 @@
 import { batchGetValues, getSheetTabTitles } from "../_shared/googleSheets.js";
 import { verifyRequest } from "../_shared/accounts.js";
 import { getFeatureStatus, accountCanBypass } from "../_shared/featureStatus.js";
+import { resolvePromoCodeTarget } from "../_shared/sheetRoutes.js";
 
+// Default sheetId + tab list — overridable live from the Integrations
+// admin page ("Promo code Gsheet" row, not brand-specific — see the
+// header of _shared/sheetRoutes.js for why). resolvePromoCodeTarget()
+// checks the KV override first (sheetId AND tabs travel together — an
+// override either replaces both or neither) and falls back to these
+// constants, same layering as every other sheet target in this codebase.
 const PROMO_CODE_SHEET = {
   sheetId: "1VYKwdGyoa5qxCScHWyKrYPQYvQPl8igrBzK1mk2RT98",
   range: "A2:N1000",
@@ -43,20 +50,24 @@ const PROMO_CODE_SHEET = {
   ],
 };
 
-function sheetEditUrl() {
-  return `https://docs.google.com/spreadsheets/d/${PROMO_CODE_SHEET.sheetId}/edit`;
+function sheetEditUrl(sheetId) {
+  return `https://docs.google.com/spreadsheets/d/${sheetId}/edit`;
 }
 
 // Real tab titles rarely change, so cache them for a few minutes per Worker
-// isolate instead of re-fetching metadata on every single search.
-let cachedTabTitles = null; // { titles, expiresAt }
+// isolate instead of re-fetching metadata on every single search. Keyed
+// by sheetId (not a single flat cache) so switching the Integrations
+// override to a different sheet doesn't briefly keep serving the OLD
+// sheet's tab list for up to 5 minutes.
+let cachedTabTitles = {}; // { [sheetId]: { titles, expiresAt } }
 const TAB_CACHE_MS = 5 * 60 * 1000;
 
-async function resolveExistingTabs(env) {
+async function resolveExistingTabs(env, sheetId) {
   const now = Date.now();
-  if (cachedTabTitles && cachedTabTitles.expiresAt > now) return cachedTabTitles.titles;
-  const titles = await getSheetTabTitles(env, PROMO_CODE_SHEET.sheetId);
-  cachedTabTitles = { titles, expiresAt: now + TAB_CACHE_MS };
+  const cached = cachedTabTitles[sheetId];
+  if (cached && cached.expiresAt > now) return cached.titles;
+  const titles = await getSheetTabTitles(env, sheetId);
+  cachedTabTitles[sheetId] = { titles, expiresAt: now + TAB_CACHE_MS };
   return titles;
 }
 
@@ -95,6 +106,12 @@ async function handleSearch({ request, env }) {
     return json({ ok: false, error: "Promo Code Search is currently unavailable. Please try again later." }, 403);
   }
 
+  // Integrations admin page override ("Promo code Gsheet" row) takes
+  // priority over the hardcoded default — see _shared/sheetRoutes.js.
+  // Not brand-specific, so this is one lookup, not per-brand.
+  const target = await resolvePromoCodeTarget(env, PROMO_CODE_SHEET.sheetId, PROMO_CODE_SHEET.tabs);
+  const sheetId = target.sheetId;
+
   const codes = (new URL(request.url).searchParams.get("codes") || "")
     .split(",")
     .map((c) => c.trim())
@@ -103,7 +120,7 @@ async function handleSearch({ request, env }) {
   // No search yet (e.g. the page's initial load, just to fetch sheetUrl
   // for the "Open Sheet" button) — nothing to look up.
   if (!codes.length) {
-    return json({ ok: true, groups: [], sheetUrl: sheetEditUrl() });
+    return json({ ok: true, groups: [], sheetUrl: sheetEditUrl(sheetId) });
   }
 
   if (!env.GOOGLE_SERVICE_ACCOUNT_EMAIL || !env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY) {
@@ -118,7 +135,7 @@ async function handleSearch({ request, env }) {
   // a missing tab becomes a warning in the response, not a hard failure.
   let realTitles;
   try {
-    realTitles = await resolveExistingTabs(env);
+    realTitles = await resolveExistingTabs(env, sheetId);
   } catch (e) {
     return json({ ok: false, error: String(e.message || e) }, 502);
   }
@@ -129,7 +146,7 @@ async function handleSearch({ request, env }) {
 
   const tabsToQuery = []; // { configured, real }
   const missingTabs = [];
-  for (const configured of PROMO_CODE_SHEET.tabs) {
+  for (const configured of target.tabs) {
     const real = realByNormalized.get(normalizeTabName(configured));
     if (real) tabsToQuery.push({ configured, real });
     else missingTabs.push(configured);
@@ -139,7 +156,7 @@ async function handleSearch({ request, env }) {
   if (tabsToQuery.length) {
     try {
       const ranges = tabsToQuery.map(({ real }) => `'${real.replace(/'/g, "''")}'!${PROMO_CODE_SHEET.range}`);
-      valueRanges = await batchGetValues(env, PROMO_CODE_SHEET.sheetId, ranges);
+      valueRanges = await batchGetValues(env, sheetId, ranges);
     } catch (e) {
       return json({ ok: false, error: String(e.message || e) }, 502);
     }
@@ -179,7 +196,7 @@ async function handleSearch({ request, env }) {
   return json({
     ok: true,
     groups,
-    sheetUrl: sheetEditUrl(),
+    sheetUrl: sheetEditUrl(sheetId),
     missingTabs: missingTabs.length ? missingTabs : undefined,
     // Only included when something's missing — lets whoever's debugging
     // this see the sheet's real tab names side-by-side with what's

@@ -4,6 +4,7 @@ import { uploadAttachmentToR2, screenshotUrl } from "../_shared/r2.js";
 import { createThread } from "../_shared/threads.js";
 import { verifyRequest, canSeeBrand, canSeeModule } from "../_shared/accounts.js";
 import { getRouteOverride } from "../_shared/routes.js";
+import { resolveSheetTarget } from "../_shared/sheetRoutes.js";
 import { getFeatureStatus, accountCanBypass } from "../_shared/featureStatus.js";
 import {
   resolveColumnValues, resolveSheetLayout, formatDateDDMMYYYY, buildTicketMessage, buildTitleAndSummary,
@@ -196,15 +197,26 @@ async function handleSubmit({ request, env }) {
   let sheetError = null;
   let sheetRef = null;
   const promoConfig = moduleId === "promotion_request" ? PROMOTION_SHEET_CONFIG[`${brandId}|${fieldMap.promotion}`] : null;
+  // Issue Submission Gsheet target — Integrations admin page override
+  // (functions/api/admin/sheet-routes.js) takes priority over the
+  // hardcoded default (brand.sheetId / promoConfig.sheetId); falls back
+  // cleanly to the code default when nothing's been saved through that
+  // page yet, same layering as TG routing's getRouteOverride(). Only the
+  // DESTINATION (sheetId + tab) is overridable — column layout
+  // (startColumn/columns/headers) always comes from the code, never KV,
+  // see the header of _shared/sheetRoutes.js for why.
+  const defaultSheetId = moduleId === "promotion_request" ? (promoConfig?.sheetId || "") : brand.sheetId;
+  const defaultTab = moduleId === "promotion_request" ? (promoConfig?.tab || "") : (SHEET_LAYOUT[moduleId]?.tab || "");
+  const sheetTarget = await resolveSheetTarget(env, brandId, moduleId, defaultSheetId, defaultTab);
   const sheetAttempted = moduleId === "promotion_request"
-    ? !!(RECORD_TO_SHEET[moduleId] && promoConfig)
-    : !!(RECORD_TO_SHEET[moduleId] && brand.sheetId);
+    ? !!(RECORD_TO_SHEET[moduleId] && promoConfig && sheetTarget.sheetId)
+    : !!(RECORD_TO_SHEET[moduleId] && sheetTarget.sheetId);
   if (sheetAttempted) {
     try {
       if (moduleId === "promotion_request") {
         const values = resolveColumnValues(promoConfig.columns, { fieldMap, brand, reporter, screenshotLink, attachmentLinks });
-        const { row } = await appendRowByColumns(env, promoConfig.sheetId, promoConfig.tab, promoConfig.startColumn, values);
-        if (row) sheetRef = { sheetId: promoConfig.sheetId, tab: promoConfig.tab, startColumn: promoConfig.startColumn, columns: promoConfig.columns, row };
+        const { row } = await appendRowByColumns(env, sheetTarget.sheetId, sheetTarget.tab, promoConfig.startColumn, values);
+        if (row) sheetRef = { sheetId: sheetTarget.sheetId, tab: sheetTarget.tab, startColumn: promoConfig.startColumn, columns: promoConfig.columns, row };
       } else {
         const layoutEntry = SHEET_LAYOUT[moduleId];
         if (layoutEntry && layoutEntry.pairByDate) {
@@ -212,7 +224,7 @@ async function handleSubmit({ request, env }) {
           const dateValue = formatDateDDMMYYYY(fieldMap.reportDate || fieldMap.date);
           const shiftValue = fieldMap[layoutEntry.selectorField];
           const activeSide = shiftValue === layoutEntry.rightBlock.shiftValue ? "right" : "left";
-          await writeRowForDate(env, brand.sheetId, layoutEntry.tab, {
+          await writeRowForDate(env, sheetTarget.sheetId, sheetTarget.tab, {
             leftBlock: layoutEntry.leftBlock,
             rightBlock: layoutEntry.rightBlock,
             activeSide,
@@ -229,9 +241,9 @@ async function handleSubmit({ request, env }) {
           if (layout) {
             const values = resolveColumnValues(layout.columns, { fieldMap, brand, reporter, screenshotLink, attachmentLinks });
             const { row } = layout.autoCreate
-              ? await appendRowByColumnsWithAutoCreate(env, brand.sheetId, layout.tab, layout.startColumn, layout.headers, values)
-              : await appendRowByColumns(env, brand.sheetId, layout.tab, layout.startColumn, values);
-            if (row) sheetRef = { sheetId: brand.sheetId, tab: layout.tab, startColumn: layout.startColumn, columns: layout.columns, row };
+              ? await appendRowByColumnsWithAutoCreate(env, sheetTarget.sheetId, sheetTarget.tab, layout.startColumn, layout.headers, values)
+              : await appendRowByColumns(env, sheetTarget.sheetId, sheetTarget.tab, layout.startColumn, values);
+            if (row) sheetRef = { sheetId: sheetTarget.sheetId, tab: sheetTarget.tab, startColumn: layout.startColumn, columns: layout.columns, row };
           } else {
             const row = {
               timestamp,
@@ -240,7 +252,7 @@ async function handleSubmit({ request, env }) {
               ...Object.fromEntries(fields.map((f) => [f.key, f.value])),
               attachments: (attachments || []).map((a) => a.name).join(", "),
             };
-            await appendRowToSheet(env, brand.sheetId, moduleId, row);
+            await appendRowToSheet(env, sheetTarget.sheetId, moduleId, row);
           }
         }
       }

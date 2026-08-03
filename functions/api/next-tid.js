@@ -1,6 +1,7 @@
 import { PROMOTION_SHEET_CONFIG, PROMOTION_TID_PREFIX } from "../_shared/routing.js";
 import { getNextSequenceValue } from "../_shared/googleSheets.js";
 import { verifyRequest } from "../_shared/accounts.js";
+import { resolveSheetTarget } from "../_shared/sheetRoutes.js";
 
 export async function onRequestPost(context) {
   try {
@@ -33,8 +34,14 @@ async function handleNextTid({ request, env }) {
   }
 
   try {
+    // Same Integrations override as submit.js's promotion_request branch
+    // — if a SuperAdmin has pointed this brand's Promotion Request row at
+    // a different sheet/tab, the "next TID" preview has to read from
+    // that SAME destination or it'll suggest a number that's already
+    // taken (or free) on the wrong sheet.
+    const sheetTarget = await resolveSheetTarget(env, brandId, "promotion_request", config.sheetId, config.tab);
     const desiredPrefix = PROMOTION_TID_PREFIX[`${brandId}|${promotion}`];
-    const result = await getNextSequenceValue(env, config.sheetId, config.tab, config.tidColumn || config.startColumn, desiredPrefix);
+    const result = await getNextSequenceValue(env, sheetTarget.sheetId, sheetTarget.tab, config.tidColumn || config.startColumn, desiredPrefix);
     if (!result.next) {
       return json({ ok: false, error: result.error || "Could not determine the next value." }, 500);
     }

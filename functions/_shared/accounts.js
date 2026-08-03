@@ -566,10 +566,30 @@ export function canSeeModule(account, moduleId) {
 // not one that ships pre-granted. `account` may be `null` in bootstrap
 // mode (see authenticateStaff()) — treated as fully trusted, same as
 // every other check bootstrap mode bypasses.
-export const ADMIN_SECTIONS = ["createAccount", "whitelistIp", "tgRoutes", "agentProfile", "settings", "announcements"];
+// "tgRoutes" was folded into "integrations" (2026-08) — TG Group/Channel
+// is now gated by the same section as Issue Submission Gsheet/Promo Code
+// Gsheet, not its own standalone id. If any account still has "tgRoutes"
+// sitting in its allowedAdminSections from before this change, it's now
+// inert (matches nothing) — that account needs "integrations" granted
+// instead (or is already covered automatically if it's SuperAdmin+).
+export const ADMIN_SECTIONS = ["createAccount", "whitelistIp", "agentProfile", "settings", "announcements", "integrations"];
 export function canSeeAdminSection(account, sectionId) {
   if (!account) return true; // bootstrap mode
   if (account.role === "owner") return true;
+
+  // "integrations" (TG Group/Channel + Issue submission Gsheet + Promo
+  // code Gsheet) is the ONE section with a rank floor baked in on top of
+  // the usual opt-in model — SuperAdmin and above see it automatically,
+  // no Owner action needed, since this is meant to be a standing
+  // capability for that tier rather than something granted case by case.
+  // The normal allowedAdminSections opt-in below STILL applies on top of
+  // this — an Owner can still hand it to a lower-ranked account
+  // individually (e.g. a trusted Admin) without promoting them to
+  // SuperAdmin. Every other section stays deny-by-default with no rank
+  // shortcut — don't copy this pattern onto new sections without a
+  // specific reason; it's an intentional exception, not the norm.
+  if (sectionId === "integrations" && rankOf(account.role) >= ROLE_RANK.superadmin) return true;
+
   if (account.allowedAdminSections === "all") return true;
   return Array.isArray(account.allowedAdminSections) && account.allowedAdminSections.includes(sectionId);
 }
@@ -593,7 +613,7 @@ export function canSeeAdminSection(account, sectionId) {
 // the TARGET account" rule for agentProfile edits — e.g. can't edit a
 // fellow SuperAdmin's role — is a different, still-active protection;
 // see functions/api/admin/accounts.js.)
-export const EDITABLE_ADMIN_SECTIONS = ["whitelistIp", "tgRoutes", "agentProfile", "settings", "announcements"];
+export const EDITABLE_ADMIN_SECTIONS = ["whitelistIp", "agentProfile", "settings", "announcements", "integrations"];
 
 // Whether `account` can EDIT (not just view) a given section. Requires
 // view access first (can't edit something you can't even see), then
@@ -605,6 +625,15 @@ export function canEditAdminSection(account, sectionId) {
   if (!account) return true; // bootstrap mode
   if (account.role === "owner") return true;
   if (!canSeeAdminSection(account, sectionId)) return false;
+
+  // Same SuperAdmin-auto exception as canSeeAdminSection() above, and for
+  // the same reason: "integrations" is meant to be a standing SuperAdmin
+  // capability, not something that shows up read-only until an Owner
+  // separately flips a Can-Edit checkbox. A lower-ranked account
+  // delegated View via allowedAdminSections still needs the checkbox
+  // below to actually Save/Reset.
+  if (sectionId === "integrations" && rankOf(account.role) >= ROLE_RANK.superadmin) return true;
+
   if (account.adminSectionEditAccess === "all") return true;
   return Array.isArray(account.adminSectionEditAccess) && account.adminSectionEditAccess.includes(sectionId);
 }

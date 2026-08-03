@@ -52,6 +52,7 @@ import { getThread, createThread, addForwardedToLink } from "../_shared/threads.
 import { verifyRequest, canSeeBrand, canSeeModule } from "../_shared/accounts.js";
 import { buildTicketMessage, buildTitleAndSummary, resolveColumnValues, resolveSheetLayout, formatDateDDMMYYYY } from "../_shared/messageBuilders.js";
 import { getRouteOverride } from "../_shared/routes.js";
+import { resolveSheetTarget } from "../_shared/sheetRoutes.js";
 
 export async function onRequestPost(context) {
   try {
@@ -180,15 +181,20 @@ async function handlePost({ request, env }) {
   let sheetError = null;
   let sheetRef = null;
   const promoConfig = moduleId === "promotion_request" ? PROMOTION_SHEET_CONFIG[`${brandId}|${fieldMap.promotion}`] : null;
+  // Same Integrations override lookup as submit.js — see the comment
+  // there for why only sheetId/tab are overridable, not column layout.
+  const defaultSheetId = moduleId === "promotion_request" ? (promoConfig?.sheetId || "") : brand.sheetId;
+  const defaultTab = moduleId === "promotion_request" ? (promoConfig?.tab || "") : (SHEET_LAYOUT[moduleId]?.tab || "");
+  const sheetTarget = await resolveSheetTarget(env, brandId, moduleId, defaultSheetId, defaultTab);
   const sheetAttempted = moduleId === "promotion_request"
-    ? !!(RECORD_TO_SHEET[moduleId] && promoConfig)
-    : !!(RECORD_TO_SHEET[moduleId] && brand.sheetId);
+    ? !!(RECORD_TO_SHEET[moduleId] && promoConfig && sheetTarget.sheetId)
+    : !!(RECORD_TO_SHEET[moduleId] && sheetTarget.sheetId);
   if (sheetAttempted) {
     try {
       if (moduleId === "promotion_request") {
         const values = resolveColumnValues(promoConfig.columns, { fieldMap, brand, reporter, screenshotLink, attachmentLinks });
-        const { row } = await appendRowByColumns(env, promoConfig.sheetId, promoConfig.tab, promoConfig.startColumn, values);
-        if (row) sheetRef = { sheetId: promoConfig.sheetId, tab: promoConfig.tab, startColumn: promoConfig.startColumn, columns: promoConfig.columns, row };
+        const { row } = await appendRowByColumns(env, sheetTarget.sheetId, sheetTarget.tab, promoConfig.startColumn, values);
+        if (row) sheetRef = { sheetId: sheetTarget.sheetId, tab: sheetTarget.tab, startColumn: promoConfig.startColumn, columns: promoConfig.columns, row };
       } else {
         const layoutEntry = SHEET_LAYOUT[moduleId];
         if (layoutEntry && layoutEntry.pairByDate) {
@@ -196,7 +202,7 @@ async function handlePost({ request, env }) {
           const dateValue = formatDateDDMMYYYY(fieldMap.reportDate || fieldMap.date);
           const shiftValue = fieldMap[layoutEntry.selectorField];
           const activeSide = shiftValue === layoutEntry.rightBlock.shiftValue ? "right" : "left";
-          await writeRowForDate(env, brand.sheetId, layoutEntry.tab, {
+          await writeRowForDate(env, sheetTarget.sheetId, sheetTarget.tab, {
             leftBlock: layoutEntry.leftBlock,
             rightBlock: layoutEntry.rightBlock,
             activeSide,
@@ -207,8 +213,8 @@ async function handlePost({ request, env }) {
           const layout = resolveSheetLayout(layoutEntry, fieldMap);
           if (layout) {
             const values = resolveColumnValues(layout.columns, { fieldMap, brand, reporter, screenshotLink, attachmentLinks });
-            const { row } = await appendRowByColumns(env, brand.sheetId, layout.tab, layout.startColumn, values);
-            if (row) sheetRef = { sheetId: brand.sheetId, tab: layout.tab, startColumn: layout.startColumn, columns: layout.columns, row };
+            const { row } = await appendRowByColumns(env, sheetTarget.sheetId, sheetTarget.tab, layout.startColumn, values);
+            if (row) sheetRef = { sheetId: sheetTarget.sheetId, tab: sheetTarget.tab, startColumn: layout.startColumn, columns: layout.columns, row };
           }
         }
       }
