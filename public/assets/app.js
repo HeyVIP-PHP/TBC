@@ -503,13 +503,25 @@
       const data = await res.json();
       if (!res.ok || !data.ok) throw new Error(data.error || "Submission failed");
 
-      status.textContent = !data.sheetAttempted
+      const successMsg = !data.sheetAttempted
         ? "Submitted — posted to Telegram."
         : data.sheetLogged
         ? "Submitted — posted to Telegram and logged to sheet."
         : `Submitted to Telegram, but sheet logging failed: ${data.sheetError || "unknown error"}`;
-      status.className = data.sheetAttempted && !data.sheetLogged ? "status-msg err" : "status-msg ok";
-      if (window.showToast) window.showToast(status.textContent, data.sheetAttempted && !data.sheetLogged ? "err" : "ok");
+      const isErr = data.sheetAttempted && !data.sheetLogged;
+      if (isErr) {
+        // Sheet logging failing is worth a moment to actually read (which
+        // brand/module, what the error was) — a 2s toast alone isn't
+        // enough time, so this keeps the persistent status line for that
+        // case only. A clean submit is toast-only, same as every other
+        // success across the app now.
+        status.textContent = successMsg;
+        status.className = "status-msg err";
+      } else {
+        status.textContent = "";
+        status.className = "status-msg";
+      }
+      if (window.showToast) window.showToast(successMsg, isErr ? "err" : "ok");
       form.reset();
       brandSelect.selectedIndex = 0;
       files = [];

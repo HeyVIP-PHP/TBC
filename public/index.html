@@ -306,8 +306,6 @@
         if (!res.ok || !data.ok) throw new Error(data.error || "Save failed.");
         brandConfig = data.config;
         renderBrandRow();
-        modalNote.textContent = "Saved.";
-        modalNote.className = "edit-modal-note ok";
         if (window.showToast) window.showToast("Saved.", "ok");
         setTimeout(closeEditModal, 600);
       } catch (err) {
@@ -547,15 +545,28 @@
     function acctEsc(str) {
       return String(str == null ? "" : str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     }
+    // Single source of truth for save/action feedback across every modal
+    // on this page (Create Account, Whitelist IP, Reset Password,
+    // Settings, Agent Profile, TG Group/Channel, Issue Submission
+    // Gsheet, Promo Code Gsheet, Announcement Backfill, ...). Success
+    // ("ok") is toast-only — no persistent duplicate text sitting at the
+    // bottom of the modal saying the same thing the toast just said.
+    // Errors ("err") keep BOTH: the persistent line stays visible while
+    // the person fixes whatever's wrong (a 2-second toast alone isn't
+    // long enough to read and act on), plus the same toast every other
+    // action gets. Transient messages (no cls — "Saving…", "Resetting…")
+    // still write to the persistent line as a normal in-progress
+    // indicator; they're not "success", so this rule doesn't apply to them.
     function setAcctNote(msg, cls) {
+      if (cls === "ok") {
+        acctNote.textContent = "";
+        acctNote.className = "edit-modal-note";
+        if (msg && window.showToast) window.showToast(msg, "ok");
+        return;
+      }
       acctNote.textContent = msg || "";
       acctNote.className = "edit-modal-note" + (cls ? " " + cls : "");
-      // Only the terminal result gets a toast — "Saving…"/"Deleting…"/
-      // etc (called with no cls) are transient and would just double up
-      // with the toast that follows a moment later.
-      if ((cls === "ok" || cls === "err") && msg && window.showToast) {
-        window.showToast(msg, cls);
-      }
+      if (cls === "err" && msg && window.showToast) window.showToast(msg, "err");
     }
 
     function timeAgoLocal(iso) {
@@ -958,7 +969,7 @@
         const data = await res.json();
         if (!data.ok) throw new Error(data.error || "Save failed.");
         acctRotateIntervalMs = data.rotateIntervalMs;
-        if (window.showToast) window.showToast("Saved.", "ok");
+        setAcctNote("Saved.", "ok");
         // This device's banner picks up the new speed instantly instead
         // of waiting up to 60s for its next poll.
         if (window.refreshAnnouncementBanner) window.refreshAnnouncementBanner();
@@ -1219,10 +1230,12 @@
       } else {
         acctRoutesData.routes[`${acctRoutesSelectedBrand}|${moduleId}`] = data.route;
       }
-      // No "Saved." note — the row's own DEFAULT→CUSTOM badge flip (see
-      // renderTgRoutes() below) already shows the save took effect;
-      // errors above still surface via setAcctNote(), since that's the
-      // only feedback for something actually going wrong.
+      // No persistent bottom-of-modal note — window.showToast() below is
+      // the only success feedback, plus the row's own DEFAULT→CUSTOM
+      // badge flip (see renderTgRoutes()). Errors above still go through
+      // setAcctNote(), which shows both the persistent line and a toast
+      // — that's the existing app-wide convention for errors.
+      setAcctNote("Saved.", "ok");
       // renderTgRoutes() below fully rebuilds .tgroute-modules (the
       // scrollable right-hand column) from scratch, which resets its
       // scroll position to the top — jarring when you're editing the 7th
@@ -1248,8 +1261,8 @@
       } else {
         acctRoutesData.routes[`${acctRoutesSelectedBrand}|${moduleId}`] = data.route;
       }
-      // No "Reset to default." note — same reasoning as saveTgRouteRow()
-      // above, the badge flipping back to DEFAULT is the confirmation.
+      // Same toast-only feedback as saveTgRouteRow() above.
+      setAcctNote("Reset to default.", "ok");
       // Same scroll-position fix as saveTgRouteRow() above — see that
       // comment.
       const scroller = acctBody.querySelector(".tgroute-modules");
@@ -1359,8 +1372,7 @@
       const data = await res.json();
       if (!data.ok) return setAcctNote(data.error || "Save failed.", "err");
       acctSheetData.sheets[`${acctSheetSelectedBrand}|${moduleId}`] = data.sheet;
-      // No "Saved." note — the row's DEFAULT→CUSTOM badge flip already
-      // shows it took effect.
+      setAcctNote("Saved.", "ok");
       const scroller = acctBody.querySelector(".tgroute-modules");
       const scrollTop = scroller ? scroller.scrollTop : 0;
       renderIssueSheetRoutes();
@@ -1377,8 +1389,7 @@
       const data = await res.json();
       if (!data.ok) return setAcctNote(data.error || "Reset failed.", "err");
       acctSheetData.sheets[`${acctSheetSelectedBrand}|${moduleId}`] = data.sheet;
-      // No "Reset to default." note — badge flipping back to DEFAULT is
-      // the confirmation.
+      setAcctNote("Reset to default.", "ok");
       const scroller = acctBody.querySelector(".tgroute-modules");
       const scrollTop = scroller ? scroller.scrollTop : 0;
       renderIssueSheetRoutes();
@@ -1446,8 +1457,7 @@
       });
       const data = await res.json();
       if (!data.ok) return setAcctNote(data.error || "Save failed.", "err");
-      // No "Saved." note — the row's DEFAULT→CUSTOM badge flip already
-      // shows it took effect.
+      setAcctNote("Saved.", "ok");
       renderPromoCodeSheet(data.promoCode);
     }
 
@@ -1458,8 +1468,7 @@
       });
       const data = await res.json();
       if (!data.ok) return setAcctNote(data.error || "Reset failed.", "err");
-      // No "Reset to default." note — badge flipping back to DEFAULT is
-      // the confirmation.
+      setAcctNote("Reset to default.", "ok");
       renderPromoCodeSheet(data.promoCode);
     }
 
