@@ -1,9 +1,6 @@
 name = "telegram-issue-hub"
 pages_build_output_dir = "public"
 
-[build]
-command = "npm install"
-
 [[r2_buckets]]
 binding = "SCREENSHOTS_BUCKET"
 bucket_name = "php-issuescreenshot"
