@@ -9,6 +9,7 @@ import { getFeatureStatus, accountCanBypass } from "../_shared/featureStatus.js"
 import {
   resolveColumnValues, resolveSheetLayout, formatDateDDMMYYYY, buildTicketMessage, buildTitleAndSummary,
 } from "../_shared/messageBuilders.js";
+import { ensureUnderTelegramPhotoLimit } from "../_shared/telegramImageCompress.js";
 
 // Deposit Request's per-channel pseudo-modules (deposit_copopay etc.,
 // see routing.js) exist only as Telegram routing targets — they must
@@ -406,10 +407,21 @@ async function sendTelegramWithAttachments({ botToken, route, text, attachments 
 
 async function sendSingleWithCaption({ botToken, route, text, attachment }) {
   const { name, type, dataUrl } = attachment;
-  const bytes = base64ToBytes(dataUrlToBase64(dataUrl));
-  const blob = new Blob([bytes], { type: type || "application/octet-stream" });
+  let bytes = base64ToBytes(dataUrlToBase64(dataUrl));
+  let sendType = type || "application/octet-stream";
 
   const isImage = looksLikeImage(type, name);
+  // Shrink upfront if it's an image over Telegram's 10MB photo cap, so it
+  // still goes out as an inline photo instead of falling through to the
+  // sendPhoto-failed→sendDocument fallback below (which turns it into a
+  // bare 📎 file with no preview).
+  if (isImage) {
+    const compressed = await ensureUnderTelegramPhotoLimit(bytes, sendType);
+    bytes = compressed.bytes;
+    sendType = compressed.mimeType;
+  }
+  const blob = new Blob([bytes], { type: sendType });
+
   const method = isImage ? "sendPhoto" : "sendDocument";
 
   const buildForm = (fieldName) => {
@@ -463,9 +475,21 @@ async function sendMediaGroup({ botToken, route, text, attachments }) {
   });
   form.append("media", JSON.stringify(media));
 
-  attachments.forEach((att, i) => {
+  // Telegram rejects the ENTIRE album (sendMediaGroup is all-or-nothing) if
+  // even ONE photo exceeds its 10MB "photo" cap — that used to mean a
+  // single oversized screenshot in a 3-photo album silently dropped every
+  // photo and fell all the way back to a photo-less text message (see
+  // handleSubmit's catch). Shrink any offender down first so the whole
+  // album still goes out as real inline photos, not documents.
+  for (const att of attachments) {
     const bytes = base64ToBytes(dataUrlToBase64(att.dataUrl));
-    const blob = new Blob([bytes], { type: att.type || "image/jpeg" });
+    const { bytes: sendBytes, mimeType } = await ensureUnderTelegramPhotoLimit(bytes, att.type || "image/jpeg");
+    att._sendBytes = sendBytes;
+    att._sendMimeType = mimeType;
+  }
+
+  attachments.forEach((att, i) => {
+    const blob = new Blob([att._sendBytes], { type: att._sendMimeType });
     form.append(`file${i}`, blob, att.name || `photo${i}`);
   });
 

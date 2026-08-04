@@ -1,0 +1,8 @@
+{
+  "name": "php-issue-hub",
+  "private": true,
+  "description": "Cloudflare Pages Functions backend for the PHP Issue Hub (Telegram + Google Sheets integrations).",
+  "dependencies": {
+    "@cf-wasm/photon": "^0.4.0"
+  }
+}
