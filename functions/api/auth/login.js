@@ -69,7 +69,7 @@
  *     lock-counted.
  * Once locked, the account can't log in (or use any already-open browser
  * session — see verifyRequest() in _shared/accounts.js) until a
- * SuperAdmin manually unlocks it (accounts-admin.html, or Agent Profile
+ * SuperAdmin manually unlocks it (Account Management → Agent Profile
  * on the Home sidebar). A separate Telegram alert fires the moment an
  * account gets auto-locked, distinct from the per-attempt IP-warning
  * message above.
@@ -270,7 +270,7 @@ async function notifyAccountLocked(env, { account, reason }) {
       `📋 Reason: ${escapeHtml(reason)}`,
       `🕒 Colombo Time: ${formatInZone(new Date(), "Asia/Colombo")} (GMT+5:30)`,
       ``,
-      `🔑 This account can no longer log in (or use any already-open session) until a SuperAdmin unlocks it under Account Management → Agent Profile, or accounts-admin.html.`,
+      `🔑 This account can no longer log in (or use any already-open session) until a SuperAdmin unlocks it under Account Management → Agent Profile.`,
     ];
     const route = await resolveSecurityAlertsRoute(env);
     await sendTelegramMessage(env, {

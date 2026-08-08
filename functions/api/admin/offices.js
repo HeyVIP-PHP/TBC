@@ -67,7 +67,7 @@ async function handleGet({ request, env }) {
     (rank >= ROLE_RANK.senior && canSeeAdminSection(auth.account, "createAccount")) ||
     (rank >= ROLE_RANK.admin && canSeeAdminSection(auth.account, "agentProfile"));
 
-  if (!canPickOffice) return json({ ok: false, error: "You don't have access to Whitelist IP." }, 403);
+  if (!canPickOffice) return json({ ok: false, error: "You don't have access to IP Access." }, 403);
 
   const offices = await listOffices(env);
   // Only an actual "whitelistIp" holder gets allowedIPs back — everyone
@@ -102,7 +102,7 @@ async function handlePost({ request, env }) {
   // _shared/accounts.js.
   const auth = await authenticateStaff(request, env, ROLE_RANK.senior);
   if (!auth.ok) return json({ ok: false, error: "Not authorized." }, 401);
-  if (!canEditAdminSection(auth.account, "whitelistIp")) return json({ ok: false, error: "You don't have Can-Edit access to Whitelist IP." }, 403);
+  if (!canEditAdminSection(auth.account, "whitelistIp")) return json({ ok: false, error: "You don't have Can-Edit access to IP Access." }, 403);
 
   let body;
   try {

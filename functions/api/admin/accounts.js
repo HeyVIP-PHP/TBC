@@ -181,12 +181,13 @@ async function handlePost({ request, env }) {
       // ---- Editing an existing account ----
       const targetRank = rankOf(existingTarget.role);
       // Compare against the ACTUAL existing values, not just "was this
-      // field present in the body" — accounts-admin.html's form always
-      // resubmits every field (officeId, allowedBrands, fullName, pid)
-      // whether or not the person actually touched it, so "field present"
-      // would wrongly count as "changing" even when the value is
-      // identical. This matters a lot for the SuperAdmin self-promotion
-      // bootstrap below, which requires ONLY role to be changing.
+      // field present in the body" — the Account Management form (in
+      // index.html's sidebar) always resubmits every field (officeId,
+      // allowedBrands, fullName, pid) whether or not the person actually
+      // touched it, so "field present" would wrongly count as "changing"
+      // even when the value is identical. This matters a lot for the
+      // SuperAdmin self-promotion bootstrap below, which requires ONLY
+      // role to be changing.
       const roleChanging = body.role !== undefined && body.role !== existingTarget.role;
       const isSelf = actorUsername === targetUsername;
       const profileChanging =

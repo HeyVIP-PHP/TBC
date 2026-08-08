@@ -4,6 +4,46 @@ Paste this whole document as the first message in a new conversation, along
 with the latest `telegram-issue-hub-updated.zip`. That gives the new chat
 the complete current state of the project.
 
+## 🆕 Added — IP Access dashboard, then retired the standalone accounts-admin.html page
+
+Two changes in the same session, second one depends on the first:
+
+**1. IP Access dashboard** (new): a Pending/Approved/Blocked/Manually
+workflow layered on top of the existing Office `allowedIPs` whitelist —
+`functions/_shared/ipAccess.js` + `functions/api/admin/ip-access.js`.
+Login failures caused specifically by an unrecognized IP now also create
+a "pending" record (in addition to the existing Telegram alert); a
+SuperAdmin can Approve it (adds the IP to that office's whitelist AND
+unlocks the account if it got auto-locked, in one action), Reject it, or
+Block the IP outright (a NEW, separate global blocklist — independent of
+office/account, checked before the password hash even runs in
+`auth/login.js`, and also enforced on already-issued session tokens via
+`verifyRequest()` in `accounts.js`). Every action writes to a shared
+audit log (`ipaccess-log`, same low-frequency single-key pattern as
+`deletion-log` in `threads.js`). The actual login-time check
+(`officeIpCheckPasses()` — `office.allowedIPs.includes(ip)`) was NOT
+touched by any of this; Approve just calls the existing `saveOffice()`.
+
+**2. accounts-admin.html retired** — the business owner already manages
+everything through Owner-level access and index.html's own Account
+Management sidebar (which turned out to already duplicate Offices/
+Accounts/Agent Profile against the exact same `/api/admin/*` endpoints,
+making the standalone page pure redundancy). The IP Access dashboard
+above was migrated INTO index.html's existing "Whitelist IP" modal
+(which only had a bare office-name + IP-textarea form before) rather
+than being lost — same backend, same design (5 cards, click one to
+reveal grouped tables + a grouped Record below), just reusing
+index.html's own helpers (`acctEsc`, `timeAgoLocal`,
+`window.AgentAuth.authFetch`) instead of the accounts-admin.html-only
+copies those were ported from. `public/accounts-admin.html` itself is
+deleted; the "Whitelist IP" modal moved to the same "wide" width +
+per-row-save pattern already used by "profile"/"tgroutes" (a single
+footer Save button doesn't mean anything once there are several
+independent save points — the office form, plus every Approve/Block/
+Remove row below it). The relevant `.ipa-*` CSS moved from
+accounts-admin.html's own `<style>` block into the shared
+`public/assets/style.css`.
+
 ## 🆕 Added — Announcement banner + management page (ported from PKR's spec)
 
 Site-wide amber "REMINDER" banner (below the topbar on every logged-in

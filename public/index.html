@@ -4,10 +4,10 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>PHP CS Team - TBC</title>
-<link rel="stylesheet" href="/assets/style.css?v=a91cc961" />
+<link rel="stylesheet" href="/assets/style.css?v=5742bc97" />
 <script src="/assets/theme.js?v=5b27e630"></script>
 <script src="/assets/starfield.js?v=b6e92821" defer></script>
-<script src="/assets/authguard.js?v=5285058d"></script>
+<script src="/assets/authguard.js?v=9cc20fef"></script>
 <script src="/assets/toast.js?v=debe1ac1"></script>
 </head>
 <body>
@@ -91,7 +91,7 @@
         </div>
         <div class="sidebar-subitems" id="acctMgmtSubitems">
           <div class="sidebar-subitem" id="subCreateAccount" style="display:none;--sub-accent:#a78bfa33;"><span class="sub-icon">➕</span> Create Account</div>
-          <div class="sidebar-subitem" id="subWhitelistIp" style="display:none;--sub-accent:#60a5fa33;"><span class="sub-icon">🌐</span> Whitelist IP</div>
+          <div class="sidebar-subitem" id="subWhitelistIp" style="display:none;--sub-accent:#60a5fa33;"><span class="sub-icon">🌐</span> IP Access</div>
           <div class="sidebar-subitem" id="subSettings" style="display:none;--sub-accent:#f59e0b33;"><span class="sub-icon">⚙️</span> Settings</div>
           <div class="sidebar-subitem" id="subResetPassword" style="--sub-accent:#f3c46333;"><span class="sub-icon">🔑</span> Reset Password</div>
           <div class="sidebar-subitem" id="subAgentProfile" style="display:none;--sub-accent:#f472b633;"><span class="sub-icon">🪪</span> Agent Profile</div>
@@ -415,7 +415,7 @@
     const authInfo = window.AgentAuth.getAuth();
     const myRank = ROLE_RANK[authInfo?.role] ?? ROLE_RANK.agent;
     const isSenior = myRank >= ROLE_RANK.senior;   // sees Create Account, and Reset Password gains an account-picker
-    // isAdmin/isSuperAdmin no longer gate Whitelist IP / TG Group·Channel
+    // isAdmin/isSuperAdmin no longer gate IP Access / TG Group·Channel
     // / Agent Profile (view OR edit) — that's now entirely per-account via
     // canSeeAdminSection()/canEditAdminSection() below, rank-independent.
     // Kept around only in case a future section still wants a rank floor.
@@ -541,12 +541,14 @@
     let acctMode = null;
     let acctOffices = [];
     let acctAccounts = [];
+    let ipaData = null;
+    let ipaSelectedKey = null; // which of the 5 IP Access cards is open, or null
 
     function acctEsc(str) {
       return String(str == null ? "" : str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     }
     // Single source of truth for save/action feedback across every modal
-    // on this page (Create Account, Whitelist IP, Reset Password,
+    // on this page (Create Account, IP Access, Reset Password,
     // Settings, Agent Profile, TG Group/Channel, Issue Submission
     // Gsheet, Promo Code Gsheet, Announcement Backfill, ...). Success
     // ("ok") is toast-only — no persistent duplicate text sitting at the
@@ -587,15 +589,15 @@
       acctBody.innerHTML = '<p class="edit-modal-note">Loading…</p>';
       acctBackdrop.classList.add("is-open");
       const modalEl = acctBackdrop.querySelector(".edit-modal");
-      modalEl.classList.toggle("wide", mode === "profile" || mode === "tgroutes" || mode === "settings" || mode === "issuesheet" || mode === "promosheet");
-      // "profile", "tgroutes", "settings", "issuesheet", and "promosheet"
-      // all use per-row inline save buttons instead of one global footer
-      // Save (too many independently-editable rows for a single "Save"
-      // to mean anything useful). With Cancel removed (closing is via
-      // the X button now), the whole actions row would otherwise just be
-      // dead space when Save is hidden — hide the row itself, not just
-      // the button inside it.
-      const showFooterSave = mode !== "profile" && mode !== "tgroutes" && mode !== "settings" && mode !== "issuesheet" && mode !== "promosheet";
+      modalEl.classList.toggle("wide", mode === "profile" || mode === "tgroutes" || mode === "settings" || mode === "issuesheet" || mode === "promosheet" || mode === "whitelist");
+      // "profile", "tgroutes", "settings", "issuesheet", "promosheet", and
+      // now "whitelist" all use per-row inline save buttons instead of one
+      // global footer Save (too many independently-editable rows/cards for
+      // a single "Save" to mean anything useful). "whitelist" joined this
+      // list once it grew from "one office form" into "office form + the
+      // IP Access dashboard" (5 cards, per-row Approve/Reject/Block/
+      // Unblock/Remove) — see the mode === "whitelist" block below.
+      const showFooterSave = mode !== "profile" && mode !== "tgroutes" && mode !== "settings" && mode !== "issuesheet" && mode !== "promosheet" && mode !== "whitelist";
       document.getElementById("acctModalSave").style.display = showFooterSave ? "" : "none";
       document.getElementById("acctModalActions").style.display = showFooterSave ? "" : "none";
       const roleFilterEl = document.getElementById("acctProfileRoleFilter");
@@ -636,7 +638,16 @@
       }
 
       if (mode === "whitelist") {
-        acctTitle.textContent = "Whitelist IP";
+        // Display name is "IP Access" now (previously "Whitelist IP") — purely
+        // cosmetic, see the mode string ("whitelist") and the
+        // canSeeAdminSection/canEditAdminSection section id
+        // ("whitelistIp") below, both left UNCHANGED on purpose: that id
+        // is what's actually stored in every account's
+        // allowedAdminSections/adminSectionEditAccess in KV, and renaming
+        // it would silently strip that permission from every account that
+        // already has it granted (same trap documented for the old
+        // "tgRoutes" → "integrations" merge — see _shared/accounts.js).
+        acctTitle.textContent = "IP Access";
         const res = await window.AgentAuth.authFetch("/api/admin/offices");
         const data = await res.json();
         acctOffices = data.ok ? data.offices : [];
@@ -645,18 +656,63 @@
         // old isSuperAdmin check (see canEditAdminSection() above).
         const canEditWhitelist = canEditAdminSection("whitelistIp");
         const ro = canEditWhitelist ? "" : "disabled";
+        // Office create/rename form keeps its OWN inline Save button now
+        // (acctSaveWhitelist(), rewired below) instead of the modal's
+        // global footer Save — this mode moved to the "wide" + per-row
+        // group above once the IP Access dashboard was added beneath it,
+        // and unlike a single office form, this whole view has several
+        // independent save points (this form, plus every Approve/Block/
+        // Remove row further down), so one shared footer button no
+        // longer means anything specific.
         acctBody.innerHTML = `
           <div class="field"><label>Office</label><select id="am_office_picker" ${ro}><option value="">+ New Office</option>${officeOptions}</select></div>
           <div class="field"><label>Office name</label><input type="text" id="am_office_name" ${ro} autocomplete="off" /></div>
-          <div class="field"><label>Allowed IPs (one per line)</label><textarea id="am_office_ips" rows="4" placeholder="203.0.113.10" ${ro} autocomplete="off"></textarea></div>
-          ${canEditWhitelist ? "" : '<p class="edit-modal-note">View only.</p>'}`;
+          <div class="field"><label>Allowed IPs (one per line)</label><textarea id="am_office_ips" rows="3" placeholder="203.0.113.10" ${ro} autocomplete="off"></textarea></div>
+          ${canEditWhitelist ? '<div style="margin:4px 0 22px;"><button type="button" class="tgroute-action-btn" id="am_office_save_btn">Save office</button></div>' : '<p class="edit-modal-note">View only.</p>'}
+          <hr class="form-divider" style="margin:0 0 20px;" />
+          <div id="ipaCards" class="ipa-cards"></div>
+          ${canEditWhitelist ? `
+          <div class="ipa-mini-form-block">
+            <p class="ipa-mini-form-label">Add IP manually</p>
+            <div id="ipaManualMsg"></div>
+            <div class="ipa-mini-form">
+              <div class="field"><label>Office</label><select id="ipaManualOffice">${officeOptions}</select></div>
+              <div class="field"><label>IP address</label><input type="text" id="ipaManualIp" placeholder="203.0.113.10" autocomplete="off" /></div>
+              <button type="button" class="tgroute-action-btn" id="ipaManualAddBtn">Add</button>
+            </div>
+          </div>
+          <div class="ipa-mini-form-block">
+            <p class="ipa-mini-form-label">Block an IP</p>
+            <div id="ipaBlockMsg"></div>
+            <div class="ipa-mini-form">
+              <div class="field"><label>IP address</label><input type="text" id="ipaBlockIp" placeholder="203.0.113.10" autocomplete="off" /></div>
+              <div class="field"><label>Reason (optional)</label><input type="text" id="ipaBlockReason" placeholder="e.g. repeated brute-force attempts" autocomplete="off" /></div>
+              <button type="button" class="tgroute-action-btn tgroute-action-secondary" id="ipaBlockBtn">Block</button>
+            </div>
+            <p class="ipa-hint" style="margin:8px 0 0;">Blocking is global — independent of office or account, this IP is rejected outright at login, even with a correct password.</p>
+          </div>` : ""}
+          <div id="ipaPanelBody" style="display:none;">
+            <p class="ipa-hint" id="ipaPanelHint"></p>
+            <div id="ipaIpGroups"></div>
+            <p class="ipa-group-heading" style="font-size:14px;">🕒 Record</p>
+            <div id="ipaRecordGroups"></div>
+          </div>
+          <p class="ipa-hint" id="ipaEmptyHint">Click a card above to view its IPs and record.</p>`;
+
         document.getElementById("am_office_picker").addEventListener("change", (e) => {
           const office = acctOffices.find((o) => o.id === e.target.value);
           document.getElementById("am_office_name").value = office ? office.name : "";
           document.getElementById("am_office_ips").value = office ? (office.allowedIPs || []).join("\n") : "";
         });
-        document.getElementById("acctModalSave").style.display = canEditWhitelist ? "" : "none";
-        document.getElementById("acctModalActions").style.display = canEditWhitelist ? "" : "none";
+        const officeSaveBtn = document.getElementById("am_office_save_btn");
+        if (officeSaveBtn) officeSaveBtn.addEventListener("click", acctSaveWhitelist);
+        const manualAddBtn = document.getElementById("ipaManualAddBtn");
+        if (manualAddBtn) manualAddBtn.addEventListener("click", ipaSaveManualAdd);
+        const blockBtn = document.getElementById("ipaBlockBtn");
+        if (blockBtn) blockBtn.addEventListener("click", ipaSaveBlock);
+
+        ipaSelectedKey = null;
+        loadIpAccessDashboard();
       }
 
       if (mode === "reset" && isSenior) {
@@ -1618,7 +1674,7 @@
     // now instead of TG Group/Channel having its own separate checkbox.
     const ADMIN_SECTIONS_LIST = [
       { id: "createAccount", icon: "➕", name: "Create Account" },
-      { id: "whitelistIp", icon: "🌐", name: "Whitelist IP" },
+      { id: "whitelistIp", icon: "🌐", name: "IP Access" }, // id UNCHANGED — see the matching note at acctTitle.textContent = "IP Access" above
       { id: "integrations", icon: "🔌", name: "Integrations (TG routing, Sheets)" },
       { id: "agentProfile", icon: "🪪", name: "Agent Profile" },
       { id: "settings", icon: "⚙️", name: "Settings" },
@@ -1828,14 +1884,14 @@
     }
 
     // Keeps each editable admin section's View-only/Can-Edit radio pair
-    // in sync with its own checkbox — unchecking "Whitelist IP" (say)
+    // in sync with its own checkbox — unchecking "IP Access" (say)
     // immediately disables its View/Edit radios too, since Can-Edit only
     // ever means anything once the section itself is granted. Only
     // called when the viewer has edit rights on this block at all
     // (canEditAdminSections true) — for a read-only viewer everything's
     // already disabled from render, nothing to wire up.
     // Keeps each editable admin section's View-only/Can-Edit radio pair
-    // in sync with its own checkbox — unchecking "Whitelist IP" (say)
+    // in sync with its own checkbox — unchecking "IP Access" (say)
     // immediately hides its View/Edit row too (not just grays it out —
     // Can-Edit means nothing for a section you can't even see, so there's
     // no reason to keep taking up space once unchecked; approved design
@@ -1969,8 +2025,11 @@
 
     document.getElementById("acctModalSave").addEventListener("click", async () => {
       if (acctMode === "create") return acctSaveCreate();
-      if (acctMode === "whitelist") return acctSaveWhitelist();
       if (acctMode === "reset") return isSenior ? acctSaveResetAdmin() : acctSaveResetSelf();
+      // "whitelist" no longer uses this footer button — see the inline
+      // "Save office" button wired inside the mode === "whitelist" block
+      // above (acctSaveWhitelist() is unchanged, just triggered from a
+      // different button now that this mode moved to per-row saves).
     });
 
     function wireBrandTogglePicker() {
@@ -2042,8 +2101,201 @@
       });
       const data = await res.json();
       if (!data.ok) return setAcctNote(data.error || "Save failed.", "err");
-      setAcctNote("Save success.", "ok");
-      setTimeout(closeAcctModal, 700);
+      setAcctNote("Saved.", "ok");
+      // Unlike the old single-purpose form, this mode now also shows the
+      // IP Access dashboard right below — auto-closing the whole modal on
+      // save (the old behavior) would fight with someone who just created
+      // an office and wants to immediately add/approve an IP for it. Just
+      // refresh the office list in place instead.
+      const res2 = await window.AgentAuth.authFetch("/api/admin/offices");
+      const data2 = await res2.json();
+      acctOffices = data2.ok ? data2.offices : [];
+      const officeOptions = acctOffices.map((o) => `<option value="${o.id}">${acctEsc(o.name)}</option>`).join("");
+      document.getElementById("am_office_picker").innerHTML = `<option value="">+ New Office</option>${officeOptions}`;
+      const manualSel = document.getElementById("ipaManualOffice");
+      if (manualSel) manualSel.innerHTML = officeOptions;
+      if (!id) { document.getElementById("am_office_picker").value = ""; document.getElementById("am_office_name").value = ""; document.getElementById("am_office_ips").value = ""; }
+    }
+
+    // ---- IP Access (lives inside the "IP Access" modal — see the
+    // mode === "whitelist" block above) ----
+    //
+    // Migrated from the now-retired accounts-admin.html standalone page —
+    // same backend (functions/api/admin/ip-access.js /
+    // functions/_shared/ipAccess.js), same design (5 cards, click one to
+    // reveal grouped tables + a grouped Record below), just reusing this
+    // page's existing helpers (acctEsc, timeAgoLocal, window.AgentAuth.
+    // authFetch, canEditAdminSection) instead of duplicating them.
+    const IPA_CATEGORY_ORDER = ["pending", "approved", "manual", "blocked"];
+    const IPA_CATEGORY_LABELS = { pending: "Pending", approved: "Approved", manual: "Manually added", blocked: "Blocked" };
+    const IPA_RECORD_HEADINGS = { pending: "Flagged for review", approved: "Approved by", manual: "Added by", blocked: "Blocked by" };
+
+    function ipaCapitalize(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : s; }
+
+    async function loadIpAccessDashboard() {
+      const res = await window.AgentAuth.authFetch("/api/admin/ip-access");
+      const data = await res.json();
+      const emptyHint = document.getElementById("ipaEmptyHint");
+      if (!data.ok) { if (emptyHint) emptyHint.textContent = data.error || "Failed to load."; return; }
+      ipaData = data;
+      renderIpaCards(data.stats);
+      if (ipaSelectedKey) selectIpaCategory(ipaSelectedKey);
+    }
+
+    function renderIpaCards(stats) {
+      const defs = [
+        { key: "total", label: "Total IPs", value: stats.total, cls: "" },
+        { key: "approved", label: "Approved", value: stats.approved, cls: "c-approved" },
+        { key: "pending", label: "Pending", value: stats.pending, cls: "c-pending" },
+        { key: "blocked", label: "Blocked", value: stats.blocked, cls: "c-blocked" },
+        { key: "manual", label: "Manually", value: stats.manual, cls: "" },
+      ];
+      const wrap = document.getElementById("ipaCards");
+      if (!wrap) return;
+      wrap.innerHTML = defs.map((d) => `
+        <button type="button" class="ipa-card${ipaSelectedKey === d.key ? " active" : ""}" data-key="${d.key}">
+          <p class="ipa-card-label">${d.label}</p>
+          <p class="ipa-card-value ${d.cls}">${d.value}</p>
+        </button>`).join("");
+      wrap.querySelectorAll("[data-key]").forEach((btn) => btn.addEventListener("click", () => selectIpaCategory(btn.dataset.key)));
+    }
+
+    function selectIpaCategory(key) {
+      ipaSelectedKey = key;
+      renderIpaCards(ipaData.stats);
+      document.getElementById("ipaEmptyHint").style.display = "none";
+      document.getElementById("ipaPanelBody").style.display = "block";
+      document.getElementById("ipaPanelHint").textContent =
+        key === "total" ? "Every IP across every status, grouped the same way as the Record below." : `Showing ${IPA_CATEGORY_LABELS[key].toLowerCase()} IPs only.`;
+
+      const categories = key === "total" ? IPA_CATEGORY_ORDER : [key];
+      document.getElementById("ipaIpGroups").innerHTML = categories.map(renderIpaIpGroup).join("");
+      wireIpaRowActions();
+
+      const recordHtml = categories.map(renderIpaRecordGroup).join("");
+      document.getElementById("ipaRecordGroups").innerHTML = recordHtml || `<div class="ipa-empty">No record entries.</div>`;
+    }
+
+    function renderIpaIpGroup(cat) {
+      const rows = ipaData[cat] || [];
+      const canEditWhitelist = canEditAdminSection("whitelistIp");
+      let cols, header, bodyRows;
+
+      if (cat === "pending") {
+        cols = "1.1fr 1fr 1fr 1.2fr auto";
+        header = ["IP address", "Office", "Requested by", "Last attempt", "Actions"];
+        bodyRows = rows.map((r) => `
+          <div class="ipa-row" style="grid-template-columns:${cols}">
+            <span class="ipa-mono">${acctEsc(r.ip)}</span>
+            <span>${acctEsc(r.officeName || "—")}</span>
+            <span>${acctEsc(r.username || "—")}${r.attempts > 1 ? ` <span style="color:var(--ink-soft)">(${r.attempts}x)</span>` : ""}</span>
+            <span style="color:var(--ink-soft)">${timeAgoLocal(r.lastAttemptAt)}</span>
+            <span class="row-actions">${canEditWhitelist ? `
+              <button type="button" class="row-btn" data-ipa-approve data-ip="${acctEsc(r.ip)}" data-office="${acctEsc(r.officeId)}" title="Approve">✅</button>
+              <button type="button" class="row-btn" data-ipa-reject data-ip="${acctEsc(r.ip)}" data-office="${acctEsc(r.officeId)}" title="Reject">🗑️</button>` : ""}</span>
+          </div>`).join("");
+      } else if (cat === "blocked") {
+        cols = "1.1fr 1.6fr 1fr auto";
+        header = ["IP address", "Reason", "Blocked", "Actions"];
+        bodyRows = rows.map((r) => `
+          <div class="ipa-row" style="grid-template-columns:${cols}">
+            <span class="ipa-mono">${acctEsc(r.ip)}</span>
+            <span style="color:var(--ink-soft)">${acctEsc(r.reason || "—")}</span>
+            <span style="color:var(--ink-soft)">${timeAgoLocal(r.blockedAt)}</span>
+            <span class="row-actions">${canEditWhitelist ? `<button type="button" class="row-btn" data-ipa-unblock data-ip="${acctEsc(r.ip)}" title="Unblock">🔓</button>` : ""}</span>
+          </div>`).join("");
+      } else { // approved / manual — same shape, different source label
+        cols = "1.1fr 1fr 1fr 1fr auto";
+        header = ["IP address", "Office", "Added by", "Date", "Actions"];
+        bodyRows = rows.map((r) => `
+          <div class="ipa-row" style="grid-template-columns:${cols}">
+            <span class="ipa-mono">${acctEsc(r.ip)}</span>
+            <span>${acctEsc(r.officeName || "—")}</span>
+            <span>${r.addedBy ? `${acctEsc(ipaCapitalize(r.addedByRole || ""))} - ${acctEsc(r.addedBy)}` : "Legacy entry"}</span>
+            <span style="color:var(--ink-soft)">${r.addedAt ? timeAgoLocal(r.addedAt) : "—"}</span>
+            <span class="row-actions">${canEditWhitelist ? `<button type="button" class="row-btn" data-ipa-remove data-ip="${acctEsc(r.ip)}" data-office="${acctEsc(r.officeId)}" title="Remove">🗑️</button>` : ""}</span>
+          </div>`).join("");
+      }
+
+      const headHtml = `<div class="ipa-row head" style="grid-template-columns:${cols}">${header.map((h) => `<span>${h}</span>`).join("")}</div>`;
+      return `<p class="ipa-group-heading">${IPA_CATEGORY_LABELS[cat]}</p><div class="ipa-table-wrap">${headHtml}${bodyRows || `<div class="ipa-empty">No entries.</div>`}</div>`;
+    }
+
+    function renderIpaRecordGroup(cat) {
+      const entries = (ipaData.record || []).filter((e) => e.category === cat);
+      if (!entries.length) return "";
+      const rows = entries.map((e) => {
+        const roleLabel = e.byRole ? ipaCapitalize(e.byRole) : "System";
+        const whoLabel = e.by || "auto";
+        const parts = [];
+        if (e.ip) parts.push(e.ip);
+        if (e.officeName) parts.push(e.officeName);
+        if (e.action === "pending-created" && e.detail) parts.push(`requested by ${e.detail}`);
+        if (e.action === "block" && e.detail) parts.push(e.detail);
+        if (e.action === "unblock") parts.push("unblocked");
+        if (e.action === "reject") parts.push("rejected");
+        if (e.action === "remove") parts.push("removed");
+        return `<div class="ipa-record-row">
+          <span><strong>${acctEsc(roleLabel)}</strong> - ${acctEsc(whoLabel)}<span style="color:var(--ink-soft)"> &middot; ${acctEsc(parts.join(" · "))}</span></span>
+          <span class="ipa-record-time">${timeAgoLocal(e.ts)}</span>
+        </div>`;
+      }).join("");
+      return `<div class="ipa-record-group"><div class="ipa-record-head">${IPA_RECORD_HEADINGS[cat]}</div>${rows}</div>`;
+    }
+
+    function wireIpaRowActions() {
+      document.querySelectorAll("[data-ipa-approve]").forEach((b) => b.addEventListener("click", () => ipaAction("approve", { ip: b.dataset.ip, officeId: b.dataset.office })));
+      document.querySelectorAll("[data-ipa-reject]").forEach((b) => b.addEventListener("click", () => ipaAction("reject", { ip: b.dataset.ip, officeId: b.dataset.office })));
+      document.querySelectorAll("[data-ipa-unblock]").forEach((b) => b.addEventListener("click", () => ipaAction("unblock", { ip: b.dataset.ip })));
+      document.querySelectorAll("[data-ipa-remove]").forEach((b) => b.addEventListener("click", () => {
+        if (confirm("Remove this IP from the whitelist? Anyone still using it will be rejected on their next request.")) ipaAction("remove", { ip: b.dataset.ip, officeId: b.dataset.office });
+      }));
+    }
+
+    async function ipaAction(action, payload) {
+      const res = await window.AgentAuth.authFetch("/api/admin/ip-access", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, ...payload }),
+      });
+      const data = await res.json();
+      if (!data.ok) { alert(data.error || "Action failed."); return; }
+      await loadIpAccessDashboard();
+    }
+
+    async function ipaSaveManualAdd() {
+      const msg = document.getElementById("ipaManualMsg");
+      msg.innerHTML = "";
+      const officeId = document.getElementById("ipaManualOffice").value;
+      const ip = document.getElementById("ipaManualIp").value.trim();
+      if (!officeId) { msg.innerHTML = '<div class="edit-modal-note err">Pick an office.</div>'; return; }
+      if (!ip) { msg.innerHTML = '<div class="edit-modal-note err">Enter an IP address.</div>'; return; }
+      const res = await window.AgentAuth.authFetch("/api/admin/ip-access", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "manualAdd", officeId, ip }),
+      });
+      const data = await res.json();
+      if (!data.ok) { msg.innerHTML = `<div class="edit-modal-note err">${acctEsc(data.error || "Failed.")}</div>`; return; }
+      msg.innerHTML = '<div class="edit-modal-note ok">Added.</div>';
+      document.getElementById("ipaManualIp").value = "";
+      await loadIpAccessDashboard();
+    }
+
+    async function ipaSaveBlock() {
+      const msg = document.getElementById("ipaBlockMsg");
+      msg.innerHTML = "";
+      const ip = document.getElementById("ipaBlockIp").value.trim();
+      const reason = document.getElementById("ipaBlockReason").value.trim();
+      if (!ip) { msg.innerHTML = '<div class="edit-modal-note err">Enter an IP address.</div>'; return; }
+      const res = await window.AgentAuth.authFetch("/api/admin/ip-access", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "block", ip, reason }),
+      });
+      const data = await res.json();
+      if (!data.ok) { msg.innerHTML = `<div class="edit-modal-note err">${acctEsc(data.error || "Failed.")}</div>`; return; }
+      msg.innerHTML = '<div class="edit-modal-note ok">Blocked.</div>';
+      document.getElementById("ipaBlockIp").value = "";
+      document.getElementById("ipaBlockReason").value = "";
+      await loadIpAccessDashboard();
     }
 
     async function acctSaveResetAdmin() {
