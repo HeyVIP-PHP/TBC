@@ -4,15 +4,16 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>PHP CS Team - TBC</title>
-<link rel="stylesheet" href="/assets/style.css?v=50fdef7f" />
+<link rel="stylesheet" href="/assets/style.css?v=628599ac" />
 <script src="/assets/theme.js?v=5b27e630"></script>
 <script src="/assets/starfield.js?v=b6e92821" defer></script>
 <script src="/assets/authguard.js?v=9cc20fef"></script>
 <script src="/assets/toast.js?v=debe1ac1"></script>
 </head>
-<body>
+<body class="hub-page">
   <header class="topbar">
     <div class="topbar-left">
+      <button type="button" class="sidebar-toggle-btn" id="sidebarToggleBtn" aria-label="Open Issue Submission menu"><span></span><span></span><span></span></button>
       <img src="/assets/img/logo.webp" alt="HeyVIP" class="logo-img" />
       <span class="wordmark">PHP CS TEAM - TBC</span>
     </div>
@@ -22,11 +23,6 @@
       <span class="agent-whoami" id="agentWhoami"></span>
     </div>
   </header>
-
-  <nav class="brand-row" id="brandRow"><div class="brand-row-track" id="brandRowTrack"></div></nav>
-
-  <div id="announcementBanner"></div>
-  <script src="/assets/announcement-banner.js?v=44227438" defer></script>
 
   <div class="edit-modal-backdrop" id="editModalBackdrop">
     <div class="edit-modal">
@@ -99,7 +95,12 @@
   </div>
 
   <div class="hub-layout">
-    <aside class="sidebar">
+    <!-- Mobile-only backdrop behind the sidebar when it's opened as an
+         overlay (see .sidebar-toggle-btn in the topbar) — clicking it
+         closes the sidebar, same pattern as the modal backdrops
+         elsewhere on this page. Invisible/inert on desktop widths. -->
+    <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+    <aside class="sidebar" id="hubSidebar">
       <div class="sidebar-header"><span class="dot"></span> ISSUE SUBMISSION</div>
       <a href="/" class="sidebar-item active" style="--item-accent:#7c6cf0;">
         <div class="icon" style="background:#7c6cf033;">🏠</div>
@@ -154,7 +155,11 @@
         </div>
       </div>
     </aside>
-    <main class="hub-main page-morph-in" data-transition-root>
+    <div class="hub-right-col">
+      <nav class="brand-row" id="brandRow"><div class="brand-row-track" id="brandRowTrack"></div></nav>
+      <div id="announcementBanner"></div>
+      <script src="/assets/announcement-banner.js?v=44227438" defer></script>
+      <main class="hub-main page-morph-in" data-transition-root>
       <div class="inner">
         <div class="tool-cards">
           <a href="/threads.html" class="tool-card" id="threadsCard" style="--tool-accent:#38bdf8;">
@@ -179,7 +184,8 @@
         <div class="hub-stats" id="hubStats"></div>
         <span class="status-badge status-badge-corner"><span class="pulse"></span> Connected · Telegram + Sheets</span>
       </div>
-    </main>
+      </main>
+    </div>
   </div>
 
   <script src="/assets/schemas.js?v=f6a765aa"></script>
@@ -187,6 +193,30 @@
   <script>
     window.initThemeToggle();
     window.initClock();
+
+    // Mobile sidebar toggle (see .sidebar-toggle-btn / .sidebar-backdrop
+    // in style.css, only active under the 720px breakpoint — harmless
+    // no-op on desktop widths since the button is hidden there).
+    (function () {
+      const sidebar = document.getElementById("hubSidebar");
+      const backdrop = document.getElementById("sidebarBackdrop");
+      const toggleBtn = document.getElementById("sidebarToggleBtn");
+      function closeSidebar() {
+        sidebar.classList.remove("open");
+        backdrop.classList.remove("open");
+      }
+      toggleBtn.addEventListener("click", () => {
+        sidebar.classList.toggle("open");
+        backdrop.classList.toggle("open");
+      });
+      backdrop.addEventListener("click", closeSidebar);
+      // A real navigation (clicking Home or any module link) reloads
+      // the page anyway, so nothing extra is needed there — this only
+      // covers the expandable in-page groups (Account Management,
+      // Integrations), which don't navigate and would otherwise leave
+      // the overlay sitting open after picking a sub-item.
+      sidebar.querySelectorAll(".sidebar-subitem").forEach((el) => el.addEventListener("click", closeSidebar));
+    })();
 
     // authguard.js (loaded in <head>) already confirmed we're logged in
     // before this page rendered at all — just fill in the pill.

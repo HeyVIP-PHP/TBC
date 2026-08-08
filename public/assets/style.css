@@ -155,6 +155,19 @@ body {
 .sf-static .sf-bgimg { animation: none; transform: none; }
 .sf-static .sf-star, .sf-static .sf-meteor { display: none; }
 
+/* index.html only — locks the whole page to the viewport, same pattern
+   as body.threads-page/body.announcements-page below: the sidebar and
+   main content area each scroll independently; nothing scrolls the
+   page as a whole, and the brand ticker + announcement banner move
+   with the main column (not the sidebar) so their width matches it. */
+html:has(body.hub-page), body.hub-page {
+  height: 100%;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+body.hub-page .topbar { flex-shrink: 0; }
+
 /* threads.html only — locks the whole page to the viewport so the only
    thing that ever scrolls is the conversation area, and the reply bar
    stays genuinely pinned regardless of browser zoom level. */
@@ -636,7 +649,9 @@ a { color: inherit; text-decoration: none; }
 /* ---- Sidebar hub layout ---- */
 .hub-layout {
   display: flex;
-  min-height: calc(100vh - 60px);
+  flex: 1;
+  min-height: 0;
+  position: relative;
 }
 .sidebar {
   width: 290px;
@@ -647,6 +662,20 @@ a { color: inherit; text-decoration: none; }
   overflow-y: auto;
   backdrop-filter: blur(16px) saturate(160%);
   -webkit-backdrop-filter: blur(16px) saturate(160%);
+}
+/* Ticker + banner + main content, all in one column so the ticker/
+   banner's width matches the main content's width instead of spanning
+   the full page (which would run over the top of the sidebar). */
+.hub-right-col {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.hub-right-col > .brand-row,
+.hub-right-col > #announcementBanner {
+  flex-shrink: 0;
 }
 .sidebar-header {
   display: flex;
@@ -884,12 +913,14 @@ a { color: inherit; text-decoration: none; }
 
 .hub-main {
   flex: 1;
+  min-height: 0;
   position: relative;
   padding: 36px 40px;
   display: flex;
   align-items: flex-start;
   justify-content: center;
   text-align: center;
+  overflow-y: auto;
 }
 .hub-main .inner { max-width: 480px; }
 .status-badge-corner {
@@ -986,13 +1017,51 @@ a { color: inherit; text-decoration: none; }
 @media (prefers-reduced-motion: reduce) {
   .t-sub-stat.has-unsolved, .t-sub-stat.has-active { animation: none; }
 }
-@media (max-width: 560px) {
-  .tool-cards { grid-template-columns: 1fr; }
+/* Hamburger button that reveals the sidebar as an overlay — hidden on
+   desktop widths (see the media query below, which is the only place
+   that turns it on). Sits in .topbar-left, left of the logo. */
+.sidebar-toggle-btn {
+  display: none;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  width: 34px; height: 34px;
+  flex-shrink: 0;
+  background: none;
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  cursor: pointer;
+  padding: 0;
 }
+.sidebar-toggle-btn span { display: block; height: 2px; margin: 0 7px; background: var(--ink); border-radius: 1px; }
+.sidebar-backdrop {
+  display: none;
+  position: fixed; inset: 0; z-index: 40;
+  background: rgba(10, 12, 25, 0.55);
+  opacity: 0;
+  transition: opacity 0.18s ease;
+}
+.sidebar-backdrop.open { display: block; opacity: 1; }
 
 @media (max-width: 720px) {
-  .hub-layout { flex-direction: column; min-height: auto; }
-  .sidebar { width: 100%; border-right: none; border-bottom: 1px solid var(--panel-border); max-height: 60vh; }
+  .sidebar-toggle-btn { display: flex; }
+  /* Below this width the sidebar stops taking up permanent layout
+     space (the old behavior was to stack it above the main content,
+     pushing everything else down) — it's hidden off-screen instead and
+     slides in as an overlay when the hamburger button is tapped, same
+     interaction as the modal backdrops elsewhere on this page. */
+  .sidebar {
+    position: fixed; top: 60px; left: 0; bottom: 0; z-index: 45;
+    width: 290px; max-width: 82vw;
+    transform: translateX(-100%);
+    transition: transform 0.22s ease;
+    box-shadow: var(--shadow);
+  }
+  .sidebar.open { transform: translateX(0); }
+}
+
+@media (max-width: 560px) {
+  .tool-cards { grid-template-columns: 1fr; }
 }
 
 /* ---- TG Reply Threads ---- */
