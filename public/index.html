@@ -58,6 +58,7 @@
           <option value="admin">Admin</option>
           <option value="superadmin">SuperAdmin</option>
         </select>
+        <button type="button" id="ipaManageOfficesToggle" class="tgroute-action-btn tgroute-action-secondary" style="display:none;">+ Manage offices</button>
       </div>
       <div id="acctModalBody"></div>
       <p class="edit-modal-note" id="acctModalNote"></p>
@@ -606,6 +607,9 @@
       const searchEl = document.getElementById("acctProfileSearch");
       searchEl.style.display = mode === "profile" ? "" : "none";
       if (mode === "profile") searchEl.value = "";
+      const manageOfficesToggle = document.getElementById("ipaManageOfficesToggle");
+      manageOfficesToggle.style.display = mode === "whitelist" ? "" : "none";
+      manageOfficesToggle.textContent = "+ Manage offices"; // reset label — see its click handler below, which flips this to "Hide" while open
 
       if (mode === "create") {
         acctTitle.textContent = "Create Account";
@@ -664,12 +668,24 @@
         // independent save points (this form, plus every Approve/Block/
         // Remove row further down), so one shared footer button no
         // longer means anything specific.
+        // Office create/rename form now lives inside a collapsible panel
+        // (toggled by the "+ Manage offices" button in the modal header —
+        // see manageOfficesToggle above and its click handler further
+        // down) instead of always sitting at the top. It was pushing the
+        // actual day-to-day content (the 5 cards, the tables) below the
+        // fold — renaming an office or bulk-replacing its whole IP list
+        // is a rare action compared to approving/adding/removing single
+        // IPs, so it shouldn't cost permanent vertical space. Starts
+        // collapsed every time this mode opens (see manageOfficesToggle
+        // reset above).
         acctBody.innerHTML = `
-          <div class="field"><label>Office</label><select id="am_office_picker" ${ro}><option value="">+ New Office</option>${officeOptions}</select></div>
-          <div class="field"><label>Office name</label><input type="text" id="am_office_name" ${ro} autocomplete="off" /></div>
-          <div class="field"><label>Allowed IPs (one per line)</label><textarea id="am_office_ips" rows="3" placeholder="203.0.113.10" ${ro} autocomplete="off"></textarea></div>
-          ${canEditWhitelist ? '<div style="margin:4px 0 22px;"><button type="button" class="tgroute-action-btn" id="am_office_save_btn">Save office</button></div>' : '<p class="edit-modal-note">View only.</p>'}
-          <hr class="form-divider" style="margin:0 0 20px;" />
+          <div id="ipaOfficeFormWrap" style="display:none;">
+            <div class="field"><label>Office</label><select id="am_office_picker" ${ro}><option value="">+ New Office</option>${officeOptions}</select></div>
+            <div class="field"><label>Office name</label><input type="text" id="am_office_name" ${ro} autocomplete="off" /></div>
+            <div class="field"><label>Allowed IPs (one per line)</label><textarea id="am_office_ips" rows="3" placeholder="203.0.113.10" ${ro} autocomplete="off"></textarea></div>
+            ${canEditWhitelist ? '<div style="margin:4px 0 4px;"><button type="button" class="tgroute-action-btn" id="am_office_save_btn">Save office</button></div>' : '<p class="edit-modal-note">View only.</p>'}
+            <hr class="form-divider" style="margin:16px 0 0;" />
+          </div>
           <div id="ipaCards" class="ipa-cards"></div>
           ${canEditWhitelist ? `
           <div class="ipa-mini-form-block">
@@ -2021,6 +2037,19 @@
       document.querySelectorAll("body > .fs-dropdown-menu").forEach((m) => m.remove());
     }
     document.getElementById("acctModalClose").addEventListener("click", closeAcctModal);
+
+    // "+ Manage offices" (only visible in the "whitelist"/IP Access mode
+    // — see openAcctModal above) — wired ONCE here since the button
+    // itself is a static header element, not part of acctBody's
+    // regenerated innerHTML; it just toggles whatever #ipaOfficeFormWrap
+    // currently exists inside acctBody at click time.
+    document.getElementById("ipaManageOfficesToggle").addEventListener("click", (e) => {
+      const wrap = document.getElementById("ipaOfficeFormWrap");
+      if (!wrap) return;
+      const opening = wrap.style.display === "none";
+      wrap.style.display = opening ? "block" : "none";
+      e.target.textContent = opening ? "Hide office form" : "+ Manage offices";
+    });
     acctBackdrop.addEventListener("click", (e) => { if (e.target === acctBackdrop) closeAcctModal(); });
 
     document.getElementById("acctModalSave").addEventListener("click", async () => {
