@@ -429,23 +429,27 @@ a { color: inherit; text-decoration: none; }
 }
 .ipa-page-btn:disabled { color: var(--ink-soft); border-color: var(--border); cursor: default; opacity: 0.5; }
 .ipa-page-info { font-size: 12px; color: var(--ink-soft); }
-.ipa-table-wrap { border: 1px solid var(--ipa-grid-border); border-radius: 14px; overflow: hidden; margin-bottom: 16px; background: var(--card-bg); }
-/* NO align-items on the grid container itself — that used to make each
-   cell's border-box shrink to its text's height instead of the full row
-   height, leaving a visible gap where the vertical column-divider didn't
-   quite reach the horizontal row-divider. Centering now happens INSIDE
-   each cell (.ipa-row > span is its own flex box), so the cell's border
-   always spans the row's full height and every line meets cleanly. */
-.ipa-row { display: grid; gap: 0; font-size: 12.5px; }
-.ipa-row.head { background: var(--field-bg); font-size: 10px; text-transform: uppercase; letter-spacing: 0.03em; color: var(--ink-soft); }
-.ipa-row + .ipa-row { border-top: 1.5px solid var(--ipa-grid-border); }
-.ipa-row > span { display: flex; align-items: center; justify-content: center; text-align: center; padding: 10px 14px; border-right: 1.5px solid var(--ipa-grid-border); overflow-wrap: anywhere; }
-.ipa-row > span:last-child { border-right: none; }
-.ipa-row .row-actions { display: flex; gap: 10px; justify-content: center; }
-.ipa-row .row-btn { background: none; border: none; cursor: pointer; font-size: 12.5px; font-weight: 700; padding: 2px 4px; color: var(--label-blue); }
+// The whole table (header cells + every body row's cells, all flattened
+// into ONE grid — see the mode === "whitelist" call sites below) instead
+// of one <div class="ipa-row"> grid per row. Divider lines are drawn by
+// the grid's own `gap` (the container's background color peeking through
+// the gap between cells) instead of each cell's own border-right/
+// border-top. This is deliberate: two ADJACENT cells each drawing their
+// own 1px border can end up on different sub-pixels depending on browser
+// zoom/OS display scaling, rendering as two thin parallel lines with a
+// gap between them instead of one solid line — reported multiple times
+// against the old border-based version. A `gap`-drawn line is a single
+// shape the browser can't misalign against itself, so this is immune to
+// that whole class of zoom-related rendering artifact, not just a
+// thicker version of the same fix.
+.ipa-table-wrap { display: grid; gap: 1.5px; background: var(--ipa-grid-border); border-radius: 14px; overflow: hidden; margin-bottom: 16px; }
+.ipa-cell { display: flex; align-items: center; justify-content: center; text-align: center; padding: 10px 14px; background: var(--card-bg); font-size: 12.5px; color: var(--ink); overflow-wrap: anywhere; }
+.ipa-cell.head { background: var(--field-bg); font-size: 10px; text-transform: uppercase; letter-spacing: 0.03em; color: var(--ink-soft); }
+.row-actions { display: flex; gap: 10px; justify-content: center; }
+.row-btn { background: none; border: none; cursor: pointer; font-size: 12.5px; font-weight: 700; padding: 2px 4px; color: var(--label-blue); }
 .ipa-mono { font-family: var(--font-mono); }
 .ipa-ip-text { font-family: var(--font-mono); color: var(--ipa-ip-color); font-weight: 600; }
-.ipa-empty { padding: 10px 12px; font-size: 12.5px; color: var(--ink-soft); text-align: center; }
+.ipa-empty { grid-column: 1 / -1; padding: 10px 12px; font-size: 12.5px; color: var(--ink-soft); text-align: center; background: var(--card-bg); }
 
 .ipa-mini-form-block { margin: 0 0 20px; }
 .ipa-mini-form-label { font-size: 13px; font-weight: 700; color: var(--ink); margin: 0 0 8px; }

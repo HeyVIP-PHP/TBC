@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>PHP CS Team - TBC</title>
-<link rel="stylesheet" href="/assets/style.css?v=1b5a5dbc" />
+<link rel="stylesheet" href="/assets/style.css?v=e81e76e2" />
 <script src="/assets/theme.js?v=5b27e630"></script>
 <script src="/assets/starfield.js?v=b6e92821" defer></script>
 <script src="/assets/authguard.js?v=9cc20fef"></script>
@@ -2099,7 +2099,7 @@
     function openIpaRecordPopup() {
       const entries = ipaData.record || [];
       const cols = "1.2fr 1fr 1.3fr 1.6fr 1.3fr";
-      const header = ipaRow(cols, ["IP address", "Action", "By", "Detail", "Time"], true);
+      const header = ipaRow(["IP address", "Action", "By", "Detail", "Time"], true);
       const rows = entries.map((e) => {
         const roleLabel = e.byRole ? ipaCapitalize(e.byRole) : "System";
         const whoLabel = e.by || "auto";
@@ -2107,7 +2107,7 @@
         if (e.officeName) parts.push(e.officeName);
         if (e.action === "pending-created" && e.detail) parts.push(`requested by ${e.detail}`);
         if (e.action === "block" && e.detail) parts.push(e.detail);
-        return ipaRow(cols, [
+        return ipaRow([
           ipaIpCell(e.ip),
           IPA_ACTION_LABELS[e.action] || acctEsc(e.action || "—"),
           `${acctEsc(roleLabel)} - ${acctEsc(whoLabel)}`,
@@ -2115,7 +2115,7 @@
           ipaFormatTime(e.ts),
         ]);
       }).join("");
-      document.getElementById("ipaRecordPopupBody").innerHTML = `<div class="ipa-table-wrap">${header}${rows || `<div class="ipa-empty">No record entries.</div>`}</div>`;
+      document.getElementById("ipaRecordPopupBody").innerHTML = `<div class="ipa-table-wrap" style="grid-template-columns:${cols}">${header}${rows || `<div class="ipa-empty">No record entries.</div>`}</div>`;
       document.getElementById("ipaRecordBackdrop").classList.add("is-open");
     }
     function closeIpaRecordPopup() {
@@ -2246,9 +2246,12 @@
     // Approved/Blocked/Record) shares this so the grid-line/centering
     // behavior never drifts between them. `cells` are already-built HTML
     // strings (escape before passing in).
-    function ipaRow(cols, cells, isHead) {
-      const inner = cells.map((c) => `<span>${c}</span>`).join("");
-      return `<div class="ipa-row${isHead ? " head" : ""}" style="grid-template-columns:${cols}">${inner}</div>`;
+    // Builds the <span> cells for one row — NOT its own grid anymore
+    // (see the .ipa-table-wrap comment in style.css for why: one grid
+    // spanning the whole table, cells drawn via `gap`, header + every
+    // body row's cells are flattened into that single grid's children).
+    function ipaRow(cells, isHead) {
+      return cells.map((c) => `<span class="ipa-cell${isHead ? " head" : ""}">${c}</span>`).join("");
     }
     function ipaIpCell(ip) { return `<span class="ipa-ip-text">${acctEsc(ip || "—")}</span>`; }
 
@@ -2361,8 +2364,8 @@
 
       if (cat === "pending") {
         cols = "1.1fr 1fr 1fr 1.2fr auto";
-        header = ipaRow(cols, ["IP address", "Office", "Requested by", "Last attempt", "Actions"], true);
-        bodyRows = rows.map((r) => ipaRow(cols, [
+        header = ipaRow(["IP address", "Office", "Requested by", "Last attempt", "Actions"], true);
+        bodyRows = rows.map((r) => ipaRow([
           ipaIpCell(r.ip),
           acctEsc(r.officeName || "—"),
           `${acctEsc(r.username || "—")}${r.attempts > 1 ? ` <span style="color:var(--ink-soft)">(${r.attempts}x)</span>` : ""}`,
@@ -2373,8 +2376,8 @@
         ])).join("");
       } else if (cat === "blocked") {
         cols = "1.1fr 1.6fr 1.4fr 1.3fr auto";
-        header = ipaRow(cols, ["IP address", "Reason", "Blocked by", "Blocked", "Actions"], true);
-        bodyRows = rows.map((r) => ipaRow(cols, [
+        header = ipaRow(["IP address", "Reason", "Blocked by", "Blocked", "Actions"], true);
+        bodyRows = rows.map((r) => ipaRow([
           ipaIpCell(r.ip),
           `<span style="color:var(--ink-soft)">${acctEsc(r.reason || "—")}</span>`,
           r.blockedBy ? `${acctEsc(ipaCapitalize(r.blockedByRole || ""))} - ${acctEsc(r.blockedBy)}` : "—",
@@ -2383,8 +2386,8 @@
         ])).join("");
       } else { // approved
         cols = "1.1fr 1fr 1fr 1fr auto";
-        header = ipaRow(cols, ["IP address", "Office", "Added by", "Date", "Actions"], true);
-        bodyRows = rows.map((r) => ipaRow(cols, [
+        header = ipaRow(["IP address", "Office", "Added by", "Date", "Actions"], true);
+        bodyRows = rows.map((r) => ipaRow([
           ipaIpCell(r.ip),
           acctEsc(r.officeName || "—"),
           r.addedBy ? `${acctEsc(ipaCapitalize(r.addedByRole || ""))} - ${acctEsc(r.addedBy)}` : "Legacy entry",
@@ -2401,7 +2404,7 @@
           <button type="button" class="ipa-page-btn" data-cat="${cat}" data-dir="next"${state.page >= totalPages ? " disabled" : ""}>Next</button>
         </div>` : "";
 
-      return `<div class="ipa-group-heading-row"><p class="ipa-group-heading">${IPA_CATEGORY_LABELS[cat]}</p>${allRows.length ? pageSizeSelect : ""}</div><div class="ipa-table-wrap">${header}${bodyRows || `<div class="ipa-empty">No entries.</div>`}</div>${pagination}`;
+      return `<div class="ipa-group-heading-row"><p class="ipa-group-heading">${IPA_CATEGORY_LABELS[cat]}</p>${allRows.length ? pageSizeSelect : ""}</div><div class="ipa-table-wrap" style="grid-template-columns:${cols}">${header}${bodyRows || `<div class="ipa-empty">No entries.</div>`}</div>${pagination}`;
     }
 
     function wireIpaRowActions() {
