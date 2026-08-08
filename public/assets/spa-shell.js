@@ -115,20 +115,29 @@
     setSidebarActive(moduleId || null);
 
     const cfg = ROUTES[view];
-    const doc = await getDoc(view);
+    const docPromise = getDoc(view);
+
+    // Fire-and-forget: twemoji (or any other extScript) is a nice-to-have
+    // (nicer emoji rendering), not a hard requirement — the page's own
+    // script already checks `if (window.twemoji)` before using it, so it
+    // degrades gracefully to native emoji if this hasn't finished yet.
+    // Blocking the whole mount on a third-party CDN response (previously
+    // `await`ed here) is what caused the long "Loading…" hang when that
+    // CDN is slow or blocked on someone's network.
+    if (cfg.extScripts) {
+      cfg.extScripts.forEach((src) => {
+        if (src.endsWith("app.js")) return;
+        loadExternalScriptOnce(src).catch((err) => console.warn("[spa-shell] optional script failed to load:", src, err));
+      });
+    }
+
+    const doc = await docPromise;
 
     if (pushUrl !== false) {
       const url = view === "form" ? `/form.html?module=${encodeURIComponent(moduleId || "")}` : cfg.url;
       history.pushState({ view, moduleId }, "", url);
       // form.html's own script reads location.search for the module id —
       // pushState above already updated it before we execute that script.
-    }
-
-    if (cfg.extScripts) {
-      for (const src of cfg.extScripts) {
-        if (src.endsWith("app.js")) continue; // executed via getScriptText below, not as a real <script> tag
-        await loadExternalScriptOnce(src);
-      }
     }
 
     const selectors = Array.isArray(cfg.select) ? cfg.select : [cfg.select];
@@ -146,6 +155,12 @@
       const node = doc.querySelector(sel);
       if (node) frag.appendChild(node.cloneNode(true));
     });
+    // Strip anything that's the shell's job now, not the mounted page's —
+    // "Back to Home" (Home already lives in the sidebar) is the one
+    // that matters, and on threads.html/announcements.html it sits
+    // NESTED inside .threads-shell (not a sibling like on promo.html),
+    // so it rides along with the clone above unless removed here.
+    frag.querySelectorAll(".threads-topline, .back-pill").forEach((el) => el.remove());
     mountEl.innerHTML = "";
     mountEl.appendChild(frag);
 
