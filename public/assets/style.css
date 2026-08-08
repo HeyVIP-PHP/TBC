@@ -68,7 +68,7 @@
      readable regardless of which part of the photo sits behind them. */
   --sf-filter: none;
   --sf-shade: linear-gradient(180deg, rgba(3,4,13,0.35) 0%, rgba(3,4,13,0.55) 55%, rgba(3,4,13,0.75) 100%);
-  --sidebar-bg: rgba(15, 19, 40, 0.75);
+  --sidebar-bg: rgba(15, 19, 40, 0.42);
   --sidebar-item-bg: rgba(255, 255, 255, 0.03);
   --sidebar-item-hover: rgba(255, 255, 255, 0.07);
   --pill-bg: rgba(255, 255, 255, 0.04);
@@ -923,6 +923,34 @@ a { color: inherit; text-decoration: none; }
   overflow-y: auto;
 }
 .hub-main .inner { max-width: 480px; }
+
+/* ---- spa-shell.js mount point (index.html only) ----
+   threads.html/announcements.html/promo.html/form.html's own content
+   gets fetched and dropped in here instead of a real page navigation
+   (see /assets/spa-shell.js). Same flex-fill slot .hub-main already
+   sits in, just without .hub-main's own centered/padded home styling.
+   .threads-shell normally assumes it's a direct child of <body> below
+   a 61px topbar (see the default height:calc(100vh - 61px) rule below)
+   — nested in here it needs to fill THIS flex slot instead, hence the
+   height:100% override. */
+.spa-mount {
+  padding: 0;
+  align-items: stretch;
+  justify-content: flex-start;
+  text-align: left;
+  overflow: hidden;
+}
+.spa-mount .threads-shell,
+.spa-mount .promo-shell,
+.spa-mount .form-page {
+  height: 100%;
+  width: 100%;
+}
+.spa-mount .promo-shell,
+.spa-mount .form-page {
+  overflow-y: auto;
+}
+.spa-loading { padding: 40px; color: var(--ink-soft); font-size: 13px; }
 .status-badge-corner {
   display: inline-flex;
   margin-top: 14px;

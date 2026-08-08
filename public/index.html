@@ -159,7 +159,7 @@
       <nav class="brand-row" id="brandRow"><div class="brand-row-track" id="brandRowTrack"></div></nav>
       <div id="announcementBanner"></div>
       <script src="/assets/announcement-banner.js?v=44227438" defer></script>
-      <main class="hub-main page-morph-in" data-transition-root>
+      <main class="hub-main page-morph-in" id="viewHome" data-transition-root>
       <div class="inner">
         <div class="tool-cards">
           <a href="/threads.html" class="tool-card" id="threadsCard" style="--tool-accent:#38bdf8;">
@@ -185,11 +185,13 @@
         <span class="status-badge status-badge-corner"><span class="pulse"></span> Connected · Telegram + Sheets</span>
       </div>
       </main>
+      <div class="hub-main spa-mount" id="spaMount" style="display:none;"></div>
     </div>
   </div>
 
   <script src="/assets/schemas.js?v=f6a765aa"></script>
   <script src="/assets/page-transition.js?v=437ace08"></script>
+  <script src="/assets/spa-shell.js?v=1"></script>
   <script>
     window.initThemeToggle();
     window.initClock();
@@ -216,6 +218,13 @@
       // Integrations), which don't navigate and would otherwise leave
       // the overlay sitting open after picking a sub-item.
       sidebar.querySelectorAll(".sidebar-subitem").forEach((el) => el.addEventListener("click", closeSidebar));
+      // Sidebar items no longer navigate away (spa-shell.js mounts the
+      // module in place instead) — the mobile overlay used to close on
+      // its own because a real navigation unloaded the page. Now it
+      // has to be told explicitly, same as the subitems above.
+      sidebar.addEventListener("click", (e) => {
+        if (e.target.closest(".sidebar-item")) closeSidebar();
+      });
     })();
 
     // authguard.js (loaded in <head>) already confirmed we're logged in
