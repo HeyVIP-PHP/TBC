@@ -31,6 +31,8 @@
   --brand-row-bg: rgba(255, 255, 255, 0.3);
   --accent-gold: #c8912f;
   --accent-glow: rgba(99, 102, 241, 0.35);
+  --ipa-grid-border: #c3cdea; /* IP Access table grid lines — deliberately stronger than --border, which is a subtle app-wide hairline; a data table's row/column lines need to actually read as a grid */
+  --ipa-ip-color: #0f7a52; /* IP address text — same green in both themes, tuned per theme for contrast */
   --font-display: "Space Grotesk", "Inter", -apple-system, sans-serif;
   --font-mono: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
   font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -74,6 +76,8 @@
   --brand-row-bg: rgba(255, 255, 255, 0.03);
   --accent-gold: #f3c463;
   --accent-glow: rgba(124, 108, 240, 0.45);
+  --ipa-grid-border: #4a5280;
+  --ipa-ip-color: #34d399;
 }
 
 * { box-sizing: border-box; }
@@ -401,8 +405,8 @@ a { color: inherit; text-decoration: none; }
 /* ---- IP Access (inside the "Whitelist IP" modal, see index.html) ----
    Migrated from the now-retired accounts-admin.html standalone page —
    these rules used to live in that file's own <style> block. */
-.ipa-cards { display: flex; border: 1px solid var(--border); border-radius: 16px; overflow: hidden; margin: 4px 0 20px; background: var(--field-bg); }
-.ipa-card { flex: 1; text-align: left; background: none; border: none; border-right: 1px solid var(--border); padding: 12px 14px; cursor: pointer; font-family: inherit; }
+.ipa-cards { display: flex; border: 1px solid var(--ipa-grid-border); border-radius: 16px; overflow: hidden; margin: 4px 0 20px; background: var(--field-bg); }
+.ipa-card { flex: 1; text-align: left; background: none; border: none; border-right: 1px solid var(--ipa-grid-border); padding: 12px 14px; cursor: pointer; font-family: inherit; }
 .ipa-card:last-child { border-right: none; }
 .ipa-card.active { background: var(--card-bg); }
 .ipa-card-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.03em; color: var(--ink-soft); margin: 0 0 5px; }
@@ -412,22 +416,23 @@ a { color: inherit; text-decoration: none; }
 .ipa-card-value.c-blocked { color: #e0577a; }
 
 .ipa-group-heading { font-size: 13px; font-weight: 700; color: var(--ink); margin: 0 0 8px 2px; }
-.ipa-table-wrap { border: 1px solid var(--border); border-radius: 14px; overflow: hidden; margin-bottom: 16px; background: var(--card-bg); }
-.ipa-row { display: grid; gap: 0; padding: 8px 12px; align-items: center; font-size: 12.5px; }
+.ipa-table-wrap { border: 1px solid var(--ipa-grid-border); border-radius: 14px; overflow: hidden; margin-bottom: 16px; background: var(--card-bg); }
+/* NO align-items on the grid container itself — that used to make each
+   cell's border-box shrink to its text's height instead of the full row
+   height, leaving a visible gap where the vertical column-divider didn't
+   quite reach the horizontal row-divider. Centering now happens INSIDE
+   each cell (.ipa-row > span is its own flex box), so the cell's border
+   always spans the row's full height and every line meets cleanly. */
+.ipa-row { display: grid; gap: 0; font-size: 12.5px; }
 .ipa-row.head { background: var(--field-bg); font-size: 10px; text-transform: uppercase; letter-spacing: 0.03em; color: var(--ink-soft); }
-.ipa-row + .ipa-row { border-top: 1px solid var(--border); }
-.ipa-row > span { padding-right: 8px; border-right: 1px solid var(--border); overflow-wrap: anywhere; }
+.ipa-row + .ipa-row { border-top: 1px solid var(--ipa-grid-border); }
+.ipa-row > span { display: flex; align-items: center; justify-content: center; text-align: center; padding: 10px 14px; border-right: 1px solid var(--ipa-grid-border); overflow-wrap: anywhere; }
 .ipa-row > span:last-child { border-right: none; }
-.ipa-row .row-actions { display: flex; gap: 4px; }
-.ipa-row .row-btn { background: none; border: none; cursor: pointer; font-size: 13px; padding: 2px 4px; }
+.ipa-row .row-actions { display: flex; gap: 10px; justify-content: center; }
+.ipa-row .row-btn { background: none; border: none; cursor: pointer; font-size: 12.5px; font-weight: 700; padding: 2px 4px; color: var(--label-blue); }
 .ipa-mono { font-family: var(--font-mono); }
-.ipa-empty { padding: 10px 12px; font-size: 12.5px; color: var(--ink-soft); }
-
-.ipa-record-group { border: 1px solid var(--border); border-radius: 14px; overflow: hidden; margin-bottom: 10px; background: var(--card-bg); }
-.ipa-record-head { padding: 8px 12px; background: var(--field-bg); font-size: 12.5px; font-weight: 700; color: var(--ink); border-bottom: 1px solid var(--border); }
-.ipa-record-row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 7px 12px; font-size: 12px; }
-.ipa-record-row + .ipa-record-row { border-top: 1px solid var(--border); }
-.ipa-record-time { color: var(--ink-soft); white-space: nowrap; font-size: 11px; }
+.ipa-ip-text { font-family: var(--font-mono); color: var(--ipa-ip-color); font-weight: 600; }
+.ipa-empty { padding: 10px 12px; font-size: 12.5px; color: var(--ink-soft); text-align: center; }
 
 .ipa-mini-form-block { margin: 0 0 20px; }
 .ipa-mini-form-label { font-size: 13px; font-weight: 700; color: var(--ink); margin: 0 0 8px; }

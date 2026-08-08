@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>PHP CS Team - TBC</title>
-<link rel="stylesheet" href="/assets/style.css?v=4127e167" />
+<link rel="stylesheet" href="/assets/style.css?v=2595610a" />
 <script src="/assets/theme.js?v=5b27e630"></script>
 <script src="/assets/starfield.js?v=b6e92821" defer></script>
 <script src="/assets/authguard.js?v=9cc20fef"></script>
@@ -87,10 +87,9 @@
 
   <!-- IP Access Record — a SEPARATE popup layered on top of the IP
        Access modal (not part of its scrolling flow) — opened by the
-       "🕒 Record" header button above. Shows whatever category the main
-       modal currently has selected (or every category if none/Total),
-       reusing the exact same grouped-by-action rendering
-       (renderIpaRecordGroup) as before; only WHERE it renders moved. -->
+       "🕒 Record" header button above. Shows EVERY record entry as one
+       flat table, always — not filtered by whichever card the main
+       modal has selected (see openIpaRecordPopup()). -->
   <div class="edit-modal-backdrop" id="ipaRecordBackdrop">
     <div class="edit-modal">
       <button type="button" class="modal-close-btn" id="ipaRecordClose" title="Close" aria-label="Close">✕</button>
@@ -2090,15 +2089,32 @@
     // "🕒 Record" — a genuinely SEPARATE popup layered on top of the IP
     // Access modal (not an inline section anymore — see PROJECT_STATUS
     // for why: the modal was getting too long with every category's
-    // record stacked in the same scroll). Shows whichever card is
-    // currently selected (ipaSelectedKey), or every category if none/
-    // Total is selected — reuses renderIpaRecordGroup() unchanged, only
-    // WHERE it renders moved.
+    // record stacked in the same scroll).
+    // Shows EVERY record entry, always — no longer filtered by whichever
+    // card happens to be selected on the main modal (that was confusing:
+    // people expected "Record" to mean "the whole audit trail", not "a
+    // footnote to whatever I'm currently looking at"). One flat table,
+    // newest first (logIpAction() in ipAccess.js already unshifts).
     function openIpaRecordPopup() {
-      const key = ipaSelectedKey || "total";
-      const categories = key === "total" ? IPA_TOTAL_CATEGORIES : [key];
-      const html = categories.map(renderIpaRecordGroup).join("");
-      document.getElementById("ipaRecordPopupBody").innerHTML = html || `<div class="ipa-empty">No record entries.</div>`;
+      const entries = ipaData.record || [];
+      const cols = "1.2fr 1fr 1.3fr 1.6fr 1.3fr";
+      const header = ipaRow(cols, ["IP address", "Action", "By", "Detail", "Time"], true);
+      const rows = entries.map((e) => {
+        const roleLabel = e.byRole ? ipaCapitalize(e.byRole) : "System";
+        const whoLabel = e.by || "auto";
+        const parts = [];
+        if (e.officeName) parts.push(e.officeName);
+        if (e.action === "pending-created" && e.detail) parts.push(`requested by ${e.detail}`);
+        if (e.action === "block" && e.detail) parts.push(e.detail);
+        return ipaRow(cols, [
+          ipaIpCell(e.ip),
+          IPA_ACTION_LABELS[e.action] || acctEsc(e.action || "—"),
+          `${acctEsc(roleLabel)} - ${acctEsc(whoLabel)}`,
+          acctEsc(parts.join(" · ") || "—"),
+          ipaFormatTime(e.ts),
+        ]);
+      }).join("");
+      document.getElementById("ipaRecordPopupBody").innerHTML = `<div class="ipa-table-wrap">${header}${rows || `<div class="ipa-empty">No record entries.</div>`}</div>`;
       document.getElementById("ipaRecordBackdrop").classList.add("is-open");
     }
     function closeIpaRecordPopup() {
@@ -2213,20 +2229,27 @@
     // reveal grouped tables + a grouped Record below), just reusing this
     // page's existing helpers (acctEsc, timeAgoLocal, window.AgentAuth.
     // authFetch, canEditAdminSection) instead of duplicating them.
-    const IPA_CATEGORY_ORDER = ["pending", "approved", "manual", "blocked"];
-    // What "Total" actually shows when clicked — deliberately NARROWER
-    // than all 4 categories. Total now means "settled" IPs (allowed via
-    // Approved, denied via Blocked) — Pending (not decided yet) and
-    // Manually (a filtered VIEW of Approved/legacy entries, not a
-    // distinct status) each already have their own card for that, and
-    // stacking all 4 under Total was making the modal too long (see
-    // PROJECT_STATUS.md). Applies to both the IP list groups AND the
-    // Record popup, so the two stay consistent with each other.
+    const IPA_CATEGORY_ORDER = ["pending", "approved", "blocked"];
+    // What "Total" shows when clicked — Pending isn't "settled" yet, so
+    // it stays out; Approved/Blocked are the two final states.
     const IPA_TOTAL_CATEGORIES = ["approved", "blocked"];
-    const IPA_CATEGORY_LABELS = { pending: "Pending", approved: "Approved", manual: "Manually added", blocked: "Blocked" };
-    const IPA_RECORD_HEADINGS = { pending: "Flagged for review", approved: "Approved by", manual: "Added by", blocked: "Blocked by" };
+    const IPA_CATEGORY_LABELS = { pending: "Pending", approved: "Approved", blocked: "Blocked" };
+    // Human-readable verb per audit-log action — used only by the
+    // Record popup table now (see openIpaRecordPopup), which shows every
+    // entry in one flat table instead of grouping by category.
+    const IPA_ACTION_LABELS = { "pending-created": "Flagged", approve: "Approved", reject: "Rejected", block: "Blocked", unblock: "Unblocked", "manual-add": "Added", remove: "Removed" };
 
     function ipaCapitalize(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : s; }
+
+    // Builds one grid row for an IP Access table — every table (Pending/
+    // Approved/Blocked/Record) shares this so the grid-line/centering
+    // behavior never drifts between them. `cells` are already-built HTML
+    // strings (escape before passing in).
+    function ipaRow(cols, cells, isHead) {
+      const inner = cells.map((c) => `<span>${c}</span>`).join("");
+      return `<div class="ipa-row${isHead ? " head" : ""}" style="grid-template-columns:${cols}">${inner}</div>`;
+    }
+    function ipaIpCell(ip) { return `<span class="ipa-ip-text">${acctEsc(ip || "—")}</span>`; }
 
     // "Add IP manually" / "Block an IP" collapsible cards — same
     // click-to-expand pattern as the "Account Management" sidebar group
@@ -2254,13 +2277,10 @@
       if (body) body.style.display = "none";
     }
 
-    // "08 AUG 16:04:32" — used everywhere IP Access shows a timestamp
-    // (Pending's Last attempt, Approved/Manually's Date, Blocked's
-    // Blocked, and every Record row). Absolute, not relative — unlike
-    // timeAgoLocal() used elsewhere on this page (Agent Profile's Last
-    // Active), an audit trail needs the exact moment something happened,
-    // not "2h ago" which keeps changing and isn't useful once you're
-    // looking back at history.
+    // "08 AUG 16:04:32" — used everywhere IP Access shows a timestamp.
+    // Absolute, not relative — unlike timeAgoLocal() used elsewhere on
+    // this page (Agent Profile's Last Active), an audit trail needs the
+    // exact moment something happened, not "2h ago" which keeps changing.
     function ipaFormatTime(iso) {
       if (!iso) return "—";
       const d = new Date(iso);
@@ -2270,7 +2290,7 @@
       const hh = String(d.getHours()).padStart(2, "0");
       const mm = String(d.getMinutes()).padStart(2, "0");
       const ss = String(d.getSeconds()).padStart(2, "0");
-      return `${day} ${month} ${hh}:${mm}:${ss}`;
+      return `<span style="white-space:nowrap">${day} ${month} ${hh}:${mm}:${ss}</span>`;
     }
 
     async function loadIpAccessDashboard() {
@@ -2284,12 +2304,15 @@
     }
 
     function renderIpaCards(stats) {
+      // "Manually added" used to be a 5th card, split out of Approved by
+      // how the IP got there. Dropped — an IP on the whitelist is on the
+      // whitelist either way, and the split was confusing more than it
+      // helped. Back to 4 cards.
       const defs = [
         { key: "total", label: "Total IPs", value: stats.total, cls: "" },
         { key: "approved", label: "Approved", value: stats.approved, cls: "c-approved" },
         { key: "pending", label: "Pending", value: stats.pending, cls: "c-pending" },
         { key: "blocked", label: "Blocked", value: stats.blocked, cls: "c-blocked" },
-        { key: "manual", label: "Manually", value: stats.manual, cls: "" },
       ];
       const wrap = document.getElementById("ipaCards");
       if (!wrap) return;
@@ -2307,7 +2330,7 @@
       document.getElementById("ipaEmptyHint").style.display = "none";
       document.getElementById("ipaPanelBody").style.display = "block";
       document.getElementById("ipaPanelHint").textContent =
-        key === "total" ? "Approved and blocked IPs — the settled ones. Pending and Manually each have their own card." : `Showing ${IPA_CATEGORY_LABELS[key].toLowerCase()} IPs only.`;
+        key === "total" ? "Approved and blocked IPs — the settled ones. Pending has its own card." : `Showing ${IPA_CATEGORY_LABELS[key].toLowerCase()} IPs only.`;
 
       const categories = key === "total" ? IPA_TOTAL_CATEGORIES : [key];
       document.getElementById("ipaIpGroups").innerHTML = categories.map(renderIpaIpGroup).join("");
@@ -2321,64 +2344,39 @@
 
       if (cat === "pending") {
         cols = "1.1fr 1fr 1fr 1.2fr auto";
-        header = ["IP address", "Office", "Requested by", "Last attempt", "Actions"];
-        bodyRows = rows.map((r) => `
-          <div class="ipa-row" style="grid-template-columns:${cols}">
-            <span class="ipa-mono">${acctEsc(r.ip)}</span>
-            <span>${acctEsc(r.officeName || "—")}</span>
-            <span>${acctEsc(r.username || "—")}${r.attempts > 1 ? ` <span style="color:var(--ink-soft)">(${r.attempts}x)</span>` : ""}</span>
-            <span style="color:var(--ink-soft)">${ipaFormatTime(r.lastAttemptAt)}</span>
-            <span class="row-actions">${canEditWhitelist ? `
-              <button type="button" class="row-btn" data-ipa-approve data-ip="${acctEsc(r.ip)}" data-office="${acctEsc(r.officeId)}" title="Approve">✅</button>
-              <button type="button" class="row-btn" data-ipa-reject data-ip="${acctEsc(r.ip)}" data-office="${acctEsc(r.officeId)}" title="Reject">🗑️</button>` : ""}</span>
-          </div>`).join("");
+        header = ipaRow(cols, ["IP address", "Office", "Requested by", "Last attempt", "Actions"], true);
+        bodyRows = rows.map((r) => ipaRow(cols, [
+          ipaIpCell(r.ip),
+          acctEsc(r.officeName || "—"),
+          `${acctEsc(r.username || "—")}${r.attempts > 1 ? ` <span style="color:var(--ink-soft)">(${r.attempts}x)</span>` : ""}`,
+          ipaFormatTime(r.lastAttemptAt),
+          canEditWhitelist ? `<span class="row-actions">
+              <button type="button" class="row-btn" data-ipa-approve data-ip="${acctEsc(r.ip)}" data-office="${acctEsc(r.officeId)}">Approve</button>
+              <button type="button" class="row-btn" data-ipa-reject data-ip="${acctEsc(r.ip)}" data-office="${acctEsc(r.officeId)}">Reject</button></span>` : "",
+        ])).join("");
       } else if (cat === "blocked") {
-        cols = "1.1fr 1.6fr 1fr auto";
-        header = ["IP address", "Reason", "Blocked", "Actions"];
-        bodyRows = rows.map((r) => `
-          <div class="ipa-row" style="grid-template-columns:${cols}">
-            <span class="ipa-mono">${acctEsc(r.ip)}</span>
-            <span style="color:var(--ink-soft)">${acctEsc(r.reason || "—")}</span>
-            <span style="color:var(--ink-soft)">${ipaFormatTime(r.blockedAt)}</span>
-            <span class="row-actions">${canEditWhitelist ? `<button type="button" class="row-btn" data-ipa-unblock data-ip="${acctEsc(r.ip)}" title="Unblock">🔓</button>` : ""}</span>
-          </div>`).join("");
-      } else { // approved / manual — same shape, different source label
+        cols = "1.1fr 1.6fr 1.4fr 1.3fr auto";
+        header = ipaRow(cols, ["IP address", "Reason", "Blocked by", "Blocked", "Actions"], true);
+        bodyRows = rows.map((r) => ipaRow(cols, [
+          ipaIpCell(r.ip),
+          `<span style="color:var(--ink-soft)">${acctEsc(r.reason || "—")}</span>`,
+          r.blockedBy ? `${acctEsc(ipaCapitalize(r.blockedByRole || ""))} - ${acctEsc(r.blockedBy)}` : "—",
+          ipaFormatTime(r.blockedAt),
+          canEditWhitelist ? `<span class="row-actions"><button type="button" class="row-btn" data-ipa-unblock data-ip="${acctEsc(r.ip)}">Unblock</button></span>` : "",
+        ])).join("");
+      } else { // approved
         cols = "1.1fr 1fr 1fr 1fr auto";
-        header = ["IP address", "Office", "Added by", "Date", "Actions"];
-        bodyRows = rows.map((r) => `
-          <div class="ipa-row" style="grid-template-columns:${cols}">
-            <span class="ipa-mono">${acctEsc(r.ip)}</span>
-            <span>${acctEsc(r.officeName || "—")}</span>
-            <span>${r.addedBy ? `${acctEsc(ipaCapitalize(r.addedByRole || ""))} - ${acctEsc(r.addedBy)}` : "Legacy entry"}</span>
-            <span style="color:var(--ink-soft)">${ipaFormatTime(r.addedAt)}</span>
-            <span class="row-actions">${canEditWhitelist ? `<button type="button" class="row-btn" data-ipa-remove data-ip="${acctEsc(r.ip)}" data-office="${acctEsc(r.officeId)}" title="Remove">🗑️</button>` : ""}</span>
-          </div>`).join("");
+        header = ipaRow(cols, ["IP address", "Office", "Added by", "Date", "Actions"], true);
+        bodyRows = rows.map((r) => ipaRow(cols, [
+          ipaIpCell(r.ip),
+          acctEsc(r.officeName || "—"),
+          r.addedBy ? `${acctEsc(ipaCapitalize(r.addedByRole || ""))} - ${acctEsc(r.addedBy)}` : "Legacy entry",
+          ipaFormatTime(r.addedAt),
+          canEditWhitelist ? `<span class="row-actions"><button type="button" class="row-btn" data-ipa-remove data-ip="${acctEsc(r.ip)}" data-office="${acctEsc(r.officeId)}">Remove</button></span>` : "",
+        ])).join("");
       }
 
-      const headHtml = `<div class="ipa-row head" style="grid-template-columns:${cols}">${header.map((h) => `<span>${h}</span>`).join("")}</div>`;
-      return `<p class="ipa-group-heading">${IPA_CATEGORY_LABELS[cat]}</p><div class="ipa-table-wrap">${headHtml}${bodyRows || `<div class="ipa-empty">No entries.</div>`}</div>`;
-    }
-
-    function renderIpaRecordGroup(cat) {
-      const entries = (ipaData.record || []).filter((e) => e.category === cat);
-      if (!entries.length) return "";
-      const rows = entries.map((e) => {
-        const roleLabel = e.byRole ? ipaCapitalize(e.byRole) : "System";
-        const whoLabel = e.by || "auto";
-        const parts = [];
-        if (e.ip) parts.push(e.ip);
-        if (e.officeName) parts.push(e.officeName);
-        if (e.action === "pending-created" && e.detail) parts.push(`requested by ${e.detail}`);
-        if (e.action === "block" && e.detail) parts.push(e.detail);
-        if (e.action === "unblock") parts.push("unblocked");
-        if (e.action === "reject") parts.push("rejected");
-        if (e.action === "remove") parts.push("removed");
-        return `<div class="ipa-record-row">
-          <span><strong>${acctEsc(roleLabel)}</strong> - ${acctEsc(whoLabel)}<span style="color:var(--ink-soft)"> &middot; ${acctEsc(parts.join(" · "))}</span></span>
-          <span class="ipa-record-time">${ipaFormatTime(e.ts)}</span>
-        </div>`;
-      }).join("");
-      return `<div class="ipa-record-group"><div class="ipa-record-head">${IPA_RECORD_HEADINGS[cat]}</div>${rows}</div>`;
+      return `<p class="ipa-group-heading">${IPA_CATEGORY_LABELS[cat]}</p><div class="ipa-table-wrap">${header}${bodyRows || `<div class="ipa-empty">No entries.</div>`}</div>`;
     }
 
     function wireIpaRowActions() {

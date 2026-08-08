@@ -202,7 +202,7 @@ export async function addManualIp(env, { officeId, ip, by, byRole, getOffice, sa
   await saveOffice(env, { id: office.id, name: office.name, allowedIPs: [...office.allowedIPs, ip] });
   const now = new Date().toISOString();
   await env.THREADS_KV.put(`ipmeta:${officeId}:${ip}`, JSON.stringify({ ip, officeId, source: "manual", addedBy: by, addedByRole: byRole, addedAt: now }));
-  await logIpAction(env, { action: "manual-add", category: "manual", ip, officeId, officeName: office.name, by, byRole });
+  await logIpAction(env, { action: "manual-add", category: "approved", ip, officeId, officeName: office.name, by, byRole });
   return office;
 }
 
@@ -210,16 +210,9 @@ export async function removeApprovedIp(env, { officeId, ip, by, byRole, getOffic
   const office = await getOffice(env, officeId);
   if (!office) throw new Error("Office not found.");
 
-  // Check the entry's source BEFORE deleting its ipmeta record, purely
-  // so the audit log entry lands under the same card (Approved vs
-  // Manually) the IP itself was showing under — cosmetic, doesn't
-  // affect the actual removal.
-  const metaRaw = await env.THREADS_KV.get(`ipmeta:${officeId}:${ip}`);
-  const source = metaRaw ? JSON.parse(metaRaw).source : "manual"; // legacy entries (no meta) bucket with Manually
-
   await saveOffice(env, { id: office.id, name: office.name, allowedIPs: office.allowedIPs.filter((x) => x !== ip) });
   await env.THREADS_KV.delete(`ipmeta:${officeId}:${ip}`);
-  await logIpAction(env, { action: "remove", category: source === "approved" ? "approved" : "manual", ip, officeId, officeName: office.name, by, byRole });
+  await logIpAction(env, { action: "remove", category: "approved", ip, officeId, officeName: office.name, by, byRole });
 }
 
 // Combines every office's allowedIPs (ground truth) with ipmeta
@@ -250,36 +243,32 @@ export async function listApprovedIps(env, { listOffices }) {
 
 // ---- dashboard aggregate ----
 //
-// One call for the whole "IP Access" admin page: stats + all four
-// buckets + the audit log. "Approved" (the workflow kind) vs "Manually
-// added" (typed directly OR legacy pre-feature entries) are split by
-// `source` — see listApprovedIps() above. Total deliberately does NOT
-// double-count Manually as a separate addend — it's a filtered VIEW of
-// the same allowedIPs entries Approved draws from, matching how the
-// dashboard's own cards behave (clicking Manually shows a subset of the
-// same underlying whitelist, not a fifth bucket of brand-new IPs).
+// One call for the whole "IP Access" admin page: stats + 3 buckets
+// (Pending / Approved / Blocked) + the audit log. There USED to be a
+// 4th bucket ("Manually added", split out of Approved by `source`) but
+// that distinction turned out to be more confusing than useful in
+// practice — an IP that's on the whitelist is on the whitelist, however
+// it got there. `source`/`addedBy`/`addedByRole` are still attached to
+// each entry (from listApprovedIps()) purely for the "Added by" column
+// and the Record table, not for bucketing.
 export async function getIpAccessDashboard(env, { listOffices }) {
-  const [pending, blocked, allApproved] = await Promise.all([
+  const [pending, blocked, approved] = await Promise.all([
     listPendingIps(env),
     listBlockedIps(env),
     listApprovedIps(env, { listOffices }),
   ]);
-  const approved = allApproved.filter((r) => r.source === "approved");
-  const manual = allApproved.filter((r) => r.source !== "approved");
   const record = await listIpActionLog(env);
 
   return {
     stats: {
-      total: allApproved.length + pending.length + blocked.length,
+      total: approved.length + pending.length + blocked.length,
       approved: approved.length,
       pending: pending.length,
       blocked: blocked.length,
-      manual: manual.length,
     },
     pending,
     approved,
     blocked,
-    manual,
     record,
   };
 }
