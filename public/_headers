@@ -1,6 +1,13 @@
+# /assets/* 现在通过内容哈希 query string（?v=xxxxxxxx，见根目录
+# update-asset-versions.js）做缓存失效——文件内容不变，URL 就不变，
+# 可以放心用一年的强缓存；文件内容一变，运行一次
+# `node update-asset-versions.js` 会自动把所有 HTML 里的 ?v= 换成新哈希，
+# 浏览器立刻当成全新 URL 重新下载，不会读到旧版本。
 /assets/*
-  Cache-Control: no-cache, no-store, must-revalidate
+  Cache-Control: public, max-age=31536000, immutable
 
+# HTML 入口文件保持禁用缓存 —— 用户每次都必须拿到最新的 HTML，
+# 这样才能读到里面最新的 ?v= 哈希，从而知道该不该重新下载 /assets/*。
 /*.html
   Cache-Control: no-cache, no-store, must-revalidate
 
