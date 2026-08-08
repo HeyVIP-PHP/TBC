@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>PHP CS Team - TBC</title>
-<link rel="stylesheet" href="/assets/style.css?v=2595610a" />
+<link rel="stylesheet" href="/assets/style.css?v=1b5a5dbc" />
 <script src="/assets/theme.js?v=5b27e630"></script>
 <script src="/assets/starfield.js?v=b6e92821" defer></script>
 <script src="/assets/authguard.js?v=9cc20fef"></script>
@@ -573,7 +573,8 @@
     let acctOffices = [];
     let acctAccounts = [];
     let ipaData = null;
-    let ipaSelectedKey = null; // which of the 5 IP Access cards is open, or null
+    let ipaSelectedKey = null; // which of the 4 IP Access cards is open, or null
+    let ipaPageState = {}; // { [category]: { page, size } } — per-table pagination, see renderIpaIpGroup
 
     function acctEsc(str) {
       return String(str == null ? "" : str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -2331,15 +2332,31 @@
       document.getElementById("ipaPanelBody").style.display = "block";
       document.getElementById("ipaPanelHint").textContent =
         key === "total" ? "Approved and blocked IPs — the settled ones. Pending has its own card." : `Showing ${IPA_CATEGORY_LABELS[key].toLowerCase()} IPs only.`;
+      rerenderIpaIpGroups();
+    }
 
-      const categories = key === "total" ? IPA_TOTAL_CATEGORIES : [key];
+    // Redraws #ipaIpGroups for whatever's currently selected — pulled out
+    // of selectIpaCategory() so pagination (page-size change, Prev/Next)
+    // can trigger the same redraw without re-picking a card.
+    function rerenderIpaIpGroups() {
+      const categories = ipaSelectedKey === "total" ? IPA_TOTAL_CATEGORIES : [ipaSelectedKey];
       document.getElementById("ipaIpGroups").innerHTML = categories.map(renderIpaIpGroup).join("");
       wireIpaRowActions();
+      wireIpaPagination();
     }
 
     function renderIpaIpGroup(cat) {
-      const rows = ipaData[cat] || [];
+      const allRows = ipaData[cat] || [];
       const canEditWhitelist = canEditAdminSection("whitelistIp");
+
+      // Pagination — one page-size/page-number pair PER category, so
+      // paging through Approved doesn't reset where you were in Blocked.
+      const state = ipaPageState[cat] || (ipaPageState[cat] = { page: 1, size: 10 });
+      const totalPages = Math.max(1, Math.ceil(allRows.length / state.size));
+      if (state.page > totalPages) state.page = totalPages; // e.g. after a Remove shrinks the list
+      const start = (state.page - 1) * state.size;
+      const rows = allRows.slice(start, start + state.size);
+
       let cols, header, bodyRows;
 
       if (cat === "pending") {
@@ -2376,7 +2393,15 @@
         ])).join("");
       }
 
-      return `<p class="ipa-group-heading">${IPA_CATEGORY_LABELS[cat]}</p><div class="ipa-table-wrap">${header}${bodyRows || `<div class="ipa-empty">No entries.</div>`}</div>`;
+      const pageSizeSelect = `<select class="ipa-page-size" data-cat="${cat}">${[10, 20, 30].map((n) => `<option value="${n}"${state.size === n ? " selected" : ""}>${n} / page</option>`).join("")}</select>`;
+      const pagination = allRows.length > state.size ? `
+        <div class="ipa-pagination">
+          <button type="button" class="ipa-page-btn" data-cat="${cat}" data-dir="prev"${state.page <= 1 ? " disabled" : ""}>Previous</button>
+          <span class="ipa-page-info">Page ${state.page} of ${totalPages}</span>
+          <button type="button" class="ipa-page-btn" data-cat="${cat}" data-dir="next"${state.page >= totalPages ? " disabled" : ""}>Next</button>
+        </div>` : "";
+
+      return `<div class="ipa-group-heading-row"><p class="ipa-group-heading">${IPA_CATEGORY_LABELS[cat]}</p>${allRows.length ? pageSizeSelect : ""}</div><div class="ipa-table-wrap">${header}${bodyRows || `<div class="ipa-empty">No entries.</div>`}</div>${pagination}`;
     }
 
     function wireIpaRowActions() {
@@ -2385,6 +2410,19 @@
       document.querySelectorAll("[data-ipa-unblock]").forEach((b) => b.addEventListener("click", () => ipaAction("unblock", { ip: b.dataset.ip })));
       document.querySelectorAll("[data-ipa-remove]").forEach((b) => b.addEventListener("click", () => {
         if (confirm("Remove this IP from the whitelist? Anyone still using it will be rejected on their next request.")) ipaAction("remove", { ip: b.dataset.ip, officeId: b.dataset.office });
+      }));
+    }
+
+    function wireIpaPagination() {
+      document.querySelectorAll(".ipa-page-size").forEach((sel) => sel.addEventListener("change", (e) => {
+        ipaPageState[e.target.dataset.cat] = { page: 1, size: Number(e.target.value) };
+        rerenderIpaIpGroups();
+      }));
+      document.querySelectorAll(".ipa-page-btn").forEach((btn) => btn.addEventListener("click", () => {
+        const cat = btn.dataset.cat;
+        const state = ipaPageState[cat] || (ipaPageState[cat] = { page: 1, size: 10 });
+        state.page += btn.dataset.dir === "next" ? 1 : -1;
+        rerenderIpaIpGroups();
       }));
     }
 
