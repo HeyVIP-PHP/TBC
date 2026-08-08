@@ -318,12 +318,24 @@ a { color: inherit; text-decoration: none; }
   display: flex;
   position: fixed; inset: 0; z-index: 50;
   background: rgba(10, 12, 25, 0.55);
-  align-items: center; justify-content: center;
+  /* align-items: flex-start (NOT center) — this is deliberate, not an
+     oversight. align-items: center on a flex container that also has
+     overflow-y: auto is a well-known trap: when the centered child is
+     taller than the container, the browser centers it symmetrically
+     past BOTH edges, but can only actually scroll to reach the
+     overflow on the END side — the portion that overflows past the
+     START (here, the top of the modal) becomes permanently
+     unreachable no matter how much you scroll. Reported exactly this
+     way: modal content cut off at the top, scrolling up does nothing.
+     flex-start always gives scroll a real starting point to scroll
+     FROM, so nothing is ever unreachable — the top padding below
+     keeps short modals from sitting flush against the very top edge. */
+  align-items: flex-start; justify-content: center;
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.18s ease;
   overflow-y: auto;
-  padding: 24px 12px;
+  padding: 40px 12px;
 }
 .edit-modal-backdrop.is-open { opacity: 1; pointer-events: auto; }
 .edit-modal {
