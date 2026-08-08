@@ -134,7 +134,15 @@
     const doc = await docPromise;
 
     if (pushUrl !== false) {
-      const url = view === "form" ? `/form.html?module=${encodeURIComponent(moduleId || "")}` : cfg.url;
+      // ALWAYS push a "/" URL (never the real /threads.html, /form.html
+      // etc.) — Cloudflare Pages serves those paths as their own real,
+      // separate static file, so a hard refresh while pushState pointed
+      // at one would load that standalone page directly instead of this
+      // shell (index.html never even runs). Keeping the address on "/"
+      // with a query string means a refresh always re-requests index.html,
+      // and the DOMContentLoaded bootstrap below reads that same query
+      // string to remount the right view.
+      const url = view === "form" ? `/?module=${encodeURIComponent(moduleId || "")}` : `/?view=${view}`;
       history.pushState({ view, moduleId }, "", url);
       // form.html's own script reads location.search for the module id —
       // pushState above already updated it before we execute that script.
@@ -227,12 +235,16 @@
     }
   });
 
-  // Deep-link support: landing on / with ?module=xxx (an old bookmark,
-  // or a real reload while a form view was open) opens straight into
-  // that module's form instead of the home hero.
+  // Deep-link support: landing on / with ?module=xxx (a form) or
+  // ?view=xxx (threads/announcements/promo) opens straight into that
+  // view instead of the home hero — this is what makes a hard refresh
+  // land back where you were, now that mount() always pushes a "/" URL
+  // (see the pushUrl block above) instead of the real per-page file path.
   document.addEventListener("DOMContentLoaded", () => {
     const params = new URLSearchParams(location.search);
     const moduleId = params.get("module");
+    const view = params.get("view");
     if (moduleId) mount("form", { moduleId, pushUrl: false });
+    else if (view && ROUTES[view]) mount(view, { pushUrl: false });
   });
 })();
