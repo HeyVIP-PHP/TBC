@@ -58,6 +58,37 @@
 
   .login-mode-switch { display: flex; gap: 8px; margin-bottom: 14px; font-size: 12px; }
   .login-mode-switch span { cursor: pointer; color: var(--label-blue); text-decoration: underline; }
+
+  /* ---- IP Access panel ---- */
+  .ipa-cards { display: flex; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; margin-bottom: 18px; background: var(--card-bg); box-shadow: var(--shadow); }
+  .ipa-card { flex: 1; text-align: left; background: none; border: none; border-right: 1px solid var(--border); padding: 14px 16px; cursor: pointer; font-family: inherit; }
+  .ipa-card:last-child { border-right: none; }
+  .ipa-card.active { background: var(--field-bg); }
+  .ipa-card-label { font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.03em; color: var(--ink-soft); margin: 0 0 6px; }
+  .ipa-card-value { font-size: 24px; font-weight: 700; margin: 0; color: var(--ink); font-family: var(--font-display); }
+  .ipa-card-value.c-approved { color: #1a9c6e; }
+  .ipa-card-value.c-pending { color: var(--accent-gold); }
+  .ipa-card-value.c-blocked { color: var(--required); }
+
+  .ipa-group-heading { font-size: 13px; font-weight: 700; color: var(--ink); margin: 0 0 8px 2px; }
+  .ipa-table-wrap { border: 1px solid var(--border); border-radius: 14px; overflow: hidden; margin-bottom: 18px; background: var(--card-bg); }
+  .ipa-row { display: grid; gap: 0; padding: 9px 14px; align-items: center; font-size: 13px; }
+  .ipa-row.head { background: var(--field-bg); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.03em; color: var(--ink-soft); }
+  .ipa-row + .ipa-row { border-top: 1px solid var(--border); }
+  .ipa-row > span { padding-right: 10px; border-right: 1px solid rgba(148, 163, 184, 0.18); overflow-wrap: anywhere; }
+  .ipa-row > span:last-child { border-right: none; }
+  .ipa-mono { font-family: var(--font-mono); }
+  .ipa-empty { padding: 12px 14px; font-size: 13px; color: var(--ink-soft); }
+
+  .ipa-record-group { border: 1px solid var(--border); border-radius: 14px; overflow: hidden; margin-bottom: 12px; background: var(--card-bg); }
+  .ipa-record-head { padding: 9px 14px; background: var(--field-bg); font-size: 13px; font-weight: 700; color: var(--ink); border-bottom: 1px solid var(--border); }
+  .ipa-record-row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 8px 14px; font-size: 12.5px; }
+  .ipa-record-row + .ipa-record-row { border-top: 1px solid var(--border); }
+  .ipa-record-time { color: var(--ink-soft); white-space: nowrap; font-size: 11.5px; }
+
+  .ipa-mini-form { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
+  .ipa-mini-form .field { flex: 1; min-width: 160px; margin: 0; }
+  .ipa-hint { font-size: 12px; color: var(--ink-soft); margin: 0 0 14px; }
 </style>
 </head>
 <body>
@@ -115,6 +146,7 @@
     <div class="admin-tabs">
       <div class="admin-tab active" data-tab="offices">Offices</div>
       <div class="admin-tab" data-tab="accounts">Accounts</div>
+      <div class="admin-tab" data-tab="ipAccess">IP Access</div>
     </div>
 
     <div class="admin-panel active" id="officesPanel">
@@ -173,6 +205,39 @@
         </table>
         </div>
       </div>
+    </div>
+
+    <div class="admin-panel" id="ipAccessPanel">
+      <div class="ipa-cards" id="ipaCards"></div>
+
+      <div class="admin-card">
+        <h3>Add IP manually</h3>
+        <div id="ipaManualMsg"></div>
+        <div class="ipa-mini-form">
+          <div class="field"><label>Office</label><select id="ipaManualOffice"></select></div>
+          <div class="field"><label>IP address</label><input type="text" id="ipaManualIp" placeholder="203.0.113.10" autocomplete="off" /></div>
+          <button class="btn-submit" id="ipaManualAddBtn"><span>➕</span><span>Add</span></button>
+        </div>
+      </div>
+
+      <div class="admin-card">
+        <h3>Block an IP</h3>
+        <div id="ipaBlockMsg"></div>
+        <div class="ipa-mini-form">
+          <div class="field"><label>IP address</label><input type="text" id="ipaBlockIp" placeholder="203.0.113.10" autocomplete="off" /></div>
+          <div class="field"><label>Reason (optional)</label><input type="text" id="ipaBlockReason" placeholder="e.g. repeated brute-force attempts" autocomplete="off" /></div>
+          <button class="btn-submit" id="ipaBlockBtn" style="background:linear-gradient(135deg,#e0577a,#b23a5c);"><span>🚫</span><span>Block</span></button>
+        </div>
+        <p class="ipa-hint" style="margin:10px 0 0;">Blocking is global — independent of which office or account is involved, this IP is rejected outright at login, even with a correct password.</p>
+      </div>
+
+      <div id="ipaPanelBody" style="display:none;">
+        <p class="ipa-hint" id="ipaPanelHint"></p>
+        <div id="ipaIpGroups"></div>
+        <h3 style="font-family:var(--font-display); font-size:14.5px; color:var(--ink); margin:0 0 10px;">🕒 Record</h3>
+        <div id="ipaRecordGroups"></div>
+      </div>
+      <p class="ipa-hint" id="ipaEmptyHint">Click a card above to view its IPs and record.</p>
     </div>
   </div>
 
@@ -296,6 +361,10 @@
         document.querySelectorAll(".admin-panel").forEach((p) => p.classList.remove("active"));
         tab.classList.add("active");
         document.getElementById(tab.dataset.tab + "Panel").classList.add("active");
+        // Reload every time the tab is opened (not just once) — Pending
+        // is meant to reflect live login attempts, so a stale cached view
+        // from 10 minutes ago isn't good enough for this one tab.
+        if (tab.dataset.tab === "ipAccess") loadIpAccessDashboard();
       });
     });
 
@@ -532,6 +601,199 @@
       if (!data.ok) { alert(data.error || `${verb} failed.`); return; }
       loadAccounts();
     }
+
+    // ---- IP Access ----
+    //
+    // See functions/_shared/ipAccess.js and functions/api/admin/ip-access.js
+    // for the server side. This whole section only ever READS `offices`
+    // (already loaded by loadOffices() above, for the office picker) and
+    // never writes to it directly — every actual whitelist change goes
+    // through /api/admin/ip-access, which itself calls saveOffice()
+    // under the hood, so the Offices tab and this tab can never drift
+    // out of sync with each other.
+    let ipaData = null;
+    let ipaSelectedKey = null; // which of the 5 cards is currently open, or null
+
+    const IPA_CATEGORY_ORDER = ["pending", "approved", "manual", "blocked"];
+    const IPA_CATEGORY_LABELS = { pending: "Pending", approved: "Approved", manual: "Manually added", blocked: "Blocked" };
+    const IPA_RECORD_HEADINGS = { pending: "Flagged for review", approved: "Approved by", manual: "Added by", blocked: "Blocked by" };
+
+    function capitalize(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : s; }
+
+    async function loadIpAccessDashboard() {
+      const res = await adminFetch("/api/admin/ip-access");
+      const data = await res.json();
+      if (!data.ok) { document.getElementById("ipaEmptyHint").textContent = data.error || "Failed to load."; return; }
+      ipaData = data;
+      populateIpaManualOfficeSelect();
+      renderIpaCards(data.stats);
+      // Re-render whatever card was open before this refresh, so an
+      // Approve/Block action doesn't dump the admin back to the empty
+      // "click a card" state every single time.
+      if (ipaSelectedKey) selectIpaCategory(ipaSelectedKey);
+    }
+
+    function populateIpaManualOfficeSelect() {
+      const sel = document.getElementById("ipaManualOffice");
+      const current = sel.value;
+      sel.innerHTML = offices.map((o) => `<option value="${o.id}">${escapeHtml(o.name)}</option>`).join("") || '<option value="">— create an office first —</option>';
+      if (current && offices.some((o) => o.id === current)) sel.value = current;
+    }
+
+    function renderIpaCards(stats) {
+      const defs = [
+        { key: "total", label: "Total IPs", value: stats.total, cls: "" },
+        { key: "approved", label: "Approved", value: stats.approved, cls: "c-approved" },
+        { key: "pending", label: "Pending", value: stats.pending, cls: "c-pending" },
+        { key: "blocked", label: "Blocked", value: stats.blocked, cls: "c-blocked" },
+        { key: "manual", label: "Manually", value: stats.manual, cls: "" },
+      ];
+      const wrap = document.getElementById("ipaCards");
+      wrap.innerHTML = defs.map((d) => `
+        <button class="ipa-card${ipaSelectedKey === d.key ? " active" : ""}" data-key="${d.key}">
+          <p class="ipa-card-label">${d.label}</p>
+          <p class="ipa-card-value ${d.cls}">${d.value}</p>
+        </button>`).join("");
+      wrap.querySelectorAll("[data-key]").forEach((btn) => btn.addEventListener("click", () => selectIpaCategory(btn.dataset.key)));
+    }
+
+    function selectIpaCategory(key) {
+      ipaSelectedKey = key;
+      renderIpaCards(ipaData.stats); // re-render just to update which card shows as active
+      document.getElementById("ipaEmptyHint").style.display = "none";
+      document.getElementById("ipaPanelBody").style.display = "block";
+      document.getElementById("ipaPanelHint").textContent =
+        key === "total" ? "Every IP across every status, grouped the same way as the Record below." : `Showing ${IPA_CATEGORY_LABELS[key].toLowerCase()} IPs only.`;
+
+      const categories = key === "total" ? IPA_CATEGORY_ORDER : [key];
+      document.getElementById("ipaIpGroups").innerHTML = categories.map(renderIpaIpGroup).join("");
+      wireIpaRowActions();
+
+      const recordHtml = categories.map(renderIpaRecordGroup).join("");
+      document.getElementById("ipaRecordGroups").innerHTML = recordHtml || `<div class="ipa-empty">No record entries.</div>`;
+    }
+
+    function renderIpaIpGroup(cat) {
+      const rows = ipaData[cat] || [];
+      let cols, header, bodyRows;
+
+      if (cat === "pending") {
+        cols = "1.1fr 1fr 1fr 1.2fr auto";
+        header = ["IP address", "Office", "Requested by", "Last attempt", "Actions"];
+        bodyRows = rows.map((r) => `
+          <div class="ipa-row" style="grid-template-columns:${cols}">
+            <span class="ipa-mono">${escapeHtml(r.ip)}</span>
+            <span>${escapeHtml(r.officeName || "—")}</span>
+            <span>${escapeHtml(r.username || "—")}${r.attempts > 1 ? ` <span style="color:var(--ink-soft)">(${r.attempts}x)</span>` : ""}</span>
+            <span style="color:var(--ink-soft)">${timeAgo(r.lastAttemptAt)}</span>
+            <span class="row-actions">
+              <button class="unlock-btn" data-ipa-approve data-ip="${escapeHtml(r.ip)}" data-office="${escapeHtml(r.officeId)}">Approve</button>
+              <button class="danger" data-ipa-reject data-ip="${escapeHtml(r.ip)}" data-office="${escapeHtml(r.officeId)}">Reject</button>
+            </span>
+          </div>`).join("");
+      } else if (cat === "blocked") {
+        cols = "1.1fr 1.6fr 1fr auto";
+        header = ["IP address", "Reason", "Blocked", "Actions"];
+        bodyRows = rows.map((r) => `
+          <div class="ipa-row" style="grid-template-columns:${cols}">
+            <span class="ipa-mono">${escapeHtml(r.ip)}</span>
+            <span style="color:var(--ink-soft)">${escapeHtml(r.reason || "—")}</span>
+            <span style="color:var(--ink-soft)">${timeAgo(r.blockedAt)}</span>
+            <span class="row-actions"><button class="unlock-btn" data-ipa-unblock data-ip="${escapeHtml(r.ip)}">Unblock</button></span>
+          </div>`).join("");
+      } else { // approved / manual — same shape, different source label
+        cols = "1.1fr 1fr 1fr 1fr auto";
+        header = ["IP address", "Office", "Added by", "Date", "Actions"];
+        bodyRows = rows.map((r) => `
+          <div class="ipa-row" style="grid-template-columns:${cols}">
+            <span class="ipa-mono">${escapeHtml(r.ip)}</span>
+            <span>${escapeHtml(r.officeName || "—")}</span>
+            <span>${r.addedBy ? `${escapeHtml(capitalize(r.addedByRole || ""))} - ${escapeHtml(r.addedBy)}` : "Legacy entry"}</span>
+            <span style="color:var(--ink-soft)">${r.addedAt ? timeAgo(r.addedAt) : "—"}</span>
+            <span class="row-actions"><button class="danger" data-ipa-remove data-ip="${escapeHtml(r.ip)}" data-office="${escapeHtml(r.officeId)}">Remove</button></span>
+          </div>`).join("");
+      }
+
+      const headHtml = `<div class="ipa-row head" style="grid-template-columns:${cols}">${header.map((h) => `<span>${h}</span>`).join("")}</div>`;
+      return `<p class="ipa-group-heading">${IPA_CATEGORY_LABELS[cat]}</p><div class="ipa-table-wrap">${headHtml}${bodyRows || `<div class="ipa-empty">No entries.</div>`}</div>`;
+    }
+
+    function renderIpaRecordGroup(cat) {
+      const entries = (ipaData.record || []).filter((e) => e.category === cat);
+      if (!entries.length) return "";
+      const rows = entries.map((e) => {
+        const roleLabel = e.byRole ? capitalize(e.byRole) : "System";
+        const whoLabel = e.by || "auto";
+        const parts = [];
+        if (e.ip) parts.push(e.ip);
+        if (e.officeName) parts.push(e.officeName);
+        if (e.action === "pending-created" && e.detail) parts.push(`requested by ${e.detail}`);
+        if (e.action === "block" && e.detail) parts.push(e.detail);
+        if (e.action === "unblock") parts.push("unblocked");
+        if (e.action === "reject") parts.push("rejected");
+        if (e.action === "remove") parts.push("removed");
+        return `<div class="ipa-record-row">
+          <span><strong>${escapeHtml(roleLabel)}</strong> - ${escapeHtml(whoLabel)}<span style="color:var(--ink-soft)"> &middot; ${escapeHtml(parts.join(" · "))}</span></span>
+          <span class="ipa-record-time">${timeAgo(e.ts)}</span>
+        </div>`;
+      }).join("");
+      return `<div class="ipa-record-group"><div class="ipa-record-head">${IPA_RECORD_HEADINGS[cat]}</div>${rows}</div>`;
+    }
+
+    function wireIpaRowActions() {
+      document.querySelectorAll("[data-ipa-approve]").forEach((b) => b.addEventListener("click", () => ipaAction("approve", { ip: b.dataset.ip, officeId: b.dataset.office })));
+      document.querySelectorAll("[data-ipa-reject]").forEach((b) => b.addEventListener("click", () => ipaAction("reject", { ip: b.dataset.ip, officeId: b.dataset.office })));
+      document.querySelectorAll("[data-ipa-unblock]").forEach((b) => b.addEventListener("click", () => ipaAction("unblock", { ip: b.dataset.ip })));
+      document.querySelectorAll("[data-ipa-remove]").forEach((b) => b.addEventListener("click", () => {
+        if (confirm("Remove this IP from the whitelist? Anyone still using it will be rejected on their next request.")) ipaAction("remove", { ip: b.dataset.ip, officeId: b.dataset.office });
+      }));
+    }
+
+    async function ipaAction(action, payload) {
+      const res = await adminFetch("/api/admin/ip-access", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, ...payload }),
+      });
+      const data = await res.json();
+      if (!data.ok) { alert(data.error || "Action failed."); return; }
+      await loadIpAccessDashboard();
+    }
+
+    document.getElementById("ipaManualAddBtn").addEventListener("click", async () => {
+      const msg = document.getElementById("ipaManualMsg");
+      msg.innerHTML = "";
+      const officeId = document.getElementById("ipaManualOffice").value;
+      const ip = document.getElementById("ipaManualIp").value.trim();
+      if (!officeId) { msg.innerHTML = '<div class="admin-msg err">Pick an office.</div>'; return; }
+      if (!ip) { msg.innerHTML = '<div class="admin-msg err">Enter an IP address.</div>'; return; }
+      const res = await adminFetch("/api/admin/ip-access", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "manualAdd", officeId, ip }),
+      });
+      const data = await res.json();
+      if (!data.ok) { msg.innerHTML = `<div class="admin-msg err">${escapeHtml(data.error || "Failed.")}</div>`; return; }
+      msg.innerHTML = '<div class="admin-msg ok">Added.</div>';
+      document.getElementById("ipaManualIp").value = "";
+      await loadIpAccessDashboard();
+    });
+
+    document.getElementById("ipaBlockBtn").addEventListener("click", async () => {
+      const msg = document.getElementById("ipaBlockMsg");
+      msg.innerHTML = "";
+      const ip = document.getElementById("ipaBlockIp").value.trim();
+      const reason = document.getElementById("ipaBlockReason").value.trim();
+      if (!ip) { msg.innerHTML = '<div class="admin-msg err">Enter an IP address.</div>'; return; }
+      const res = await adminFetch("/api/admin/ip-access", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "block", ip, reason }),
+      });
+      const data = await res.json();
+      if (!data.ok) { msg.innerHTML = `<div class="admin-msg err">${escapeHtml(data.error || "Failed.")}</div>`; return; }
+      msg.innerHTML = '<div class="admin-msg ok">Blocked.</div>';
+      document.getElementById("ipaBlockIp").value = "";
+      document.getElementById("ipaBlockReason").value = "";
+      await loadIpAccessDashboard();
+    });
   </script>
 </body>
 </html>

@@ -44,6 +44,8 @@
  * rather than silently signing with a guessable key.
  */
 
+import { isIpBlocked } from "./ipAccess.js";
+
 const OFFICES_INDEX_KEY = "offices-index";
 const ACCOUNTS_INDEX_KEY = "accounts-index";
 
@@ -530,6 +532,14 @@ export async function verifyRequest(request, env) {
   // A token from before the most recent password change / lock / unlock
   // is stale even if its signature and expiry are both still valid.
   if ((account.tokenVersion || 0) !== payload.v) return null;
+
+  // Global IP blocklist (functions/_shared/ipAccess.js, "IP Access" admin
+  // dashboard) — a SEPARATE mechanism from officeIpCheckPasses() below.
+  // Checked here too (not just at login) so an IP blocked AFTER a token
+  // was already issued stops working immediately on the next request,
+  // same "no stale access survives a security decision" guarantee the
+  // tokenVersion check above already gives for locks/password changes.
+  if (await isIpBlocked(env, requestIP(request))) return null;
 
   if (!(await officeIpCheckPasses(env, account, request))) return null;
 

@@ -86,6 +86,7 @@
 import { getAccount, verifyPassword, officeIpCheckPasses, getOffice, requestIP, setAccountLocked, issueToken } from "../../_shared/accounts.js";
 import { sendTelegramMessage } from "../../_shared/telegram.js";
 import { getRouteOverride } from "../../_shared/routes.js";
+import { isIpBlocked, recordPendingIpAttempt } from "../../_shared/ipAccess.js";
 
 // Reserved pseudo brand/module id pair — NOT a real brand — used so the
 // "TG Group / Channel" admin page (functions/api/admin/routes.js) can
@@ -125,6 +126,19 @@ async function handleLogin({ request, env, waitUntil }) {
   if (!username || !password) return json({ ok: false, error: "Username and password are required." }, 400);
 
   const badCreds = () => json({ ok: false, error: "Wrong username or password." }, 401);
+
+  // Global IP blocklist (functions/_shared/ipAccess.js, "IP Access" admin
+  // dashboard) — checked FIRST, before even looking up the account or
+  // hashing the password, same reasoning as the `account.locked` check
+  // below: no point paying for a PBKDF2 hash on a request that's getting
+  // rejected regardless of whether the password is right. This is a
+  // DIFFERENT mechanism from the per-office allowedIPs whitelist —
+  // independent of which account/office is involved, a blocked IP is
+  // rejected outright and doesn't even generate a new pending request.
+  const earlyIp = requestIP(request) || "unknown";
+  if (await isIpBlocked(env, earlyIp)) {
+    return json({ ok: false, error: `This IP address (${earlyIp}) has been blocked. Contact a SuperAdmin if you believe this is a mistake.` }, 403);
+  }
 
   const account = await getAccount(env, username);
   if (!account) return badCreds();
@@ -169,6 +183,25 @@ async function handleLogin({ request, env, waitUntil }) {
     // rejection response, and a Telegram hiccup here can't turn into a
     // broken login flow (notifyLoginFailure swallows its own errors).
     if (waitUntil) waitUntil(notifyLoginFailure(env, { account, ip, request, reasonTitle: "Abnormal IP Address" }));
+
+    // "IP Access" admin dashboard (functions/_shared/ipAccess.js) — this
+    // is the ONLY failure branch that creates/bumps a pending request;
+    // wrong-password and no-office-assigned aren't "new IP" problems, so
+    // they don't belong on this dashboard. Silently no-ops if the
+    // account has no officeId (shouldn't reach here in that case at all
+    // — that's caught by the earlier no-office branch above — but
+    // recordPendingIpAttempt() guards against it regardless). Same
+    // fire-and-forget reasoning as the Telegram alert right above.
+    if (waitUntil && account.officeId) {
+      const cf = request.cf || {};
+      waitUntil(recordPendingIpAttempt(env, {
+        ip, officeId: account.officeId,
+        officeName: (await getOffice(env, account.officeId))?.name || "",
+        username: account.username,
+        userAgent: request.headers.get("User-Agent") || "unknown device",
+        country: cf.country || null, city: cf.city || null,
+      }));
+    }
 
     const { locked, count } = await recordLoginFailure(env, account.username, { kind: "unrecognized IP", ip });
     if (locked && waitUntil) {
