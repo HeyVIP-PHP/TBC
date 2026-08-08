@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>TG Reply Threads</title>
-<link rel="stylesheet" href="/assets/style.css?v=628599ac" />
+<link rel="stylesheet" href="/assets/style.css?v=73339998" />
 <script src="/assets/theme.js?v=5b27e630"></script>
 <script src="/assets/starfield.js?v=b6e92821" defer></script>
 <script src="/assets/authguard.js?v=9cc20fef"></script>
@@ -31,13 +31,6 @@
     </div>
   </header>
 
-  <div id="announcementBanner"></div>
-  <script src="/assets/announcement-banner.js?v=44227438" defer></script>
-
-  <div class="threads-topline">
-    <a href="/" class="back-pill">&larr; Back to Home</a>
-  </div>
-
   <div class="threads-shell" id="threadsShell">
     <aside class="threads-sidebar">
       <div class="threads-search">
@@ -63,9 +56,16 @@
       </div>
     </aside>
 
-    <main class="threads-main" id="threadsMain">
-      <div class="threads-placeholder">Pick a thread on the left, or submit a form to start one.</div>
-    </main>
+    <div class="threads-right-col">
+      <div id="announcementBanner"></div>
+      <script src="/assets/announcement-banner.js?v=44227438" defer></script>
+      <div class="threads-topline">
+        <a href="/" class="back-pill">&larr; Back to Home</a>
+      </div>
+      <main class="threads-main" id="threadsMain">
+        <div class="threads-placeholder">Pick a thread on the left, or submit a form to start one.</div>
+      </main>
+    </div>
   </div>
 
   <script>

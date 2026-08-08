@@ -1066,6 +1066,15 @@ a { color: inherit; text-decoration: none; }
 
 /* ---- TG Reply Threads ---- */
 .threads-shell { display: flex; height: calc(100vh - 61px); }
+/* Banner + "Back to Home" + the actual main pane, all in one column so
+   their width matches the main pane instead of spanning the full page
+   (which would run over the top of the ticket/announcement list
+   sidebar) — same reasoning as .hub-right-col on index.html. */
+.threads-right-col { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.threads-right-col > #announcementBanner,
+.threads-right-col > .threads-topline {
+  flex-shrink: 0;
+}
 .threads-sidebar {
   width: 300px;
   flex-shrink: 0;
