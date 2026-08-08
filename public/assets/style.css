@@ -938,17 +938,13 @@ a { color: inherit; text-decoration: none; }
   align-items: stretch;
   justify-content: flex-start;
   text-align: left;
-  overflow: hidden;
+  overflow-y: auto;
 }
 .spa-mount .threads-shell,
 .spa-mount .promo-shell,
 .spa-mount .form-page {
   height: 100%;
   width: 100%;
-}
-.spa-mount .promo-shell,
-.spa-mount .form-page {
-  overflow-y: auto;
 }
 .spa-loading { padding: 40px; color: var(--ink-soft); font-size: 13px; }
 .status-badge-corner {
