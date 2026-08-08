@@ -59,12 +59,27 @@
           <option value="superadmin">SuperAdmin</option>
         </select>
         <button type="button" id="ipaManageOfficesToggle" class="tgroute-action-btn tgroute-action-secondary" style="display:none;">+ Manage offices</button>
+        <button type="button" id="ipaRecordToggle" class="tgroute-action-btn tgroute-action-secondary" style="display:none;">🕒 Record</button>
       </div>
       <div id="acctModalBody"></div>
       <p class="edit-modal-note" id="acctModalNote"></p>
       <div class="edit-modal-actions" id="acctModalActions">
         <button type="button" class="btn-submit" id="acctModalSave">Save</button>
       </div>
+    </div>
+  </div>
+
+  <!-- IP Access Record — a SEPARATE popup layered on top of the IP
+       Access modal (not part of its scrolling flow) — opened by the
+       "🕒 Record" header button above. Shows whatever category the main
+       modal currently has selected (or every category if none/Total),
+       reusing the exact same grouped-by-action rendering
+       (renderIpaRecordGroup) as before; only WHERE it renders moved. -->
+  <div class="edit-modal-backdrop" id="ipaRecordBackdrop">
+    <div class="edit-modal">
+      <button type="button" class="modal-close-btn" id="ipaRecordClose" title="Close" aria-label="Close">✕</button>
+      <p class="edit-modal-title" style="margin-bottom:14px;">🕒 Record</p>
+      <div id="ipaRecordPopupBody"></div>
     </div>
   </div>
 
@@ -610,6 +625,7 @@
       const manageOfficesToggle = document.getElementById("ipaManageOfficesToggle");
       manageOfficesToggle.style.display = mode === "whitelist" ? "" : "none";
       manageOfficesToggle.textContent = "+ Manage offices"; // reset label — see its click handler below, which flips this to "Hide" while open
+      document.getElementById("ipaRecordToggle").style.display = mode === "whitelist" ? "" : "none";
 
       if (mode === "create") {
         acctTitle.textContent = "Create Account";
@@ -679,12 +695,12 @@
         // collapsed every time this mode opens (see manageOfficesToggle
         // reset above).
         acctBody.innerHTML = `
-          <div id="ipaOfficeFormWrap" style="display:none;">
+          <div id="ipaOfficeFormWrap" class="ipa-mini-form-block" style="display:none;">
+            <p class="ipa-mini-form-label">Manage offices</p>
             <div class="field"><label>Office</label><select id="am_office_picker" ${ro}><option value="">+ New Office</option>${officeOptions}</select></div>
             <div class="field"><label>Office name</label><input type="text" id="am_office_name" ${ro} autocomplete="off" /></div>
             <div class="field"><label>Allowed IPs (one per line)</label><textarea id="am_office_ips" rows="3" placeholder="203.0.113.10" ${ro} autocomplete="off"></textarea></div>
-            ${canEditWhitelist ? '<div style="margin:4px 0 4px;"><button type="button" class="tgroute-action-btn" id="am_office_save_btn">Save office</button></div>' : '<p class="edit-modal-note">View only.</p>'}
-            <hr class="form-divider" style="margin:16px 0 0;" />
+            ${canEditWhitelist ? '<button type="button" class="tgroute-action-btn" id="am_office_save_btn">Save office</button>' : '<p class="edit-modal-note">View only.</p>'}
           </div>
           <div id="ipaCards" class="ipa-cards"></div>
           ${canEditWhitelist ? `
@@ -710,8 +726,6 @@
           <div id="ipaPanelBody" style="display:none;">
             <p class="ipa-hint" id="ipaPanelHint"></p>
             <div id="ipaIpGroups"></div>
-            <p class="ipa-group-heading" style="font-size:14px;">🕒 Record</p>
-            <div id="ipaRecordGroups"></div>
           </div>
           <p class="ipa-hint" id="ipaEmptyHint">Click a card above to view its IPs and record.</p>`;
 
@@ -2035,6 +2049,10 @@
       // portaled to <body> doesn't get hidden just because the modal
       // backdrop that used to be behind it does.
       document.querySelectorAll("body > .fs-dropdown-menu").forEach((m) => m.remove());
+      // The Record popup (see below) is a separate layered overlay, not
+      // a child of this modal's DOM — closing the parent doesn't
+      // automatically close it, so do that explicitly.
+      document.getElementById("ipaRecordBackdrop").classList.remove("is-open");
     }
     document.getElementById("acctModalClose").addEventListener("click", closeAcctModal);
 
@@ -2050,6 +2068,28 @@
       wrap.style.display = opening ? "block" : "none";
       e.target.textContent = opening ? "Hide office form" : "+ Manage offices";
     });
+
+    // "🕒 Record" — a genuinely SEPARATE popup layered on top of the IP
+    // Access modal (not an inline section anymore — see PROJECT_STATUS
+    // for why: the modal was getting too long with every category's
+    // record stacked in the same scroll). Shows whichever card is
+    // currently selected (ipaSelectedKey), or every category if none/
+    // Total is selected — reuses renderIpaRecordGroup() unchanged, only
+    // WHERE it renders moved.
+    function openIpaRecordPopup() {
+      const key = ipaSelectedKey || "total";
+      const categories = key === "total" ? IPA_TOTAL_CATEGORIES : [key];
+      const html = categories.map(renderIpaRecordGroup).join("");
+      document.getElementById("ipaRecordPopupBody").innerHTML = html || `<div class="ipa-empty">No record entries.</div>`;
+      document.getElementById("ipaRecordBackdrop").classList.add("is-open");
+    }
+    function closeIpaRecordPopup() {
+      document.getElementById("ipaRecordBackdrop").classList.remove("is-open");
+    }
+    document.getElementById("ipaRecordToggle").addEventListener("click", openIpaRecordPopup);
+    document.getElementById("ipaRecordClose").addEventListener("click", closeIpaRecordPopup);
+    const ipaRecordBackdropEl = document.getElementById("ipaRecordBackdrop");
+    ipaRecordBackdropEl.addEventListener("click", (e) => { if (e.target === ipaRecordBackdropEl) closeIpaRecordPopup(); });
     acctBackdrop.addEventListener("click", (e) => { if (e.target === acctBackdrop) closeAcctModal(); });
 
     document.getElementById("acctModalSave").addEventListener("click", async () => {
@@ -2156,6 +2196,15 @@
     // page's existing helpers (acctEsc, timeAgoLocal, window.AgentAuth.
     // authFetch, canEditAdminSection) instead of duplicating them.
     const IPA_CATEGORY_ORDER = ["pending", "approved", "manual", "blocked"];
+    // What "Total" actually shows when clicked — deliberately NARROWER
+    // than all 4 categories. Total now means "settled" IPs (allowed via
+    // Approved, denied via Blocked) — Pending (not decided yet) and
+    // Manually (a filtered VIEW of Approved/legacy entries, not a
+    // distinct status) each already have their own card for that, and
+    // stacking all 4 under Total was making the modal too long (see
+    // PROJECT_STATUS.md). Applies to both the IP list groups AND the
+    // Record popup, so the two stay consistent with each other.
+    const IPA_TOTAL_CATEGORIES = ["approved", "blocked"];
     const IPA_CATEGORY_LABELS = { pending: "Pending", approved: "Approved", manual: "Manually added", blocked: "Blocked" };
     const IPA_RECORD_HEADINGS = { pending: "Flagged for review", approved: "Approved by", manual: "Added by", blocked: "Blocked by" };
 
@@ -2214,14 +2263,11 @@
       document.getElementById("ipaEmptyHint").style.display = "none";
       document.getElementById("ipaPanelBody").style.display = "block";
       document.getElementById("ipaPanelHint").textContent =
-        key === "total" ? "Every IP across every status, grouped the same way as the Record below." : `Showing ${IPA_CATEGORY_LABELS[key].toLowerCase()} IPs only.`;
+        key === "total" ? "Approved and blocked IPs — the settled ones. Pending and Manually each have their own card." : `Showing ${IPA_CATEGORY_LABELS[key].toLowerCase()} IPs only.`;
 
-      const categories = key === "total" ? IPA_CATEGORY_ORDER : [key];
+      const categories = key === "total" ? IPA_TOTAL_CATEGORIES : [key];
       document.getElementById("ipaIpGroups").innerHTML = categories.map(renderIpaIpGroup).join("");
       wireIpaRowActions();
-
-      const recordHtml = categories.map(renderIpaRecordGroup).join("");
-      document.getElementById("ipaRecordGroups").innerHTML = recordHtml || `<div class="ipa-empty">No record entries.</div>`;
     }
 
     function renderIpaIpGroup(cat) {
