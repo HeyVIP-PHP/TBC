@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>PHP CS Team - TBC</title>
-<link rel="stylesheet" href="/assets/style.css?v=5742bc97" />
+<link rel="stylesheet" href="/assets/style.css?v=fe9c2c8c" />
 <script src="/assets/theme.js?v=5b27e630"></script>
 <script src="/assets/starfield.js?v=b6e92821" defer></script>
 <script src="/assets/authguard.js?v=9cc20fef"></script>
@@ -2161,6 +2161,25 @@
 
     function ipaCapitalize(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : s; }
 
+    // "08 AUG 16:04:32" — used everywhere IP Access shows a timestamp
+    // (Pending's Last attempt, Approved/Manually's Date, Blocked's
+    // Blocked, and every Record row). Absolute, not relative — unlike
+    // timeAgoLocal() used elsewhere on this page (Agent Profile's Last
+    // Active), an audit trail needs the exact moment something happened,
+    // not "2h ago" which keeps changing and isn't useful once you're
+    // looking back at history.
+    function ipaFormatTime(iso) {
+      if (!iso) return "—";
+      const d = new Date(iso);
+      if (isNaN(d.getTime())) return "—";
+      const day = String(d.getDate()).padStart(2, "0");
+      const month = d.toLocaleString("en-US", { month: "short" }).toUpperCase();
+      const hh = String(d.getHours()).padStart(2, "0");
+      const mm = String(d.getMinutes()).padStart(2, "0");
+      const ss = String(d.getSeconds()).padStart(2, "0");
+      return `${day} ${month} ${hh}:${mm}:${ss}`;
+    }
+
     async function loadIpAccessDashboard() {
       const res = await window.AgentAuth.authFetch("/api/admin/ip-access");
       const data = await res.json();
@@ -2218,7 +2237,7 @@
             <span class="ipa-mono">${acctEsc(r.ip)}</span>
             <span>${acctEsc(r.officeName || "—")}</span>
             <span>${acctEsc(r.username || "—")}${r.attempts > 1 ? ` <span style="color:var(--ink-soft)">(${r.attempts}x)</span>` : ""}</span>
-            <span style="color:var(--ink-soft)">${timeAgoLocal(r.lastAttemptAt)}</span>
+            <span style="color:var(--ink-soft)">${ipaFormatTime(r.lastAttemptAt)}</span>
             <span class="row-actions">${canEditWhitelist ? `
               <button type="button" class="row-btn" data-ipa-approve data-ip="${acctEsc(r.ip)}" data-office="${acctEsc(r.officeId)}" title="Approve">✅</button>
               <button type="button" class="row-btn" data-ipa-reject data-ip="${acctEsc(r.ip)}" data-office="${acctEsc(r.officeId)}" title="Reject">🗑️</button>` : ""}</span>
@@ -2230,7 +2249,7 @@
           <div class="ipa-row" style="grid-template-columns:${cols}">
             <span class="ipa-mono">${acctEsc(r.ip)}</span>
             <span style="color:var(--ink-soft)">${acctEsc(r.reason || "—")}</span>
-            <span style="color:var(--ink-soft)">${timeAgoLocal(r.blockedAt)}</span>
+            <span style="color:var(--ink-soft)">${ipaFormatTime(r.blockedAt)}</span>
             <span class="row-actions">${canEditWhitelist ? `<button type="button" class="row-btn" data-ipa-unblock data-ip="${acctEsc(r.ip)}" title="Unblock">🔓</button>` : ""}</span>
           </div>`).join("");
       } else { // approved / manual — same shape, different source label
@@ -2241,7 +2260,7 @@
             <span class="ipa-mono">${acctEsc(r.ip)}</span>
             <span>${acctEsc(r.officeName || "—")}</span>
             <span>${r.addedBy ? `${acctEsc(ipaCapitalize(r.addedByRole || ""))} - ${acctEsc(r.addedBy)}` : "Legacy entry"}</span>
-            <span style="color:var(--ink-soft)">${r.addedAt ? timeAgoLocal(r.addedAt) : "—"}</span>
+            <span style="color:var(--ink-soft)">${ipaFormatTime(r.addedAt)}</span>
             <span class="row-actions">${canEditWhitelist ? `<button type="button" class="row-btn" data-ipa-remove data-ip="${acctEsc(r.ip)}" data-office="${acctEsc(r.officeId)}" title="Remove">🗑️</button>` : ""}</span>
           </div>`).join("");
       }
@@ -2266,7 +2285,7 @@
         if (e.action === "remove") parts.push("removed");
         return `<div class="ipa-record-row">
           <span><strong>${acctEsc(roleLabel)}</strong> - ${acctEsc(whoLabel)}<span style="color:var(--ink-soft)"> &middot; ${acctEsc(parts.join(" · "))}</span></span>
-          <span class="ipa-record-time">${timeAgoLocal(e.ts)}</span>
+          <span class="ipa-record-time">${ipaFormatTime(e.ts)}</span>
         </div>`;
       }).join("");
       return `<div class="ipa-record-group"><div class="ipa-record-head">${IPA_RECORD_HEADINGS[cat]}</div>${rows}</div>`;
