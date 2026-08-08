@@ -181,13 +181,27 @@
     return null;
   }
 
+  // Capture phase, ON PURPOSE: page-transition.js also listens for clicks
+  // on any a[href^="/"] (its own exit-animation logic) at the default
+  // bubble phase, and calls preventDefault() + a real location.href
+  // navigation of its own. If this listener also ran at the bubble
+  // phase, whichever script's <script> tag comes first in index.html
+  // would "win" the race — and since page-transition.js already calls
+  // preventDefault(), this listener would see e.defaultPrevented and
+  // bail out, thinking something else already handled it, while
+  // page-transition.js's setTimeout still fires a real navigation right
+  // after. Capture phase runs before ANY bubble-phase listener, so this
+  // always gets first look regardless of script load order; calling
+  // stopImmediatePropagation() below then stops page-transition.js's
+  // handler from running at all for clicks this router actually owns.
   document.addEventListener("click", (e) => {
-    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
     const route = routeForClick(e.target);
     if (!route) return;
     e.preventDefault();
+    e.stopImmediatePropagation();
     mount(route.view, route).catch((err) => console.error("[spa-shell] mount failed:", err));
-  });
+  }, { capture: true });
 
   window.addEventListener("popstate", (e) => {
     const state = e.state;
