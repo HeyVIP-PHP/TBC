@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>PHP CS Team - TBC</title>
-<link rel="stylesheet" href="/assets/style.css?v=fe9c2c8c" />
+<link rel="stylesheet" href="/assets/style.css?v=4127e167" />
 <script src="/assets/theme.js?v=5b27e630"></script>
 <script src="/assets/starfield.js?v=b6e92821" defer></script>
 <script src="/assets/authguard.js?v=9cc20fef"></script>
@@ -58,14 +58,30 @@
           <option value="admin">Admin</option>
           <option value="superadmin">SuperAdmin</option>
         </select>
-        <button type="button" id="ipaManageOfficesToggle" class="tgroute-action-btn tgroute-action-secondary" style="display:none;">+ Manage offices</button>
-        <button type="button" id="ipaRecordToggle" class="tgroute-action-btn tgroute-action-secondary" style="display:none;">🕒 Record</button>
+        <div id="ipaHeaderActions" style="display:none;gap:8px;">
+          <button type="button" id="ipaManageOfficesToggle" class="tgroute-action-btn tgroute-action-secondary">+ Manage offices</button>
+          <button type="button" id="ipaRecordToggle" class="tgroute-action-btn tgroute-action-secondary">🕒 Record</button>
+        </div>
       </div>
       <div id="acctModalBody"></div>
       <p class="edit-modal-note" id="acctModalNote"></p>
       <div class="edit-modal-actions" id="acctModalActions">
         <button type="button" class="btn-submit" id="acctModalSave">Save</button>
       </div>
+    </div>
+  </div>
+
+  <!-- IP Access "Manage offices" — same pattern as the Record popup right
+       below: a SEPARATE layered overlay, not an inline expand/collapse
+       section anymore. Content is rebuilt fresh every time it's opened
+       (see openIpaOfficeFormPopup()) since it depends on acctOffices,
+       which can change (a save refreshes it) while this modal stays
+       open. -->
+  <div class="edit-modal-backdrop" id="ipaOfficeBackdrop">
+    <div class="edit-modal">
+      <button type="button" class="modal-close-btn" id="ipaOfficeClose" title="Close" aria-label="Close">✕</button>
+      <p class="edit-modal-title" style="margin-bottom:14px;">Manage offices</p>
+      <div id="ipaOfficePopupBody"></div>
     </div>
   </div>
 
@@ -622,10 +638,7 @@
       const searchEl = document.getElementById("acctProfileSearch");
       searchEl.style.display = mode === "profile" ? "" : "none";
       if (mode === "profile") searchEl.value = "";
-      const manageOfficesToggle = document.getElementById("ipaManageOfficesToggle");
-      manageOfficesToggle.style.display = mode === "whitelist" ? "" : "none";
-      manageOfficesToggle.textContent = "+ Manage offices"; // reset label — see its click handler below, which flips this to "Hide" while open
-      document.getElementById("ipaRecordToggle").style.display = mode === "whitelist" ? "" : "none";
+      document.getElementById("ipaHeaderActions").style.display = mode === "whitelist" ? "flex" : "none";
 
       if (mode === "create") {
         acctTitle.textContent = "Create Account";
@@ -675,53 +688,42 @@
         // Can-Edit on "whitelistIp" now decides editability — replaces the
         // old isSuperAdmin check (see canEditAdminSection() above).
         const canEditWhitelist = canEditAdminSection("whitelistIp");
-        const ro = canEditWhitelist ? "" : "disabled";
-        // Office create/rename form keeps its OWN inline Save button now
-        // (acctSaveWhitelist(), rewired below) instead of the modal's
-        // global footer Save — this mode moved to the "wide" + per-row
-        // group above once the IP Access dashboard was added beneath it,
-        // and unlike a single office form, this whole view has several
-        // independent save points (this form, plus every Approve/Block/
-        // Remove row further down), so one shared footer button no
-        // longer means anything specific.
-        // Office create/rename form now lives inside a collapsible panel
-        // (toggled by the "+ Manage offices" button in the modal header —
-        // see manageOfficesToggle above and its click handler further
-        // down) instead of always sitting at the top. It was pushing the
-        // actual day-to-day content (the 5 cards, the tables) below the
-        // fold — renaming an office or bulk-replacing its whole IP list
-        // is a rare action compared to approving/adding/removing single
-        // IPs, so it shouldn't cost permanent vertical space. Starts
-        // collapsed every time this mode opens (see manageOfficesToggle
-        // reset above).
+        // "Manage offices" (office create/rename/bulk-IP-replace form) and
+        // "Record" both live in their OWN separate popups now — see
+        // openIpaOfficeFormPopup()/openIpaRecordPopup() further down —
+        // rather than expanding inline inside this modal. Two reasons:
+        // (1) the office form was pushing the actual day-to-day content
+        // (the 5 cards, the tables) below the fold even when collapsed
+        // to nothing, and (2) it keeps both "extra" actions visually and
+        // behaviorally consistent with each other (two buttons that open
+        // two popups), rather than one being an inline toggle and the
+        // other a popup.
         acctBody.innerHTML = `
-          <div id="ipaOfficeFormWrap" class="ipa-mini-form-block" style="display:none;">
-            <p class="ipa-mini-form-label">Manage offices</p>
-            <div class="field"><label>Office</label><select id="am_office_picker" ${ro}><option value="">+ New Office</option>${officeOptions}</select></div>
-            <div class="field"><label>Office name</label><input type="text" id="am_office_name" ${ro} autocomplete="off" /></div>
-            <div class="field"><label>Allowed IPs (one per line)</label><textarea id="am_office_ips" rows="3" placeholder="203.0.113.10" ${ro} autocomplete="off"></textarea></div>
-            ${canEditWhitelist ? '<button type="button" class="tgroute-action-btn" id="am_office_save_btn">Save office</button>' : '<p class="edit-modal-note">View only.</p>'}
-          </div>
           <div id="ipaCards" class="ipa-cards"></div>
           ${canEditWhitelist ? `
           <div class="ipa-mini-form-block">
-            <p class="ipa-mini-form-label">Add IP manually</p>
-            <div id="ipaManualMsg"></div>
-            <div class="ipa-mini-form">
-              <div class="field"><label>Office</label><select id="ipaManualOffice">${officeOptions}</select></div>
-              <div class="field"><label>IP address</label><input type="text" id="ipaManualIp" placeholder="203.0.113.10" autocomplete="off" /></div>
-              <button type="button" class="tgroute-action-btn" id="ipaManualAddBtn">Add</button>
+            <p class="ipa-mini-form-label ipa-collapsible-header" id="ipaManualToggleHeader"><span>Add IP manually</span><span class="ipa-collapsible-arrow">&rarr;</span></p>
+            <div id="ipaManualBody" style="display:none;">
+              <div id="ipaManualMsg"></div>
+              <div class="ipa-mini-form">
+                <div class="field"><label>Office</label><select id="ipaManualOffice">${officeOptions}</select></div>
+                <div class="field"><label>IP address(es)</label><input type="text" id="ipaManualIp" placeholder="203.0.113.10, 203.0.113.11" autocomplete="off" /></div>
+                <button type="button" class="tgroute-action-btn" id="ipaManualAddBtn">Add</button>
+              </div>
+              <p class="ipa-hint" style="margin:8px 0 0;">Adding more than one? Separate them with commas — 203.0.113.10, 203.0.113.11.</p>
             </div>
           </div>
           <div class="ipa-mini-form-block">
-            <p class="ipa-mini-form-label">Block an IP</p>
-            <div id="ipaBlockMsg"></div>
-            <div class="ipa-mini-form">
-              <div class="field"><label>IP address</label><input type="text" id="ipaBlockIp" placeholder="203.0.113.10" autocomplete="off" /></div>
-              <div class="field"><label>Reason (optional)</label><input type="text" id="ipaBlockReason" placeholder="e.g. repeated brute-force attempts" autocomplete="off" /></div>
-              <button type="button" class="tgroute-action-btn tgroute-action-secondary" id="ipaBlockBtn">Block</button>
+            <p class="ipa-mini-form-label ipa-collapsible-header" id="ipaBlockToggleHeader"><span>Block an IP</span><span class="ipa-collapsible-arrow">&rarr;</span></p>
+            <div id="ipaBlockBody" style="display:none;">
+              <div id="ipaBlockMsg"></div>
+              <div class="ipa-mini-form">
+                <div class="field"><label>IP address(es)</label><input type="text" id="ipaBlockIp" placeholder="203.0.113.10, 203.0.113.11" autocomplete="off" /></div>
+                <div class="field"><label>Reason (optional)</label><input type="text" id="ipaBlockReason" placeholder="e.g. repeated brute-force attempts" autocomplete="off" /></div>
+                <button type="button" class="tgroute-action-btn tgroute-action-secondary" id="ipaBlockBtn">Block</button>
+              </div>
+              <p class="ipa-hint" style="margin:8px 0 0;">Separate multiple IPs with commas. Blocking is global — independent of office or account, each one is rejected outright at login, even with a correct password.</p>
             </div>
-            <p class="ipa-hint" style="margin:8px 0 0;">Blocking is global — independent of office or account, this IP is rejected outright at login, even with a correct password.</p>
           </div>` : ""}
           <div id="ipaPanelBody" style="display:none;">
             <p class="ipa-hint" id="ipaPanelHint"></p>
@@ -729,17 +731,12 @@
           </div>
           <p class="ipa-hint" id="ipaEmptyHint">Click a card above to view its IPs and record.</p>`;
 
-        document.getElementById("am_office_picker").addEventListener("change", (e) => {
-          const office = acctOffices.find((o) => o.id === e.target.value);
-          document.getElementById("am_office_name").value = office ? office.name : "";
-          document.getElementById("am_office_ips").value = office ? (office.allowedIPs || []).join("\n") : "";
-        });
-        const officeSaveBtn = document.getElementById("am_office_save_btn");
-        if (officeSaveBtn) officeSaveBtn.addEventListener("click", acctSaveWhitelist);
         const manualAddBtn = document.getElementById("ipaManualAddBtn");
         if (manualAddBtn) manualAddBtn.addEventListener("click", ipaSaveManualAdd);
         const blockBtn = document.getElementById("ipaBlockBtn");
         if (blockBtn) blockBtn.addEventListener("click", ipaSaveBlock);
+        wireIpaCollapsible("ipaManualToggleHeader", "ipaManualBody");
+        wireIpaCollapsible("ipaBlockToggleHeader", "ipaBlockBody");
 
         ipaSelectedKey = null;
         loadIpAccessDashboard();
@@ -2049,25 +2046,46 @@
       // portaled to <body> doesn't get hidden just because the modal
       // backdrop that used to be behind it does.
       document.querySelectorAll("body > .fs-dropdown-menu").forEach((m) => m.remove());
-      // The Record popup (see below) is a separate layered overlay, not
-      // a child of this modal's DOM — closing the parent doesn't
-      // automatically close it, so do that explicitly.
+      // The Record popup AND the Manage offices popup (see below) are
+      // separate layered overlays, not children of this modal's DOM —
+      // closing the parent doesn't automatically close them, so do that
+      // explicitly.
       document.getElementById("ipaRecordBackdrop").classList.remove("is-open");
+      document.getElementById("ipaOfficeBackdrop").classList.remove("is-open");
     }
     document.getElementById("acctModalClose").addEventListener("click", closeAcctModal);
 
-    // "+ Manage offices" (only visible in the "whitelist"/IP Access mode
-    // — see openAcctModal above) — wired ONCE here since the button
-    // itself is a static header element, not part of acctBody's
-    // regenerated innerHTML; it just toggles whatever #ipaOfficeFormWrap
-    // currently exists inside acctBody at click time.
-    document.getElementById("ipaManageOfficesToggle").addEventListener("click", (e) => {
-      const wrap = document.getElementById("ipaOfficeFormWrap");
-      if (!wrap) return;
-      const opening = wrap.style.display === "none";
-      wrap.style.display = opening ? "block" : "none";
-      e.target.textContent = opening ? "Hide office form" : "+ Manage offices";
-    });
+    // "+ Manage offices" — a SEPARATE popup layered on top of the IP
+    // Access modal (same pattern as the Record popup right below —
+    // originally this was an inline expand/collapse section, moved to a
+    // real popup so both "extra" header actions behave the same way).
+    // Rebuilt fresh every open since it depends on acctOffices, which a
+    // save refreshes while this modal stays open.
+    function openIpaOfficeFormPopup() {
+      const canEditWhitelist = canEditAdminSection("whitelistIp");
+      const ro = canEditWhitelist ? "" : "disabled";
+      const officeOptions = acctOffices.map((o) => `<option value="${o.id}">${acctEsc(o.name)}</option>`).join("");
+      document.getElementById("ipaOfficePopupBody").innerHTML = `
+        <div class="field"><label>Office</label><select id="am_office_picker" ${ro}><option value="">+ New Office</option>${officeOptions}</select></div>
+        <div class="field"><label>Office name</label><input type="text" id="am_office_name" ${ro} autocomplete="off" /></div>
+        <div class="field"><label>Allowed IPs (one per line)</label><textarea id="am_office_ips" rows="3" placeholder="203.0.113.10" ${ro} autocomplete="off"></textarea></div>
+        ${canEditWhitelist ? '<button type="button" class="tgroute-action-btn" id="am_office_save_btn">Save office</button>' : '<p class="edit-modal-note">View only.</p>'}`;
+      document.getElementById("am_office_picker").addEventListener("change", (e) => {
+        const office = acctOffices.find((o) => o.id === e.target.value);
+        document.getElementById("am_office_name").value = office ? office.name : "";
+        document.getElementById("am_office_ips").value = office ? (office.allowedIPs || []).join("\n") : "";
+      });
+      const officeSaveBtn = document.getElementById("am_office_save_btn");
+      if (officeSaveBtn) officeSaveBtn.addEventListener("click", acctSaveWhitelist);
+      document.getElementById("ipaOfficeBackdrop").classList.add("is-open");
+    }
+    function closeIpaOfficeFormPopup() {
+      document.getElementById("ipaOfficeBackdrop").classList.remove("is-open");
+    }
+    document.getElementById("ipaManageOfficesToggle").addEventListener("click", openIpaOfficeFormPopup);
+    document.getElementById("ipaOfficeClose").addEventListener("click", closeIpaOfficeFormPopup);
+    const ipaOfficeBackdropEl = document.getElementById("ipaOfficeBackdrop");
+    ipaOfficeBackdropEl.addEventListener("click", (e) => { if (e.target === ipaOfficeBackdropEl) closeIpaOfficeFormPopup(); });
 
     // "🕒 Record" — a genuinely SEPARATE popup layered on top of the IP
     // Access modal (not an inline section anymore — see PROJECT_STATUS
@@ -2209,6 +2227,32 @@
     const IPA_RECORD_HEADINGS = { pending: "Flagged for review", approved: "Approved by", manual: "Added by", blocked: "Blocked by" };
 
     function ipaCapitalize(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : s; }
+
+    // "Add IP manually" / "Block an IP" collapsible cards — same
+    // click-to-expand pattern as the "Account Management" sidebar group
+    // (see acctMgmtToggle/.sidebar-subitems.open in the CSS), just
+    // scoped to these two blocks. Re-wired every time acctBody is
+    // rebuilt (mode === "whitelist") since the elements themselves are
+    // regenerated each open.
+    function wireIpaCollapsible(headerId, bodyId) {
+      const header = document.getElementById(headerId);
+      const body = document.getElementById(bodyId);
+      if (!header || !body) return;
+      header.addEventListener("click", () => {
+        const opening = body.style.display === "none";
+        body.style.display = opening ? "block" : "none";
+        header.classList.toggle("open", opening);
+      });
+    }
+    // Collapses one of these cards back to its header-only state — called
+    // after a successful Add/Block so the form is ready and out of the
+    // way for next time, instead of sitting open forever.
+    function collapseIpaSection(headerId, bodyId) {
+      const header = document.getElementById(headerId);
+      const body = document.getElementById(bodyId);
+      if (header) header.classList.remove("open");
+      if (body) body.style.display = "none";
+    }
 
     // "08 AUG 16:04:32" — used everywhere IP Access shows a timestamp
     // (Pending's Last attempt, Approved/Manually's Date, Blocked's
@@ -2360,36 +2404,73 @@
       const msg = document.getElementById("ipaManualMsg");
       msg.innerHTML = "";
       const officeId = document.getElementById("ipaManualOffice").value;
-      const ip = document.getElementById("ipaManualIp").value.trim();
+      const ips = document.getElementById("ipaManualIp").value.split(",").map((s) => s.trim()).filter(Boolean);
       if (!officeId) { msg.innerHTML = '<div class="edit-modal-note err">Pick an office.</div>'; return; }
-      if (!ip) { msg.innerHTML = '<div class="edit-modal-note err">Enter an IP address.</div>'; return; }
-      const res = await window.AgentAuth.authFetch("/api/admin/ip-access", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "manualAdd", officeId, ip }),
-      });
-      const data = await res.json();
-      if (!data.ok) { msg.innerHTML = `<div class="edit-modal-note err">${acctEsc(data.error || "Failed.")}</div>`; return; }
-      msg.innerHTML = '<div class="edit-modal-note ok">Added.</div>';
-      document.getElementById("ipaManualIp").value = "";
+      if (!ips.length) { msg.innerHTML = '<div class="edit-modal-note err">Enter at least one IP address.</div>'; return; }
+
+      // Sequential, not Promise.all — each call writes to the same
+      // office's allowedIPs (saveOffice() reads-then-writes the whole
+      // array), so firing them in parallel risks one overwriting
+      // another's update. One at a time is slower but correct.
+      const failedIps = [];
+      const errors = [];
+      for (const ip of ips) {
+        const res = await window.AgentAuth.authFetch("/api/admin/ip-access", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "manualAdd", officeId, ip }),
+        });
+        const data = await res.json();
+        if (!data.ok) { failedIps.push(ip); errors.push(`${ip}: ${data.error || "failed"}`); }
+      }
+
       await loadIpAccessDashboard();
+
+      if (failedIps.length) {
+        // Leave the section open with only the failed ones still in the
+        // field, so fixing a typo and retrying doesn't mean retyping
+        // everything that already succeeded.
+        document.getElementById("ipaManualIp").value = failedIps.join(", ");
+        msg.innerHTML = `<div class="edit-modal-note err">${acctEsc(errors.join("; "))}</div>`;
+        if (window.showToast) window.showToast(`${ips.length - failedIps.length} of ${ips.length} added — fix the rest and retry`, "err");
+        return;
+      }
+
+      if (window.showToast) window.showToast(ips.length > 1 ? `${ips.length} IPs added` : "IP added", "ok");
+      document.getElementById("ipaManualIp").value = "";
+      collapseIpaSection("ipaManualToggleHeader", "ipaManualBody");
     }
 
     async function ipaSaveBlock() {
       const msg = document.getElementById("ipaBlockMsg");
       msg.innerHTML = "";
-      const ip = document.getElementById("ipaBlockIp").value.trim();
+      const ips = document.getElementById("ipaBlockIp").value.split(",").map((s) => s.trim()).filter(Boolean);
       const reason = document.getElementById("ipaBlockReason").value.trim();
-      if (!ip) { msg.innerHTML = '<div class="edit-modal-note err">Enter an IP address.</div>'; return; }
-      const res = await window.AgentAuth.authFetch("/api/admin/ip-access", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "block", ip, reason }),
-      });
-      const data = await res.json();
-      if (!data.ok) { msg.innerHTML = `<div class="edit-modal-note err">${acctEsc(data.error || "Failed.")}</div>`; return; }
-      msg.innerHTML = '<div class="edit-modal-note ok">Blocked.</div>';
+      if (!ips.length) { msg.innerHTML = '<div class="edit-modal-note err">Enter at least one IP address.</div>'; return; }
+
+      const failedIps = [];
+      const errors = [];
+      for (const ip of ips) {
+        const res = await window.AgentAuth.authFetch("/api/admin/ip-access", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "block", ip, reason }),
+        });
+        const data = await res.json();
+        if (!data.ok) { failedIps.push(ip); errors.push(`${ip}: ${data.error || "failed"}`); }
+      }
+
+      await loadIpAccessDashboard();
+
+      if (failedIps.length) {
+        document.getElementById("ipaBlockIp").value = failedIps.join(", ");
+        msg.innerHTML = `<div class="edit-modal-note err">${acctEsc(errors.join("; "))}</div>`;
+        if (window.showToast) window.showToast(`${ips.length - failedIps.length} of ${ips.length} blocked — fix the rest and retry`, "err");
+        return;
+      }
+
+      if (window.showToast) window.showToast(ips.length > 1 ? `${ips.length} IPs blocked` : "IP blocked", "ok");
       document.getElementById("ipaBlockIp").value = "";
       document.getElementById("ipaBlockReason").value = "";
-      await loadIpAccessDashboard();
+      collapseIpaSection("ipaBlockToggleHeader", "ipaBlockBody");
     }
 
     async function acctSaveResetAdmin() {
