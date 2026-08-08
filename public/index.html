@@ -2360,10 +2360,20 @@
       const start = (state.page - 1) * state.size;
       const rows = allRows.slice(start, start + state.size);
 
-      let cols, header, bodyRows;
+      // Same column ratio for every table (Pending/Approved/Blocked) —
+      // deliberately NOT tuned per-table to each one's own content
+      // anymore. They used to each pick their own ratio (Blocked's
+      // "Reason" column wider than Approved's "Office", etc.), which
+      // made each table individually well-fitted but meant the vertical
+      // divider lines landed at different x-positions in each table —
+      // stacked one above the other (as they are on this page), that
+      // read as "not aligned" even though each table was internally
+      // correct. One shared ratio trades a bit of per-column fit for
+      // every table's lines lining up with the one above/below it.
+      const cols = "1.1fr 1.3fr 1.2fr 1.1fr 1fr";
+      let header, bodyRows;
 
       if (cat === "pending") {
-        cols = "1.1fr 1fr 1fr 1.2fr auto";
         header = ipaRow(["IP address", "Office", "Requested by", "Last attempt", "Actions"], true);
         bodyRows = rows.map((r) => ipaRow([
           ipaIpCell(r.ip),
@@ -2375,7 +2385,6 @@
               <button type="button" class="row-btn" data-ipa-reject data-ip="${acctEsc(r.ip)}" data-office="${acctEsc(r.officeId)}">Reject</button></span>` : "",
         ])).join("");
       } else if (cat === "blocked") {
-        cols = "1.1fr 1.6fr 1.4fr 1.3fr auto";
         header = ipaRow(["IP address", "Reason", "Blocked by", "Blocked", "Actions"], true);
         bodyRows = rows.map((r) => ipaRow([
           ipaIpCell(r.ip),
@@ -2385,7 +2394,6 @@
           canEditWhitelist ? `<span class="row-actions"><button type="button" class="row-btn" data-ipa-unblock data-ip="${acctEsc(r.ip)}">Unblock</button></span>` : "",
         ])).join("");
       } else { // approved
-        cols = "1.1fr 1fr 1fr 1fr auto";
         header = ipaRow(["IP address", "Office", "Added by", "Date", "Actions"], true);
         bodyRows = rows.map((r) => ipaRow([
           ipaIpCell(r.ip),
