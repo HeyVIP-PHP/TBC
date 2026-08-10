@@ -1908,7 +1908,7 @@
       const allModulesSelected = a.allowedModules === "all" || a.allowedModules === undefined;
       const moduleChecks = AGENT_PROFILE_MODULE_LIST.map((m) => `
         <label class="agent-profile-module-check">
-          <input type="checkbox" value="${acctEsc(m.id)}" ${allModulesSelected || (Array.isArray(a.allowedModules) && a.allowedModules.includes(m.id)) ? "checked" : ""} ${canManageAccess ? "" : "disabled"} />
+          <input type="checkbox" class="ap-module-checkbox" value="${acctEsc(m.id)}" ${allModulesSelected || (Array.isArray(a.allowedModules) && a.allowedModules.includes(m.id)) ? "checked" : ""} ${canManageAccess ? "" : "disabled"} />
           ${m.icon || ""} ${acctEsc(m.name)}
         </label>`).join("");
 
@@ -1919,16 +1919,45 @@
       // Never rendered for an Owner target either (Owner is always
       // unrestricted, nothing meaningful to show/edit).
       const showAdminAccessBlock = canDelegateAdminAccess && a.role !== "owner";
+      const isOwnerViewer = authInfo?.role === "owner";
+      // Same rank rule as everywhere else: Owner can touch anyone, a
+      // delegated non-Owner only a strictly-lower-ranked target (never
+      // themselves). Lifted out of the `if (showAdminAccessBlock)` block
+      // below so the "Active Agents" checkbox (now rendered under Topic
+      // Access, see activeAgentsCheckHtml) can share the exact same
+      // gate even though it no longer lives inside that block's markup.
+      const canEditAdminSections = showAdminAccessBlock && (isOwnerViewer || myRank > targetRank);
+      // "Active Agents" moved out of the Account Management Access list
+      // and into Topic Access at the business owner's request — but it
+      // is NOT a ticket-submission topic and must keep its original
+      // permission surface exactly: it still lives in
+      // `allowedAdminSections` (not `allowedModules`), still requires
+      // the SAME owner-delegated gate as every other admin section
+      // (`showAdminAccessBlock`/`canEditAdminSections` above — a plain
+      // Agent/Senior/Admin still can't grant or even see this checkbox
+      // just because it's sitting next to the topic list now), and is
+      // still never shown for an Owner target. Kept as
+      // `.ap-admin-section-checkbox` (not `.ap-module-checkbox`) so
+      // saveAgentProfileModal() below keeps collecting it into
+      // `allowedAdminSections`, unchanged.
+      const activeAgentsChecked = a.allowedAdminSections === "all" ||
+        (Array.isArray(a.allowedAdminSections) && a.allowedAdminSections.includes("activeAgents"));
+      const activeAgentsCheckHtml = showAdminAccessBlock ? `
+        <label class="agent-profile-module-check">
+          <input type="checkbox" class="ap-admin-section-checkbox" value="activeAgents" ${activeAgentsChecked ? "checked" : ""} ${canEditAdminSections ? "" : "disabled"} />
+          👥 Active Agents <span class="agent-profile-locked-note">(owner-granted)</span>
+        </label>` : "";
       let adminAccessBlockHtml = "";
       if (showAdminAccessBlock) {
-        const isOwnerViewer = authInfo?.role === "owner";
-        // Same rank rule as everywhere else: Owner can touch anyone,
-        // a delegated non-Owner only a strictly-lower-ranked target
-        // (never themselves).
-        const canEditAdminSections = isOwnerViewer || myRank > targetRank;
         const allSectionsSelected = a.allowedAdminSections === "all";
         const allEditSelected = a.adminSectionEditAccess === "all";
-        const adminSectionChecks = ADMIN_SECTIONS_LIST.map((s) => {
+        // "activeAgents" is filtered out here — it's rendered separately
+        // above (activeAgentsCheckHtml) and placed under Topic Access
+        // instead, per the business owner's request. Still part of
+        // ADMIN_SECTIONS_LIST itself (unchanged) since other code —
+        // canSeeAdminSection() on the server, the "all sections" count
+        // below — still needs it counted as one of the 7 sections.
+        const adminSectionChecks = ADMIN_SECTIONS_LIST.filter((s) => s.id !== "activeAgents").map((s) => {
           const isChecked = allSectionsSelected || (Array.isArray(a.allowedAdminSections) && a.allowedAdminSections.includes(s.id));
           const checkboxHtml = `
           <label class="agent-profile-module-check">
@@ -2014,7 +2043,7 @@
               <span>Topic access ${canManageAccess ? "" : '<span class="agent-profile-locked-note">(requires Can-Edit on Agent Profile + outranking this account)</span>'}</span>
               <span class="agent-profile-collapse-chevron">▸</span>
             </button>
-            <div class="agent-profile-collapse-body agent-profile-module-list" id="ap_topicList">${moduleChecks}</div>
+            <div class="agent-profile-collapse-body agent-profile-module-list" id="ap_topicList">${moduleChecks}${activeAgentsCheckHtml}</div>
 
             ${adminAccessBlockHtml}
           </div>
@@ -2134,7 +2163,15 @@
         const pills = Array.from(document.querySelectorAll("#ap_brandGrid .brand-toggle-pill"));
         const selected = pills.filter((p) => p.classList.contains("selected")).map((p) => p.dataset.brand);
         payload.allowedBrands = pills.length > 0 && selected.length === pills.length ? "all" : selected;
-        const moduleChecks = Array.from(document.querySelectorAll(".agent-profile-module-list input[type=checkbox]"));
+        // Scoped to .ap-module-checkbox specifically, not a bare
+        // "input[type=checkbox]" selector on the container — #ap_topicList
+        // now also holds the "Active Agents" checkbox (moved here from
+        // Account Management Access, see activeAgentsCheckHtml above),
+        // which is an admin-section checkbox (.ap-admin-section-checkbox)
+        // and must NOT be counted as a topic/module or it would corrupt
+        // both this "all modules" count and get written into the wrong
+        // field.
+        const moduleChecks = Array.from(document.querySelectorAll(".ap-module-checkbox"));
         const selectedModules = moduleChecks.filter((c) => c.checked).map((c) => c.value);
         payload.allowedModules = selectedModules.length === moduleChecks.length ? "all" : selectedModules;
       }
@@ -2147,14 +2184,22 @@
       // server enforces).
       const adminSectionList = document.querySelector(".agent-profile-admin-section-list");
       if (adminSectionList && adminSectionList.dataset.editable === "true") {
-        // NOTE: scoped to .ap-admin-section-checkbox specifically, not a
-        // bare "input[type=checkbox]" selector — this list also contains
-        // the Owner-only delegation checkbox (#ap_canManageAdminAccess)
-        // further down in the same DOM node, which would otherwise get
-        // swept into "adminChecks" too (it has no `value` attribute, so
-        // it'd contribute a bogus "on" entry and throw off the
-        // selectedSections.length === adminChecks.length "all" check).
-        const adminChecks = Array.from(adminSectionList.querySelectorAll(".ap-admin-section-checkbox"));
+        // NOTE: queried against the whole modal, not scoped to
+        // adminSectionList — "Active Agents" now renders under Topic
+        // Access (#ap_topicList, see activeAgentsCheckHtml above), outside
+        // this container, but is still an .ap-admin-section-checkbox and
+        // still belongs in allowedAdminSections. adminSectionList's own
+        // data-editable="true" guard above still gates the whole block
+        // (both locations share the exact same canEditAdminSections
+        // condition at render time, so they're always in sync). Still
+        // scoped to .ap-admin-section-checkbox specifically, not a bare
+        // "input[type=checkbox]" selector — the admin list also contains
+        // the Owner-only delegation checkbox (#ap_canManageAdminAccess),
+        // which would otherwise get swept into "adminChecks" too (it has
+        // no `value` attribute, so it'd contribute a bogus "on" entry and
+        // throw off the selectedSections.length === adminChecks.length
+        // "all" check).
+        const adminChecks = Array.from(document.querySelectorAll(".ap-admin-section-checkbox"));
         const selectedSections = adminChecks.filter((c) => c.checked).map((c) => c.value);
         payload.allowedAdminSections = selectedSections.length === adminChecks.length ? "all" : selectedSections;
         // View-only/Can-Edit sub-choice for whitelistIp/tgRoutes/

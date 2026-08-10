@@ -126,22 +126,33 @@
     let selectedId = null; // null = "new announcement" form
     let listPollTimer = null;
     // The Active checkbox was merged into the Save button itself — this
-    // tracks the value that will actually be saved. Defaults to whatever
-    // the loaded announcement's `enabled` is (or true for a brand-new
-    // one); clicking the button flips this AND immediately saves.
-    let pendingEnabled = true;
+    // tracks whether the announcement is EFFECTIVELY live right now (not
+    // the raw `enabled` flag — see renderToggleSaveButton() below).
+    // Defaults to false (not live) until openForm() sets it from the
+    // loaded announcement's actual computed status, or leaves it false
+    // for a brand-new one. Clicking the button flips this AND
+    // immediately saves the flipped value as `enabled`.
+    let pendingEnabled = false;
     let annSearchQuery = "";
 
     function esc(str) {
       return String(str == null ? "" : str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     }
 
-    // Button shows the ACTION clicking it will take — the OPPOSITE of the
-    // announcement's current state — not the current state itself. So a
-    // currently-Active announcement shows "Inactive" (click to turn it
-    // off); a currently-Inactive one shows "Active" (click to turn it
-    // on). `pendingEnabled` tracks the actual current state; the click
-    // handler below flips it and saves that flipped value.
+    // Button shows the ACTION clicking it will take — the OPPOSITE of
+    // whether the announcement is EFFECTIVELY live right now (enabled AND
+    // inside its start/end window, i.e. computeStatus(a) === "active"),
+    // NOT the raw `enabled` flag by itself. That distinction matters:
+    // an Expired announcement still has `enabled: true` underneath (its
+    // schedule window just passed), so it must NOT be treated the same
+    // as a genuinely-live one — a currently-live announcement shows
+    // "Inactive" (click to turn it off); anything not currently live —
+    // Inactive, Expired, or Scheduled — shows "Active" (click to make it
+    // live now). A brand-new, not-yet-saved announcement isn't live
+    // anywhere yet either, so it defaults to the same "Active" action.
+    // `pendingEnabled` tracks "is it currently live" (not the raw
+    // `enabled` value); the click handler flips it and that flipped
+    // value becomes the literal `enabled` written on save.
     function renderToggleSaveButton() {
       const btn = document.getElementById("annSave");
       const showAsActive = !pendingEnabled;
@@ -282,7 +293,12 @@
 
       topicSelect.value = a ? (a.topic || topics[0]) : topics[0];
       document.getElementById("annText").value = a ? a.text : "";
-      pendingEnabled = a ? !!a.enabled : true;
+      // "Currently live" (computeStatus === "active"), not the raw
+      // `enabled` flag — see renderToggleSaveButton() above for why an
+      // Expired announcement (enabled: true, but past its end date) must
+      // NOT be treated as live here. A brand-new announcement isn't live
+      // anywhere yet, so it starts as false (→ button shows "Active").
+      pendingEnabled = a ? computeStatus(a) === "active" : false;
       renderToggleSaveButton();
       document.getElementById("annStartAt").value = a ? toDatetimeLocal(a.startAt) : "";
       document.getElementById("annEndAt").value = a ? toDatetimeLocal(a.endAt) : "";
@@ -311,9 +327,10 @@
       }
 
       // The button doubles as the Active/Inactive toggle — its label was
-      // showing the ACTION (opposite of the current state), so flipping
-      // pendingEnabled now makes it match what was just displayed, then
-      // that becomes what gets saved.
+      // showing the ACTION (opposite of whether it's currently live, see
+      // renderToggleSaveButton() above), so flipping pendingEnabled now
+      // makes it match what was just displayed, then that becomes the
+      // literal `enabled` value that gets saved.
       pendingEnabled = !pendingEnabled;
       renderToggleSaveButton();
       const enabledToSave = pendingEnabled;
