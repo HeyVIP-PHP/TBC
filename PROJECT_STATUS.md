@@ -4,6 +4,54 @@ Paste this whole document as the first message in a new conversation, along
 with the latest `telegram-issue-hub-updated.zip`. That gives the new chat
 the complete current state of the project.
 
+## 🆕 Added — Active Agents (在线状态面板), ported from the standalone INR-active-agents project
+
+Migrated in per `Active-Agents-架构说明与迁移指南.md`'s own checklist (§七) —
+this project is the same Cloudflare Pages Functions + KV stack the doc was
+written for, so this was a straight port, not a rewrite.
+
+**New files:**
+- `functions/_shared/presence.js` — KV layer, unchanged in shape from the
+  source project: `presence:current:<username>` / `presence:daily:<username>:<date>`
+  in the existing `THREADS_KV` (no new namespace). Throttled writes (1 real
+  KV write / 2 min while status is unchanged), read-time `deriveStatus()`
+  for the online→offline transition, read-time top-up for the "ticking"
+  today counter — see the file header for the full threshold-coupling
+  writeup, kept verbatim from the source doc on purpose.
+- `functions/api/presence/heartbeat.js` — POST, any logged-in account, no
+  admin-section gate (write access to your OWN presence is universal, same
+  reasoning as thread replies).
+- `functions/api/presence/list.js` / `record.js` — GET, gated by the new
+  `canSeeAdminSection(account, "activeAgents")` section (deny-by-default,
+  Owner opts accounts in via Agent Profile, same as every other section).
+  Owner is filtered out twice (once inside `listAccounts()`, once again
+  explicitly here) — defense in depth, matching the IP Access dashboard's
+  existing pattern below.
+- `public/assets/presence-heartbeat.js` — global heartbeat client, added
+  to every logged-in page's `<head>` right after `authguard.js`.
+- `public/assets/active-agents-panel.js` — panel UI. Three-layer render
+  (shell built once / roster+stats rewritten every 10s poll / relative
+  timestamps ticked every 2s via `textContent` only) so the search box
+  never loses focus mid-poll — see the source doc §5.5.
+
+**Changed:**
+- `functions/_shared/accounts.js` — added `"activeAgents"` to
+  `ADMIN_SECTIONS` (one line, view-only — not added to
+  `EDITABLE_ADMIN_SECTIONS`, there's no edit action for this panel).
+- `public/index.html` — new "Active Agents" tool card (home grid, hidden
+  unless `canSeeAdminSection(account, "activeAgents")`), two modal
+  backdrops (roster + per-agent Record), and a new "Active Agents" row in
+  the Agent Profile → Account Management Access grid so the Owner can
+  grant it per account.
+- `public/assets/style.css` — `.aa-*` rules (status dot, roster rows,
+  stat pills, record table); reuses existing `--field-bg`/`--ink-soft`/
+  `--border` tokens, no new design system.
+
+**Not yet live-tested against a real deployment** — built and
+syntax-checked (`node --check` on every new/changed file, extracted
+inline `<script>` blocks checked too), same as the Announcement feature
+below when it first landed.
+
 ## 🆕 Added — IP Access dashboard, then retired the standalone accounts-admin.html page
 
 Two changes in the same session, second one depends on the first:

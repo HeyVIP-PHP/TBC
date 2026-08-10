@@ -8,6 +8,7 @@
 <script src="/assets/theme.js?v=5b27e630"></script>
 <script src="/assets/starfield.js?v=b6e92821" defer></script>
 <script src="/assets/authguard.js?v=9cc20fef"></script>
+<script src="/assets/presence-heartbeat.js?v=1"></script>
 <script src="/assets/toast.js?v=debe1ac1"></script>
 </head>
 <body class="hub-page">
@@ -86,6 +87,81 @@
        "🕒 Record" header button above. Shows EVERY record entry as one
        flat table, always — not filtered by whichever card the main
        modal has selected (see openIpaRecordPopup()). -->
+  <div class="edit-modal-backdrop" id="aaModalBackdrop">
+    <div class="edit-modal aa-modal">
+      <button type="button" class="modal-close-btn" id="aaModalClose" title="Close" aria-label="Close">✕</button>
+      <div class="aa-head">
+        <div class="aa-head-icon">👥</div>
+        <div class="aa-head-title-wrap">
+          <div class="aa-head-title">Active Agents</div>
+          <div class="aa-head-sub" id="aaHeadSub">Loading…</div>
+        </div>
+        <div class="aa-head-actions">
+          <span class="aa-online-pill" id="aaOnlinePill">0 online</span>
+          <button type="button" class="aa-icon-btn" id="aaRefreshBtn" title="Refresh">⟳</button>
+          <button type="button" class="btn-secondary" id="aaOpenRecordBtn">🕐 Record</button>
+        </div>
+      </div>
+
+      <div class="aa-stats">
+        <button type="button" class="aa-stat-card is-active" data-aa-filter="all">
+          <div class="aa-stat-label">Total Agents</div>
+          <div class="aa-stat-value" id="aaStatTotal">0</div>
+        </button>
+        <button type="button" class="aa-stat-card" data-aa-filter="online">
+          <div class="aa-stat-label">Online</div>
+          <div class="aa-stat-value aa-green" id="aaStatOnline">0</div>
+        </button>
+        <button type="button" class="aa-stat-card" data-aa-filter="offline">
+          <div class="aa-stat-label">Offline</div>
+          <div class="aa-stat-value aa-red" id="aaStatOffline">0</div>
+        </button>
+      </div>
+
+      <input type="text" id="aaSearchInput" class="aa-search" placeholder="🔍 Search username or name…" autocomplete="off" />
+      <div class="aa-search-hint">Click a card above to filter, or search by name.</div>
+
+      <div class="aa-roster-wrap" id="aaRosterWrap"></div>
+
+      <div class="aa-footer">
+        <span class="aa-footer-live"><span class="aa-live-dot"></span> Live presence</span>
+        <span>Admin view only</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="edit-modal-backdrop" id="aaRecordSearchBackdrop">
+    <div class="edit-modal aa-modal">
+      <button type="button" class="modal-close-btn" id="aaRecordSearchClose" title="Close" aria-label="Close">✕</button>
+      <div class="aa-head" style="margin-bottom:10px;">
+        <div class="aa-head-icon">🕐</div>
+        <div class="aa-head-title-wrap"><div class="aa-head-title">Record</div></div>
+      </div>
+      <input type="text" id="aaRecordSearchInput" class="aa-search" placeholder="🔍 Search agent by name…" autocomplete="off" />
+      <div class="aa-rec-list" id="aaRecordList"></div>
+    </div>
+  </div>
+
+  <div class="edit-modal-backdrop" id="aaRecordDetailBackdrop">
+    <div class="edit-modal aa-modal">
+      <button type="button" class="modal-close-btn" id="aaRecordDetailClose" title="Close" aria-label="Close">✕</button>
+      <button type="button" class="aa-back-btn" id="aaBackToSearchBtn">← Back to search</button>
+      <div class="aa-rec-agent-row">
+        <div class="aa-avatar" id="aaRecAvatar" style="width:34px;height:34px;font-size:12px;"></div>
+        <div class="aa-rec-agent-name" id="aaRecAgentName"></div>
+        <span class="aa-status-pill aa-on" id="aaRecStatusPill" style="margin-left:auto;"></span>
+      </div>
+      <div class="aa-rec-agent-sub" id="aaRecAgentSub"></div>
+      <div class="aa-rec-section-label">Last 7 Days</div>
+      <div class="agent-profile-table-wrap">
+        <table class="aa-record-table">
+          <thead><tr><th>Date</th><th>Total Online Time</th><th>Last Active Time</th></tr></thead>
+          <tbody id="aaRecordTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
   <div class="edit-modal-backdrop" id="ipaRecordBackdrop">
     <div class="edit-modal wide">
       <button type="button" class="modal-close-btn" id="ipaRecordClose" title="Close" aria-label="Close">✕</button>
@@ -179,6 +255,12 @@
             <div class="t-desc">Create and schedule the site-wide REMINDER banner</div>
             <div class="t-sub-stat" id="announcementActiveStat"></div>
           </a>
+          <button type="button" class="tool-card" id="activeAgentsCard" style="--tool-accent:#22c55e;display:none;text-align:left;width:100%;font:inherit;cursor:pointer;">
+            <div class="t-icon" id="activeAgentsCardIcon" style="background:#22c55e33;">👥</div>
+            <div class="t-name">Active Agents</div>
+            <div class="t-desc">Who's online right now, and today's hours</div>
+            <div class="t-sub-stat" id="activeAgentsOnlineStat"></div>
+          </button>
         </div>
 
         <div class="hub-stats" id="hubStats"></div>
@@ -192,6 +274,7 @@
   <script src="/assets/schemas.js?v=f6a765aa"></script>
   <script src="/assets/page-transition.js?v=437ace08"></script>
   <script src="/assets/spa-shell.js?v=4"></script>
+  <script src="/assets/active-agents-panel.js?v=1"></script>
   <script>
     window.initThemeToggle();
     window.initClock();
@@ -577,6 +660,37 @@
     }
     pollAnnouncementCardIcon();
     setInterval(pollAnnouncementCardIcon, 30000);
+
+    // ---- Active Agents tool card — shown only to accounts with access
+    // to the "activeAgents" Account Management section. Unlike
+    // Announcement (a real page), this one opens an in-page modal (see
+    // active-agents-panel.js) — no ?module=/navigation involved.
+    if (canSeeAdminSection("activeAgents")) {
+      document.getElementById("activeAgentsCard").style.display = "";
+    }
+    async function pollActiveAgentsCardStat() {
+      if (!canSeeAdminSection("activeAgents")) return;
+      try {
+        const res = await window.AgentAuth.authFetch("/api/presence/list", { cache: "no-store" });
+        const data = await res.json();
+        if (!data.ok) return;
+        const hasOnline = data.onlineCount > 0;
+        const stat = document.getElementById("activeAgentsOnlineStat");
+        if (stat) {
+          stat.textContent = hasOnline ? `${data.onlineCount} online now` : "";
+          stat.classList.toggle("has-active", hasOnline);
+        }
+        const icon = document.getElementById("activeAgentsCardIcon");
+        if (icon) icon.classList.toggle("aa-breathing", hasOnline);
+      } catch {
+        // Non-fatal — card just doesn't update this cycle.
+      }
+    }
+    pollActiveAgentsCardStat();
+    setInterval(pollActiveAgentsCardStat, 30000);
+    document.getElementById("activeAgentsCard").addEventListener("click", () => {
+      if (window.ActiveAgentsPanel) window.ActiveAgentsPanel.open();
+    });
 
     const acctToggle = document.getElementById("acctMgmtToggle");
     const acctSubitems = document.getElementById("acctMgmtSubitems");
@@ -1745,6 +1859,7 @@
       { id: "agentProfile", icon: "🪪", name: "Agent Profile" },
       { id: "settings", icon: "⚙️", name: "Settings" },
       { id: "announcements", icon: "📢", name: "Announcement" },
+      { id: "activeAgents", icon: "👥", name: "Active Agents" },
     ];
 
     // The 5 sections where View vs Edit is a meaningful, separately

@@ -582,7 +582,12 @@ export function canSeeModule(account, moduleId) {
 // sitting in its allowedAdminSections from before this change, it's now
 // inert (matches nothing) — that account needs "integrations" granted
 // instead (or is already covered automatically if it's SuperAdmin+).
-export const ADMIN_SECTIONS = ["createAccount", "whitelistIp", "agentProfile", "settings", "announcements", "integrations"];
+// "activeAgents" (Active Agents online-status panel) — view-only, same
+// deny-by-default opt-in as every other section here; no edit action
+// exists for it so it's deliberately NOT in EDITABLE_ADMIN_SECTIONS
+// below (see functions/api/presence/list.js + record.js for the two
+// endpoints it gates).
+export const ADMIN_SECTIONS = ["createAccount", "whitelistIp", "agentProfile", "settings", "announcements", "integrations", "activeAgents"];
 export function canSeeAdminSection(account, sectionId) {
   if (!account) return true; // bootstrap mode
   if (account.role === "owner") return true;
