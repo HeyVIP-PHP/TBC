@@ -188,6 +188,34 @@
       </a>
       <div id="sidebarList"></div>
 
+      <!-- Integration Portal — TG Group/Channel routing + Google Sheet
+           targets (Issue Submission Gsheet, Promo Code Gsheet). Own
+           group, separate from Account Management, gated by ITS OWN
+           Topic Access checkbox ("integrationPortal", rendered up in
+           #sidebarList's topic checklist, not in this Account
+           Management block) on top of each individual sub-item's own
+           section — see the visibility wiring further down and
+           _shared/accounts.js's INTEGRATION_PORTAL_SECTION_IDS. Ordered
+           right after #sidebarList's topic modules (Genie Issue is the
+           last of those) and before Account Management, per explicit
+           sidebar-ordering request — Account Management is meant to read
+           as the last, most-privileged item in the list. -->
+      <div class="am-group" id="integrationsGroup" style="display:none;">
+        <div class="sidebar-item am-toggle expandable" id="integrationsToggle">
+          <div class="icon" style="background:#60a5fa33;">🔌</div>
+          <div class="text">
+            <div class="name">Integration Portal</div>
+            <div class="desc">Sheets and TG routing</div>
+          </div>
+          <span class="arrow">&rarr;</span>
+        </div>
+        <div class="sidebar-subitems" id="integrationsSubitems">
+          <div class="sidebar-subitem" id="subIntegrationsTg" style="--sub-accent:#38bdf833;"><span class="sub-icon">📤</span> TG Group / Channel</div>
+          <div class="sidebar-subitem" id="subIntegrationsIssueSheet" style="--sub-accent:#4ade8033;"><span class="sub-icon">📋</span> Issue Submission Gsheet</div>
+          <div class="sidebar-subitem" id="subIntegrationsPromoSheet" style="--sub-accent:#f472b633;"><span class="sub-icon">🎟️</span> Promo Code Gsheet</div>
+        </div>
+      </div>
+
       <div class="am-group" id="acctMgmtGroup">
         <div class="sidebar-item am-toggle expandable" id="acctMgmtToggle">
           <div class="icon" style="background:#a78bfa33;">🛡️</div>
@@ -203,30 +231,6 @@
           <div class="sidebar-subitem" id="subSettings" style="display:none;--sub-accent:#f59e0b33;"><span class="sub-icon">⚙️</span> Settings</div>
           <div class="sidebar-subitem" id="subResetPassword" style="--sub-accent:#f3c46333;"><span class="sub-icon">🔑</span> Reset Password</div>
           <div class="sidebar-subitem" id="subAgentProfile" style="display:none;--sub-accent:#f472b633;"><span class="sub-icon">🪪</span> Agent Profile</div>
-        </div>
-      </div>
-
-      <!-- Integration Portal — TG Group/Channel routing + Google Sheet
-           targets (Issue Submission Gsheet, Promo Code Gsheet). Own
-           group, separate from Account Management, gated by ITS OWN
-           Topic Access checkbox ("integrationPortal", rendered up in
-           #sidebarList's topic checklist, not in this Account
-           Management block) on top of each individual sub-item's own
-           section — see the visibility wiring further down and
-           _shared/accounts.js's INTEGRATION_PORTAL_SECTION_IDS. -->
-      <div class="am-group" id="integrationsGroup" style="display:none;">
-        <div class="sidebar-item am-toggle expandable" id="integrationsToggle">
-          <div class="icon" style="background:#60a5fa33;">🔌</div>
-          <div class="text">
-            <div class="name">Integration Portal</div>
-            <div class="desc">Sheets and TG routing</div>
-          </div>
-          <span class="arrow">&rarr;</span>
-        </div>
-        <div class="sidebar-subitems" id="integrationsSubitems">
-          <div class="sidebar-subitem" id="subIntegrationsTg" style="--sub-accent:#38bdf833;"><span class="sub-icon">📤</span> TG Group / Channel</div>
-          <div class="sidebar-subitem" id="subIntegrationsIssueSheet" style="--sub-accent:#4ade8033;"><span class="sub-icon">📋</span> Issue Submission Gsheet</div>
-          <div class="sidebar-subitem" id="subIntegrationsPromoSheet" style="--sub-accent:#f472b633;"><span class="sub-icon">🎟️</span> Promo Code Gsheet</div>
         </div>
       </div>
     </aside>
