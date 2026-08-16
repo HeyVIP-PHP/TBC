@@ -2226,13 +2226,13 @@ body.announcements-page .threads-shell { flex: 1; height: auto; min-height: 0; }
      its own scrollbar. Activity Logs can genuinely be taller than one
      screen (up to 30 rows/page), so this page needs the overflow
      visible instead — a distinct class on <main> (not editing
-     .ann-main itself) so announcements.html's own layout is untouched. */
+     .ann-main itself) so announcements.html's own layout is untouched.
+     NOTE: bottom breathing room lives on #actlogCard's own margin
+     (activity-logs.html), NOT as padding-bottom here — a padding on an
+     overflow:visible box has no effect on content that's escaping it,
+     which is exactly why an earlier version of this rule silently did
+     nothing (see the screenshot that caught it). */
   overflow: visible;
-  /* Breathing room at the very bottom of the scroll — without this the
-     results card's bottom edge lands flush against the browser window
-     when scrolled all the way down, with zero margin below the last
-     row (see the screenshot this fixed). */
-  padding-bottom: 40px;
 }
 .actlog-header-card {
   background: var(--card-bg); border: 1px solid var(--panel-border); border-radius: 12px;
