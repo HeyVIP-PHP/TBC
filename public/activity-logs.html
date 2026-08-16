@@ -30,7 +30,7 @@
         <a href="/" class="back-pill">&larr; Back to Home</a>
       </div>
       <main class="ann-main" data-transition-root>
-        <div id="actlogCard" style="max-width:1180px; margin:0 auto;" class="page-morph-in">
+        <div id="actlogCard" style="max-width:1500px; margin:0 auto;" class="page-morph-in">
 
           <div class="actlog-header-card">
             <div class="actlog-header-left">
@@ -40,7 +40,7 @@
                 <p class="actlog-header-sub">Who did what, when, and from where. Kept for 90 days.</p>
               </div>
             </div>
-            <button type="button" class="btn-secondary" id="actlogRefresh">↻ Refresh</button>
+            <button type="button" class="icon-btn icon-btn-labeled" id="actlogRefresh"><span class="icon-spin-target">↻</span> Refresh</button>
           </div>
 
           <div class="actlog-filter-row">
@@ -146,8 +146,11 @@
 
     async function load() {
       const btn = document.getElementById("actlogRefresh");
+      if (btn.disabled) return; // already loading, ignore a repeat click/keypress
+      btn.classList.add("spinning");
       btn.disabled = true;
-      btn.textContent = "…";
+      const startedAt = Date.now();
+      const MIN_VISIBLE_MS = 600; // short list fetch — just enough that a fast response doesn't look like nothing happened
       try {
         const res = await authFetch("/api/admin/activity-logs", { cache: "no-store" });
         const data = await res.json();
@@ -160,8 +163,10 @@
       } catch (e) {
         window.showToast ? window.showToast(String(e.message || e), "error") : alert(String(e.message || e));
       } finally {
+        const elapsed = Date.now() - startedAt;
+        if (elapsed < MIN_VISIBLE_MS) await new Promise((r) => setTimeout(r, MIN_VISIBLE_MS - elapsed));
+        btn.classList.remove("spinning");
         btn.disabled = false;
-        btn.textContent = "↻ Refresh";
       }
     }
 

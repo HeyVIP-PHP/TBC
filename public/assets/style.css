@@ -2290,3 +2290,17 @@ body.announcements-page .threads-shell { flex: 1; height: auto; min-height: 0; }
 .actlog-badge-Account { background: #f472b633; }
 .actlog-badge-Thread { background: #38bdf833; }
 .actlog-badge-Config { background: #22c55e33; }
+
+/* Active Agents' refresh button reuses the same .icon-btn/.spinning/
+   .icon-spin-target mechanism TG Reply Threads' refresh button already
+   established (see .icon-btn.spinning above) — just scoped onto
+   .aa-icon-btn's own resting style instead of switching that button to
+   .icon-btn wholesale (its square size/colors are otherwise unrelated
+   to icon-btn's pink-accent design). Three refresh buttons across the
+   site (TG Reply Threads, Active Agents, Activity Logs) now share one
+   visual language: spin + turn --required (pink/red) + stay disabled
+   while loading, label text never swapped out, so the button's
+   footprint never changes size — that's what actually stops the old
+   "…" text-swap from reading as a flicker. */
+.aa-icon-btn.spinning { color: var(--required); border-color: var(--required); }
+.aa-icon-btn.spinning .icon-spin-target { display: inline-block; animation: spin 0.8s linear infinite; }

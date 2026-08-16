@@ -96,7 +96,26 @@
     if (search) search.addEventListener("input", renderDynamic);
 
     const refreshBtn = document.getElementById("aaRefreshBtn");
-    if (refreshBtn) refreshBtn.addEventListener("click", poll);
+    if (refreshBtn) refreshBtn.addEventListener("click", async () => {
+      // Same spin/disable/minimum-visible-duration pattern as TG Reply
+      // Threads' and Activity Logs' refresh buttons — deliberately NOT
+      // put inside poll() itself, since poll() also runs silently every
+      // POLL_INTERVAL_MS from startPolling() and shouldn't spin the
+      // button on every background tick, only on an actual manual click.
+      if (refreshBtn.disabled) return;
+      refreshBtn.classList.add("spinning");
+      refreshBtn.disabled = true;
+      const startedAt = Date.now();
+      const MIN_VISIBLE_MS = 600;
+      try {
+        await poll();
+      } finally {
+        const elapsed = Date.now() - startedAt;
+        if (elapsed < MIN_VISIBLE_MS) await new Promise((r) => setTimeout(r, MIN_VISIBLE_MS - elapsed));
+        refreshBtn.classList.remove("spinning");
+        refreshBtn.disabled = false;
+      }
+    });
 
     document.querySelectorAll(".aa-stat-card").forEach(function (card) {
       card.addEventListener("click", function () {
