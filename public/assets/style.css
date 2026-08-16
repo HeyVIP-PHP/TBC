@@ -2217,6 +2217,18 @@ body.announcements-page .threads-shell { flex: 1; height: auto; min-height: 0; }
    auto-sizing columns (see .actlog-table below) which the shared
    .agent-profile-table class doesn't provide, so it gets its own class
    names instead of overloading that one. */
+.actlog-main {
+  /* .ann-main (shared with announcements.html) sets overflow:hidden,
+     which is fine there since that page's content never exceeds one
+     screen — but it silently CLIPS anything taller instead of letting
+     it scroll, and #spaMount (the actual scrollable ancestor every
+     SPA-routed page lands in) never gets the chance to expose it via
+     its own scrollbar. Activity Logs can genuinely be taller than one
+     screen (up to 30 rows/page), so this page needs the overflow
+     visible instead — a distinct class on <main> (not editing
+     .ann-main itself) so announcements.html's own layout is untouched. */
+  overflow: visible;
+}
 .actlog-header-card {
   background: var(--card-bg); border: 1px solid var(--panel-border); border-radius: 12px;
   padding: 18px 22px; display: flex; align-items: center; justify-content: space-between;
@@ -2260,17 +2272,17 @@ body.announcements-page .threads-shell { flex: 1; height: auto; min-height: 0; }
 .actlog-count-pill { background: var(--field-bg); color: var(--ink-soft); font-size: 11.5px; font-weight: 700; padding: 3px 10px; border-radius: 999px; }
 
 .actlog-table-wrap {
-  overflow-x: auto; overflow-y: auto;
-  /* 70vh alone doesn't account for the topbar/announcement banner/brand
-     row/header card/filter row above it — on a shorter window (or with
-     the announcement banner showing 2 lines), that pushed the table's
-     own rows AND the pagination footer below it past the viewport edge
-     with no scrollbar reachable, since .ann-main itself is
-     overflow:hidden (see style.css) and doesn't scroll on its own.
-     Subtracting a fixed estimate keeps the table's own internal scroll
-     (this element's overflow-y:auto) the thing that actually kicks in,
-     so the pagination footer directly under it always stays visible. */
-  max-height: calc(100vh - 460px);
+  overflow-x: auto;
+  /* No vertical max-height/overflow here on purpose — .spa-mount (see
+     style.css, the shared mount point every SPA-routed page lands in)
+     already has its own overflow-y:auto and handles scrolling the
+     whole mounted page, same as threads.html/promo.html/
+     announcements.html. Capping this element's own height and giving
+     it a SECOND nested overflow-y:auto on top of that just fought with
+     the outer one instead of fixing anything — the table should grow
+     to its natural height and let the existing outer scrollbar do the
+     work, not create its own competing scroll region.
+  */
   min-height: 160px;
 }
 /* Only the EMPTY state gets a floor height (roughly 3 rows' worth) —
