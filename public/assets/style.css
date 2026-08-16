@@ -2250,7 +2250,7 @@ body.announcements-page .threads-shell { flex: 1; height: auto; min-height: 0; }
 .actlog-search-wrap input:focus { outline: none; border-color: var(--accent-gold); }
 .actlog-count { font-size: 12px; color: var(--ink-soft); flex-shrink: 0; white-space: nowrap; }
 
-.actlog-results-card { background: var(--card-bg); border: 1px solid var(--panel-border); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); min-height: 360px; display: flex; flex-direction: column; }
+.actlog-results-card { background: var(--card-bg); border: 1px solid var(--panel-border); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); }
 .actlog-results-head {
   padding: 14px 22px; display: flex; align-items: center; justify-content: space-between;
   border-bottom: 1px solid var(--panel-border);
@@ -2259,7 +2259,15 @@ body.announcements-page .threads-shell { flex: 1; height: auto; min-height: 0; }
 .actlog-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--aa-green); display: inline-block; }
 .actlog-count-pill { background: var(--field-bg); color: var(--ink-soft); font-size: 11.5px; font-weight: 700; padding: 3px 10px; border-radius: 999px; }
 
-.actlog-table-wrap { overflow-x: auto; max-height: 70vh; overflow-y: auto; flex: 1; }
+.actlog-table-wrap { overflow-x: auto; max-height: 70vh; overflow-y: auto; }
+/* Only the EMPTY state gets a floor height (roughly 3 rows' worth) —
+   populated tables size to their own row count naturally, no forced
+   card height. This is what actually stops the "0 results" state from
+   collapsing to a thin sliver without making a 5-row result look like
+   it has a mysterious gap underneath it (see the two screenshots this
+   replaced — 360px on the whole card fixed the first problem but
+   caused the second one). */
+#actlogEmpty { min-height: 160px; }
 .actlog-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
 .actlog-table th {
   position: sticky; top: 0; text-align: left; padding: 9px 16px; color: var(--ink-soft);

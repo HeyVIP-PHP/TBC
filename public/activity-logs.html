@@ -30,7 +30,7 @@
         <a href="/" class="back-pill">&larr; Back to Home</a>
       </div>
       <main class="ann-main" data-transition-root>
-        <div id="actlogCard" style="max-width:1800px; margin:0 auto;" class="page-morph-in">
+        <div id="actlogCard" style="width:100%; max-width:1800px; margin:0 auto;" class="page-morph-in">
 
           <div class="actlog-header-card">
             <div class="actlog-header-left">
@@ -64,7 +64,14 @@
                 <span class="actlog-dot"></span>
                 Recent activity
               </div>
-              <span class="actlog-count-pill" id="actlogCountPill">0 found</span>
+              <div style="display:flex; align-items:center; gap:10px;">
+                <select class="ipa-page-size" id="actlogPageSize" style="display:none;">
+                  <option value="10">10 / page</option>
+                  <option value="20">20 / page</option>
+                  <option value="30">30 / page</option>
+                </select>
+                <span class="actlog-count-pill" id="actlogCountPill">0 found</span>
+              </div>
             </div>
             <div class="actlog-table-wrap">
               <table class="actlog-table" id="actlogTable">
@@ -82,6 +89,7 @@
               </table>
             </div>
             <div class="threads-placeholder" id="actlogEmpty" style="display:none;">No activity recorded yet.</div>
+            <div class="ipa-pagination" id="actlogPagination" style="display:none; padding:10px 22px 16px;"></div>
           </div>
 
         </div>
@@ -122,13 +130,32 @@
     const CATEGORY_ICON = { Auth: "🔐", Account: "👤", Thread: "🎫", Config: "⚙️" };
 
     let allEntries = [];
+    // Same shape as ipaPageState in index.html's IP Access dashboard —
+    // single-table version of that per-category state, since this page
+    // only ever has one table. Any filter change resets to page 1 (an
+    // IPA table doesn't have filters to reset from, only page-size —
+    // this is the one thing added on top of that pattern, not a
+    // deviation from it).
+    let actlogPage = 1;
+    let actlogPageSize = 10;
 
     async function boot() {
       await load();
       document.getElementById("actlogRefresh").addEventListener("click", load);
-      document.getElementById("actlogCategory").addEventListener("change", render);
-      document.getElementById("actlogAgentFilter").addEventListener("input", debounce(render, 150));
-      document.getElementById("actlogSearch").addEventListener("input", debounce(render, 150));
+      document.getElementById("actlogCategory").addEventListener("change", () => { actlogPage = 1; render(); });
+      document.getElementById("actlogAgentFilter").addEventListener("input", debounce(() => { actlogPage = 1; render(); }, 150));
+      document.getElementById("actlogSearch").addEventListener("input", debounce(() => { actlogPage = 1; render(); }, 150));
+      document.getElementById("actlogPageSize").addEventListener("change", (e) => {
+        actlogPageSize = Number(e.target.value);
+        actlogPage = 1;
+        render();
+      });
+      document.getElementById("actlogPagination").addEventListener("click", (e) => {
+        const btn = e.target.closest(".ipa-page-btn");
+        if (!btn || btn.disabled) return;
+        actlogPage += btn.dataset.dir === "next" ? 1 : -1;
+        render();
+      });
       // Delegate row clicks to toggle the full detail text (long
       // edit/recall diffs are line-clamped to 3 lines by default, see
       // .actlog-detail in style.css) — no separate modal needed, the
@@ -190,8 +217,29 @@
       document.getElementById("actlogEmpty").style.display = filtered.length ? "none" : "";
       document.getElementById("actlogTable").style.display = filtered.length ? "" : "none";
 
+      const pageSizeSelect = document.getElementById("actlogPageSize");
+      pageSizeSelect.style.display = filtered.length ? "" : "none";
+      pageSizeSelect.value = String(actlogPageSize);
+
+      const totalPages = Math.max(1, Math.ceil(filtered.length / actlogPageSize));
+      if (actlogPage > totalPages) actlogPage = totalPages; // e.g. after a filter shrinks the list
+      const start = (actlogPage - 1) * actlogPageSize;
+      const pageEntries = filtered.slice(start, start + actlogPageSize);
+
+      const paginationEl = document.getElementById("actlogPagination");
+      if (filtered.length > actlogPageSize) {
+        paginationEl.style.display = "flex";
+        paginationEl.innerHTML = `
+          <button type="button" class="ipa-page-btn" data-dir="prev"${actlogPage <= 1 ? " disabled" : ""}>Previous</button>
+          <span class="ipa-page-info">Page ${actlogPage} of ${totalPages}</span>
+          <button type="button" class="ipa-page-btn" data-dir="next"${actlogPage >= totalPages ? " disabled" : ""}>Next</button>`;
+      } else {
+        paginationEl.style.display = "none";
+        paginationEl.innerHTML = "";
+      }
+
       const tbody = document.getElementById("actlogTbody");
-      tbody.innerHTML = filtered.map((e) => {
+      tbody.innerHTML = pageEntries.map((e) => {
         const d = new Date(e.ts);
         const dateStr = isNaN(d) ? "—" : d.toLocaleDateString(undefined, { year: "numeric", month: "2-digit", day: "2-digit" });
         const timeStr = isNaN(d) ? "—" : d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" });
