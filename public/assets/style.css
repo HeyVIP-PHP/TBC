@@ -2227,12 +2227,19 @@ body.announcements-page .threads-shell { flex: 1; height: auto; min-height: 0; }
      screen (up to 30 rows/page), so this page needs the overflow
      visible instead — a distinct class on <main> (not editing
      .ann-main itself) so announcements.html's own layout is untouched.
+     SPLIT BY AXIS, not the `overflow` shorthand — a blanket
+     `overflow:visible` releases BOTH directions, and something
+     escaping horizontally too triggered a page-wide horizontal
+     scrollbar at the very bottom of the browser window (caught in a
+     screenshot). Only the vertical axis needs releasing; horizontal
+     stays clipped like it always was.
      NOTE: bottom breathing room lives on #actlogCard's own margin
      (activity-logs.html), NOT as padding-bottom here — a padding on an
      overflow:visible box has no effect on content that's escaping it,
      which is exactly why an earlier version of this rule silently did
      nothing (see the screenshot that caught it). */
-  overflow: visible;
+  overflow-y: visible;
+  overflow-x: hidden;
 }
 .actlog-header-card {
   background: var(--card-bg); border: 1px solid var(--panel-border); border-radius: 12px;
