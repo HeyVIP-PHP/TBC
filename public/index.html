@@ -1969,7 +1969,7 @@
       const activeAgentsCheckHtml = showAdminAccessBlock ? `
         <label class="agent-profile-module-check">
           <input type="checkbox" class="ap-admin-section-checkbox" value="activeAgents" ${activeAgentsChecked ? "checked" : ""} ${canEditAdminSections ? "" : "disabled"} />
-          👥 Active Agents <span class="agent-profile-locked-note">(owner-granted)</span>
+          👥 Active Agents
         </label>` : "";
       // "Integration Portal" — same treatment as Active Agents just
       // above: a plain owner-granted visibility switch that lives under
@@ -1988,7 +1988,7 @@
       const integrationPortalCheckHtml = showAdminAccessBlock ? `
         <label class="agent-profile-module-check">
           <input type="checkbox" class="ap-admin-section-checkbox" value="integrationPortal" ${integrationPortalChecked ? "checked" : ""} ${canEditAdminSections ? "" : "disabled"} />
-          🔗 Integration Portal <span class="agent-profile-locked-note">(owner-granted)</span>
+          🔗 Integration Portal
         </label>` : "";
       let adminAccessBlockHtml = "";
       let integrationAccessBlockHtml = "";
