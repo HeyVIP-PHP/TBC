@@ -4,11 +4,11 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>TG Reply Threads</title>
-<link rel="stylesheet" href="/assets/style.css?v=73340000" />
+<link rel="stylesheet" href="/assets/style.css?v=303bfbdc" />
 <script src="/assets/theme.js?v=5b27e630"></script>
 <script src="/assets/starfield.js?v=b6e92821" defer></script>
 <script src="/assets/authguard.js?v=9cc20fef"></script>
-<script src="/assets/presence-heartbeat.js?v=1"></script>
+<script src="/assets/presence-heartbeat.js?v=219d34cc"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/twemoji.min.js"></script>
 <script src="/assets/schemas.js?v=f6a765aa"></script>
 <script src="/assets/toast.js?v=debe1ac1"></script>
@@ -34,27 +34,47 @@
 
   <div class="threads-shell" id="threadsShell">
     <aside class="threads-sidebar">
+      <div class="thread-tabs" id="threadTabs">
+        <button type="button" class="tab-pill tab-pill-active" data-tab="active" id="tabBtnActive">
+          <span class="tab-pill-label">Active</span>
+          <span class="tab-pill-count" id="tabCountActive">0</span>
+        </button>
+        <button type="button" class="tab-pill tab-pill-solved" data-tab="solved" id="tabBtnSolved">
+          <span class="tab-pill-label">Solved</span>
+          <span class="tab-pill-count" id="tabCountSolved">0</span>
+        </button>
+        <button type="button" class="tab-pill tab-pill-recall" data-tab="recall" id="tabBtnRecall" style="display:none;">
+          <span class="tab-pill-label">Recall</span>
+          <span class="tab-pill-count" id="tabCountRecall">0</span>
+        </button>
+      </div>
+
+      <div class="threads-summary-card">
+        <div class="summary-card-left">
+          <div class="summary-card-title">All threads</div>
+          <div class="summary-card-sub" id="summarySub">Active threads</div>
+        </div>
+        <div class="summary-card-right">
+          <span class="summary-card-badge" id="summaryBadge">0</span>
+          <button type="button" class="summary-card-action" id="summaryActionBtn">Select</button>
+        </div>
+      </div>
+
       <div class="threads-search">
         <span>🔍</span>
         <input type="text" id="threadSearch" placeholder="Search username, TID, UID..." autocomplete="off" />
       </div>
 
-      <div class="threads-select-toolbar" id="selectToolbar" style="display:none;"></div>
-
-      <div class="threads-section" id="activeSection">
-        <div class="threads-section-title" data-target="activeList"><span><input type="checkbox" class="section-select-all" id="activeSelectAll" title="Select all" /><span class="chev">▾</span> Active Threads</span><span class="count" id="activeCount">0</span></div>
-        <div class="thread-list" id="activeList"></div>
+      <div class="select-all-row" id="selectAllRow" style="display:none;">
+        <label class="select-all-check">
+          <input type="checkbox" id="selectAllCheckbox" />
+          <span>Select all</span>
+        </label>
+        <div class="select-all-actions" id="selectAllActions"></div>
       </div>
 
-      <div class="threads-section collapsed" id="solvedSection">
-        <div class="threads-section-title collapsed" data-target="solvedList"><span><input type="checkbox" class="section-select-all" id="solvedSelectAll" title="Select all" /><span class="chev">▾</span> Solved Chat History</span><span class="count" id="solvedCount">0</span></div>
-        <div class="thread-list" id="solvedList"></div>
-      </div>
-
-      <div class="threads-section recall collapsed" id="recallSection" style="display:none;">
-        <div class="threads-section-title collapsed" data-target="recallList"><span><span class="chev">▾</span> Recall Chat History</span><span class="count" id="recallCount">0</span></div>
-        <div class="thread-list" id="recallList"></div>
-      </div>
+      <div class="thread-list" id="threadList"></div>
+      <div class="thread-list" id="recallList" style="display:none;"></div>
     </aside>
 
     <div class="threads-right-col">
@@ -96,7 +116,7 @@
       // sees it too — matches functions/_shared/accounts.js ROLE_RANK.
       const ROLE_RANK = { agent: 0, senior: 1, admin: 2, superadmin: 3, owner: 4 };
       const isAdmin = (ROLE_RANK[auth.role] ?? 0) >= ROLE_RANK.admin;
-      document.getElementById("recallSection").style.display = isAdmin ? "" : "none";
+      document.getElementById("tabBtnRecall").style.display = isAdmin ? "" : "none";
       loadList();
       if (isAdmin) loadRecallLog();
       polishEmoji();
@@ -129,6 +149,34 @@
     let pollTimer = null;
     let listPollTimer = null;
     let searchTimer = null;
+
+    // ---- Tabs (Active / Solved / Recall) --------------------------------
+    // Replaces the old always-all-expanded stacked sections: only one
+    // tab's list is visible/mounted at a time, switched via the pill row
+    // at the top of the sidebar. #threadList is shared between the
+    // "active" and "solved" tabs (reconcileSection just diffs whichever
+    // array is current into it — see below); #recallList is a separate
+    // container since recall entries render via a completely different,
+    // non-diffed template (renderRecallList).
+    let currentTab = "active"; // "active" | "solved" | "recall"
+
+    function currentTabItems() {
+      if (currentTab === "active") return activeThreads;
+      if (currentTab === "solved") return solvedThreads;
+      return [];
+    }
+
+    function switchTab(tab) {
+      if (tab === currentTab) return;
+      currentTab = tab;
+      selectMode = false;
+      selectedIds = new Set();
+      openMenuId = null;
+      renderLists();
+    }
+    document.querySelectorAll(".tab-pill").forEach((btn) => {
+      btn.addEventListener("click", () => switchTab(btn.dataset.tab));
+    });
 
     // ---- Local "optimistic" sidebar patches --------------------------
     // The sidebar list comes from THREADS_KV.list() (see threads.js),
@@ -183,10 +231,8 @@
       }
     }
 
-    const activeList = document.getElementById("activeList");
-    const solvedList = document.getElementById("solvedList");
-    const activeCount = document.getElementById("activeCount");
-    const solvedCount = document.getElementById("solvedCount");
+    const threadListEl = document.getElementById("threadList");
+    const recallListEl = document.getElementById("recallList");
     const main = document.getElementById("threadsMain");
 
     // ---- Diffed sidebar rendering ----------------------------------------
@@ -214,8 +260,21 @@
     }
 
     // Reconciles one <div class="thread-list"> against the `items` array
-    // that should be in it, right now, in that order.
+    // that should be in it, right now, in that order. Since #threadList is
+    // now shared between the active and solved tabs (only one tab's items
+    // are ever passed in at a time), first prune any child currently
+    // sitting in the container that isn't wanted here — e.g. the previous
+    // tab's rows, or a thread that just moved out of this tab entirely
+    // (solved while viewing Active). The node itself isn't destroyed, just
+    // detached: it stays in renderedItemEls and gets reused instantly if
+    // that tab is revisited.
     function reconcileSection(container, items) {
+      const wantedIds = new Set(items.map((it) => it.id));
+      Array.from(container.children).forEach((child) => {
+        if (child.dataset && child.dataset.threadId && !wantedIds.has(child.dataset.threadId)) {
+          child.remove();
+        }
+      });
       let prevEl = null;
       items.forEach((item) => {
         const key = itemRenderKey(item);
@@ -244,15 +303,13 @@
       });
     }
 
-    document.querySelectorAll(".threads-section-title").forEach((el) => {
-      el.addEventListener("click", (e) => {
-        if (e.target.closest(".section-select-all")) return; // handled by its own listener below, not a collapse toggle
-        el.classList.toggle("collapsed");
-        document.getElementById(el.dataset.target).closest(".threads-section").classList.toggle("collapsed");
-      });
+    document.getElementById("summaryActionBtn").addEventListener("click", () => {
+      if (selectMode) exitSelectMode(); else enterSelectMode(null);
     });
-    document.getElementById("activeSelectAll").addEventListener("click", (e) => { e.stopPropagation(); toggleSectionSelectAll(activeThreads); });
-    document.getElementById("solvedSelectAll").addEventListener("click", (e) => { e.stopPropagation(); toggleSectionSelectAll(solvedThreads); });
+    document.getElementById("selectAllCheckbox").addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggleSectionSelectAll(currentTabItems());
+    });
 
     const RECALL_TYPE_META = {
       "delete-thread": { icon: "🗑", badge: "Deleted" },
@@ -260,7 +317,7 @@
       "recall-reply": { icon: "↩️", badge: "Recalled reply" },
     };
 
-    // Admin-only — the whole #recallSection is display:none for non-admins
+    // Admin-only — the Recall tab pill is display:none for non-admins
     // (set in bootDashboard), and the server 401s this endpoint for them
     // too, so this never actually runs for a non-admin account.
     async function loadRecallLog() {
@@ -270,15 +327,19 @@
         const data = await res.json();
         if (!data.ok) return;
         recallEntries = data.entries || [];
-        renderRecallList();
+        // Goes through the same renderLists() as everything else — that's
+        // what keeps the Recall tab's pill count current even while some
+        // other tab is the one actually visible right now. renderLists()
+        // only bothers actually rebuilding #recallList's DOM when the
+        // Recall tab is the one currently open (see its body below).
+        renderLists();
       } catch {
         // Network hiccup — leave the list as-is, try again next poll.
       }
     }
 
     function renderRecallList() {
-      document.getElementById("recallCount").textContent = recallEntries.length;
-      const list = document.getElementById("recallList");
+      const list = recallListEl;
       if (!recallEntries.length) {
         list.innerHTML = '<div class="threads-empty">No deletions logged yet.</div>';
         return;
@@ -588,25 +649,57 @@
       exitSelectMode();
     }
 
-    function renderSelectToolbar() {
-      const bar = document.getElementById("selectToolbar");
-      if (!selectMode) { bar.style.display = "none"; bar.innerHTML = ""; return; }
-      bar.style.display = "";
+    // Tab pill row — counts + which pill reads as "selected" (solid blue).
+    function renderTabs() {
+      document.getElementById("tabCountActive").textContent = activeThreads.length;
+      document.getElementById("tabCountSolved").textContent = solvedThreads.length;
+      document.getElementById("tabCountRecall").textContent = recallEntries.length;
+      document.querySelectorAll(".tab-pill").forEach((btn) => {
+        btn.classList.toggle("is-selected", btn.dataset.tab === currentTab);
+      });
+    }
+
+    // "All threads" summary card just under the tabs — title/subtitle
+    // describe whichever tab is open, and the right side doubles as the
+    // Select/Cancel entry point into select mode (badge shows the total
+    // count normally, or the live selected count once select mode is on).
+    function renderSummaryCard() {
+      const badge = document.getElementById("summaryBadge");
+      const actionBtn = document.getElementById("summaryActionBtn");
+      const sub = document.getElementById("summarySub");
+      const items = currentTabItems();
+
+      if (currentTab === "recall") {
+        sub.textContent = `Recall history · ${recallEntries.length} ${recallEntries.length === 1 ? "entry" : "entries"}`;
+        badge.textContent = recallEntries.length;
+        actionBtn.style.display = "none"; // recall log has no batch actions — it's just a log
+      } else {
+        const unreadCount = items.filter(isUnread).length;
+        const label = currentTab === "active" ? "Active threads" : "Solved threads";
+        sub.textContent = `${label} · ${unreadCount} new ${unreadCount === 1 ? "reply" : "replies"}`;
+        actionBtn.style.display = "";
+        actionBtn.textContent = selectMode ? "Cancel" : "Select";
+        badge.textContent = selectMode ? selectedIds.size : items.length;
+      }
+    }
+
+    // "Select all" row — only shown once select mode is on (and only for
+    // the active/solved tabs, same reasoning as the button above).
+    function renderSelectAllRow() {
+      const row = document.getElementById("selectAllRow");
+      if (!selectMode || currentTab === "recall") { row.style.display = "none"; return; }
+      row.style.display = "flex";
+      const items = currentTabItems();
       const n = selectedIds.size;
+      document.getElementById("selectAllCheckbox").checked = items.length > 0 && items.every((t) => selectedIds.has(t.id));
       const anyUnread = selectedThreadObjs().some(isUnread);
       const anyUnsolved = selectedThreadObjs().some((t) => !t.solved);
       const readLabel = anyUnread ? "Mark as read" : "Mark as unread";
-      const solvedLabel = anyUnsolved ? "Solved" : "Not solved";
-      bar.innerHTML = `
-        <div class="select-toolbar-row1">
-          <span class="select-count-badge">${n}</span>
-          <button type="button" class="select-cancel-btn" id="selectCancelBtn">Cancel</button>
-        </div>
-        <div class="select-toolbar-row2">
-          <button type="button" class="select-action-btn" id="selectReadBtn" ${n ? "" : "disabled"}>${readLabel}</button>
-          <button type="button" class="select-action-btn ${anyUnsolved ? "tone-solve" : "tone-unsolve"}" id="selectSolvedBtn" ${n ? "" : "disabled"}>${solvedLabel}</button>
-        </div>`;
-      document.getElementById("selectCancelBtn").addEventListener("click", exitSelectMode);
+      const solvedLabel = anyUnsolved ? "Solved" : "✕ Not solved";
+      const actions = document.getElementById("selectAllActions");
+      actions.innerHTML = `
+        <button type="button" class="select-pill tone-read" id="selectReadBtn" ${n ? "" : "disabled"}>✓ ${readLabel}</button>
+        <button type="button" class="select-pill ${anyUnsolved ? "tone-solve" : "tone-unsolve"}" id="selectSolvedBtn" ${n ? "" : "disabled"}>${solvedLabel}</button>`;
       document.getElementById("selectReadBtn").addEventListener("click", () => batchMarkRead(anyUnread));
       document.getElementById("selectSolvedBtn").addEventListener("click", () => batchSetSolved(anyUnsolved));
     }
@@ -650,6 +743,7 @@
     function renderItem(t) {
       const el = document.createElement("div");
       el.className = "thread-item" + (t.id === selectedId ? " selected" : "") + (selectMode ? " select-mode-item" : "");
+      el.dataset.threadId = t.id; // lets reconcileSection() prune stale rows when the shared #threadList switches tabs
       el.style.setProperty("--thread-accent", t.accent || "#7c6cf0");
       const unread = isUnread(t);
       const checked = selectedIds.has(t.id);
@@ -699,25 +793,38 @@
     }
 
     function renderLists() {
-      activeCount.textContent = activeThreads.length;
-      solvedCount.textContent = solvedThreads.length;
+      renderTabs();
+      renderSummaryCard();
+      renderSelectAllRow();
 
-      if (!activeThreads.length) {
-        // Genuinely empty — nothing to diff against, just show the
-        // placeholder. (Any previously-tracked nodes get swept up by the
-        // orphan cleanup pass below since their ids won't be in liveIds.)
-        activeList.innerHTML = '<div class="threads-empty">No active threads.<br/>Submit a form to start one.</div>';
+      if (currentTab === "recall") {
+        threadListEl.style.display = "none";
+        recallListEl.style.display = "";
+        renderRecallList();
       } else {
-        const emptyEl = activeList.querySelector(".threads-empty");
-        if (emptyEl) emptyEl.remove();
-        reconcileSection(activeList, activeThreads);
+        recallListEl.style.display = "none";
+        threadListEl.style.display = "";
+        const items = currentTabItems();
+        if (!items.length) {
+          // Genuinely empty — nothing to diff against, just show the
+          // placeholder. (Any previously-tracked nodes for this tab get
+          // pruned by reconcileSection's own child sweep, so there's
+          // nothing stale left to clobber this innerHTML.)
+          threadListEl.innerHTML = currentTab === "active"
+            ? '<div class="threads-empty">No active threads.<br/>Submit a form to start one.</div>'
+            : '<div class="threads-empty">No solved threads yet.</div>';
+        } else {
+          const emptyEl = threadListEl.querySelector(".threads-empty");
+          if (emptyEl) emptyEl.remove();
+          reconcileSection(threadListEl, items);
+        }
       }
-      reconcileSection(solvedList, solvedThreads);
 
-      // Sweep any tracked id that's no longer in either list (thread got
-      // deleted, or fell out of both arrays some other way) — without this,
-      // reconcileSection alone has no reason to ever visit a removed id
-      // again, so its node would just sit there forever.
+      // Sweep any tracked id that's no longer in either the active or
+      // solved arrays (thread got deleted, or fell out of both some other
+      // way) — without this, reconcileSection alone has no reason to ever
+      // visit a removed id again, so its detached node would just sit in
+      // memory forever.
       const liveIds = new Set([...activeThreads.map((t) => t.id), ...solvedThreads.map((t) => t.id)]);
       renderedItemEls.forEach((entry, id) => {
         if (!liveIds.has(id)) {
@@ -726,11 +833,6 @@
         }
       });
 
-      document.getElementById("activeSelectAll").style.display = selectMode ? "inline-block" : "none";
-      document.getElementById("solvedSelectAll").style.display = selectMode ? "inline-block" : "none";
-      document.getElementById("activeSelectAll").checked = activeThreads.length > 0 && activeThreads.every((t) => selectedIds.has(t.id));
-      document.getElementById("solvedSelectAll").checked = solvedThreads.length > 0 && solvedThreads.every((t) => selectedIds.has(t.id));
-      renderSelectToolbar();
       polishEmoji();
     }
 

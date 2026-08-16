@@ -1010,6 +1010,7 @@ a { color: inherit; text-decoration: none; }
   display: flex; align-items: center; justify-content: center;
   font-size: 16px; margin-bottom: 12px;
 }
+.t-icon-img { width: 20px; height: 20px; object-fit: contain; display: block; }
 .t-badge {
   position: absolute;
   top: -6px; right: -6px;
@@ -1235,18 +1236,90 @@ table.aa-record-table tr.aa-today { background: color-mix(in srgb, var(--accent-
   flex: 1; border: none; background: none; outline: none;
   font-size: 13px; color: var(--ink); font-family: inherit;
 }
+
+/* Tab pills (Active / Solved / Recall) ---------------------------------
+   Unselected = outlined in that tab's own color (orange/green/red) so all
+   three read at a glance without needing to click through; selected =
+   solid blue fill, same blue regardless of which tab it is, since "this
+   is the one currently open" is a single unambiguous state that shouldn't
+   compete visually with the semantic active/solved/recall colors. */
+.thread-tabs { display: flex; gap: 8px; margin-bottom: 14px; }
+.tab-pill {
+  flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 9px 6px; border-radius: 999px; cursor: pointer; font-family: inherit;
+  font-size: 12.5px; font-weight: 800; white-space: nowrap;
+  background: var(--tab-tint, rgba(255, 255, 255, 0.05));
+  border: 1.5px solid var(--tab-color, var(--border));
+  color: var(--tab-color, var(--ink));
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+.tab-pill-active { --tab-color: #f5a623; --tab-tint: rgba(245, 166, 35, 0.1); }
+.tab-pill-solved { --tab-color: #34d399; --tab-tint: rgba(52, 211, 153, 0.1); }
+.tab-pill-recall { --tab-color: #f87171; --tab-tint: rgba(248, 113, 113, 0.1); }
+.tab-pill:hover { filter: brightness(1.15); }
+.tab-pill-count {
+  background: color-mix(in srgb, var(--tab-color, var(--ink)) 18%, transparent);
+  border-radius: 999px; padding: 1px 8px; font-size: 11px; font-weight: 800;
+}
+.tab-pill.is-selected {
+  --tab-color: #fff;
+  background: #3b6bf0; border-color: #3b6bf0; box-shadow: 0 4px 14px -4px rgba(59, 107, 240, 0.6);
+}
+.tab-pill.is-selected .tab-pill-count { background: #fff; color: #1b3a9c; }
+
+/* "All threads" summary card ------------------------------------------- */
+.threads-summary-card {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  background: var(--field-bg); border: 1.5px solid var(--border);
+  border-radius: 14px; padding: 12px 14px; margin-bottom: 14px;
+}
+.summary-card-title { font-size: 13.5px; font-weight: 800; color: var(--ink); }
+.summary-card-sub { font-size: 11px; color: var(--ink-soft); margin-top: 2px; }
+.summary-card-right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.summary-card-badge {
+  background: var(--pill-bg); border: 1px solid var(--pill-border);
+  border-radius: 999px; min-width: 22px; text-align: center;
+  padding: 2px 9px; font-size: 11.5px; font-weight: 800; color: var(--ink);
+}
+.summary-card-action {
+  border: none; background: none; color: #3b82f6; font-size: 12.5px; font-weight: 800;
+  cursor: pointer; font-family: inherit; padding: 0;
+}
+.summary-card-action:hover { opacity: 0.8; }
+
+/* Select-all row, shown only while select mode is on -------------------- */
+.select-all-row {
+  align-items: center; justify-content: space-between; gap: 10px;
+  margin-bottom: 12px; flex-wrap: wrap;
+}
+.select-all-check {
+  display: flex; align-items: center; gap: 8px; cursor: pointer;
+  font-size: 12.5px; font-weight: 700; color: var(--ink); user-select: none;
+}
+.select-all-check input { width: 15px; height: 15px; cursor: pointer; accent-color: #3b82f6; }
+.select-all-actions { display: flex; gap: 8px; }
+.select-pill {
+  padding: 7px 12px; border-radius: 999px; border: none; cursor: pointer;
+  font-family: inherit; font-size: 11.5px; font-weight: 800; white-space: nowrap;
+}
+.select-pill:disabled { opacity: 0.5; cursor: not-allowed; }
+.select-pill.tone-read { background: rgba(56, 189, 248, 0.16); color: #38bdf8; }
+.select-pill.tone-solve { background: rgba(52, 211, 153, 0.18); color: #1a9c6e; }
+.select-pill.tone-unsolve { background: rgba(239, 74, 114, 0.18); color: #ef4a72; }
+
+/* Generic section header (title + count pill) — threads.html no longer
+   uses this (replaced by the tab pills above), but announcements.html
+   still has its own single non-collapsible ".threads-section" for the
+   Announcements list, so this stays. */
 .threads-section-title {
   display: flex; align-items: center; justify-content: space-between;
   font-size: 11px; font-weight: 800; letter-spacing: 0.07em; text-transform: uppercase;
-  color: var(--ink-soft); padding: 4px 6px 10px; cursor: pointer; user-select: none;
+  color: var(--ink-soft); padding: 4px 6px 10px;
 }
 .threads-section-title .count {
   background: var(--pill-bg); border: 1px solid var(--pill-border);
   border-radius: 999px; padding: 1px 8px; font-size: 10.5px; color: var(--ink);
 }
-.threads-section-title .chev { transition: transform 0.15s ease; }
-.threads-section-title.collapsed .chev { transform: rotate(-90deg); }
-.threads-section.collapsed .thread-list { display: none; }
 .threads-empty { font-size: 12px; color: var(--ink-soft); text-align: center; padding: 24px 10px; }
 .thread-list {
   display: flex; flex-direction: column; gap: 6px; margin-bottom: 18px;
@@ -1255,10 +1328,9 @@ table.aa-record-table tr.aa-today { background: color-mix(in srgb, var(--accent-
 }
 [data-theme="light"] .thread-list { background: rgba(0, 0, 0, 0.02); }
 
-/* Recall Chat History — same template as Active/Solved, red-tinted count +
-   box border so it reads as "sensitive" without being hidden from admins. */
-.threads-section.recall .threads-section-title .count { background: rgba(239, 68, 68, 0.18); color: #f87171; border-color: transparent; }
-.threads-section.recall .thread-list { border-color: rgba(239, 68, 68, 0.16); background: rgba(239, 68, 68, 0.03); }
+/* Recall Chat History — red-tinted box border so it still reads as
+   "sensitive" while its tab is open, same as before the tab redesign. */
+#recallList { border-color: rgba(239, 68, 68, 0.16); background: rgba(239, 68, 68, 0.03); }
 .recall-item .icon { background: rgba(239, 68, 68, 0.14); color: #f87171; }
 .recall-item .badge {
   display: inline-block; font-size: 9px; font-weight: 800; text-transform: uppercase;
@@ -1345,34 +1417,8 @@ table.aa-record-table tr.aa-today { background: color-mix(in srgb, var(--accent-
 .thread-item-menu-option[data-act="unsolve"] { color: #ef4a72; }
 
 /* Select batch mode ---------------------------------------------------- */
-.section-select-all { display: none; margin-right: 8px; cursor: pointer; vertical-align: -2px; }
 .thread-item.select-mode-item { cursor: pointer; }
 .thread-item-check { flex-shrink: 0; width: 15px; height: 15px; cursor: pointer; accent-color: var(--accent-gold); }
-
-.threads-select-toolbar {
-  background: var(--field-bg); border: 1.5px solid var(--border); border-radius: 12px;
-  padding: 10px 12px; margin-bottom: 14px; display: flex; flex-direction: column; gap: 8px;
-}
-.select-toolbar-row1 { display: flex; align-items: center; justify-content: space-between; }
-.select-count-badge {
-  background: #fff; color: #1a1a1a; font-weight: 800; font-size: 11.5px;
-  border-radius: 999px; padding: 2px 10px; min-width: 20px; text-align: center;
-}
-.select-cancel-btn { border: none; background: none; color: #fff; font-size: 12px; font-weight: 700; cursor: pointer; }
-.select-cancel-btn:hover { opacity: 0.8; }
-.select-toolbar-row2 { display: flex; gap: 8px; }
-.select-action-btn {
-  flex: 1; padding: 8px 10px; border-radius: 10px; border: 1.5px solid var(--border);
-  background: var(--panel-bg, transparent); color: var(--ink); font-size: 12px; font-weight: 700; cursor: pointer;
-}
-.select-action-btn:hover:not(:disabled) { border-color: var(--accent-gold); }
-.select-action-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-/* Tone applied dynamically by JS to the Solved/Not solved toolbar button
-   only — matches the ☰ menu's green/pink treatment (data-act="solve"/
-   "unsolve" above) and the detail view's own .status-chip colors, so the
-   same action reads the same color everywhere in the app. */
-.select-action-btn.tone-solve { background: rgba(52, 211, 153, 0.16); border-color: transparent; color: #1a9c6e; }
-.select-action-btn.tone-unsolve { background: rgba(239, 74, 114, 0.16); border-color: transparent; color: #ef4a72; }
 
 .threads-main { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
 .threads-placeholder { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--ink-soft); font-size: 14px; text-align: center; }
