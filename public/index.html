@@ -272,7 +272,7 @@
 
   <script src="/assets/schemas.js?v=f6a765aa"></script>
   <script src="/assets/page-transition.js?v=437ace08"></script>
-  <script src="/assets/spa-shell.js?v=a5b4dd8f"></script>
+  <script src="/assets/spa-shell.js?v=4067f260"></script>
   <script src="/assets/active-agents-panel.js?v=962dd23f"></script>
   <script>
     window.initThemeToggle();
@@ -289,6 +289,12 @@
         sidebar.classList.remove("open");
         backdrop.classList.remove("open");
       }
+      // Exposed so spa-shell.js can close the drawer on every route
+      // change (click OR browser back/forward) — see the comment on
+      // window.closeMobileSidebar's call site in spa-shell.js's mount()
+      // for why that single funnel point is needed instead of relying on
+      // click listeners here.
+      window.closeMobileSidebar = closeSidebar;
       toggleBtn.addEventListener("click", () => {
         sidebar.classList.toggle("open");
         backdrop.classList.toggle("open");
@@ -304,6 +310,16 @@
       // module in place instead) — the mobile overlay used to close on
       // its own because a real navigation unloaded the page. Now it
       // has to be told explicitly, same as the subitems above.
+      //
+      // NOTE: this listener never actually fires for Home, a module
+      // link, or any tool card (#threadsCard etc.) — spa-shell.js's own
+      // click router runs in the CAPTURE phase and calls
+      // stopImmediatePropagation() on exactly those clicks (see its own
+      // comment for why), which prevents this bubble-phase listener from
+      // ever seeing them. It's harmless to leave this here (still
+      // catches anything spa-shell.js doesn't own, and costs nothing),
+      // but the actual fix for THOSE links is window.closeMobileSidebar
+      // being called from inside mount() itself — see spa-shell.js.
       sidebar.addEventListener("click", (e) => {
         if (e.target.closest(".sidebar-item")) closeSidebar();
       });

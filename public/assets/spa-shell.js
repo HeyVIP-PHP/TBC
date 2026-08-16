@@ -96,6 +96,21 @@
     clearViewIntervals(currentView);
     currentView = view;
 
+    // Close the mobile Issue Submission drawer on EVERY route change,
+    // not just clicks inside the sidebar itself — this is the one place
+    // every transition funnels through (a click on Home/a module link/a
+    // tool card, AND the browser back/forward button via popstate below)
+    // so it's the only reliable spot to put this. Needed because
+    // index.html's own sidebar click listener that used to handle this
+    // never actually fires for these links: this file's click router
+    // (see the capture-phase listener further down) calls
+    // stopImmediatePropagation() on exactly the clicks that reach here,
+    // which stops the event before it can bubble up to that listener.
+    // Left as a no-op-safe optional call (not a hard dependency) since
+    // this file is also usable, in principle, without index.html's
+    // particular sidebar markup.
+    if (window.closeMobileSidebar) window.closeMobileSidebar();
+
     const homeEl = document.getElementById("viewHome");
     const mountEl = document.getElementById("spaMount");
 
