@@ -231,6 +231,7 @@
           <div class="sidebar-subitem" id="subSettings" style="display:none;--sub-accent:#f59e0b33;"><span class="sub-icon">⚙️</span> Settings</div>
           <div class="sidebar-subitem" id="subResetPassword" style="--sub-accent:#f3c46333;"><span class="sub-icon">🔑</span> Reset Password</div>
           <div class="sidebar-subitem" id="subAgentProfile" style="display:none;--sub-accent:#f472b633;"><span class="sub-icon">🪪</span> Agent Profile</div>
+          <div class="sidebar-subitem" id="subActivityLogs" style="display:none;--sub-accent:#a855f733;"><span class="sub-icon">🔎</span> Activity Logs</div>
         </div>
       </div>
     </aside>
@@ -264,11 +265,6 @@
             <div class="t-desc">Who's online right now, and today's hours</div>
             <div class="t-sub-stat" id="activeAgentsOnlineStat"></div>
           </button>
-          <a href="/activity-logs.html" class="tool-card" id="activityLogsCard" style="--tool-accent:#a855f7;display:none;">
-            <div class="t-icon" style="background:#a855f733;">🔎</div>
-            <div class="t-name">Activity Logs</div>
-            <div class="t-desc">Who did what, when, and from where</div>
-          </a>
         </div>
 
         <div class="hub-stats" id="hubStats"></div>
@@ -725,12 +721,18 @@
       if (window.ActiveAgentsPanel) window.ActiveAgentsPanel.open();
     });
 
-    // ---- Activity Logs tool card — shown only to accounts with access
-    // to the "activityLogs" Account Management section. Plain view-only
-    // section, same shape as activeAgents/announcements — no live stat
-    // polling needed, it's a review page, not a live indicator.
+    // ---- Activity Logs — Account Management sidebar sub-item, same
+    // deny-by-default gate as every other section here. Unlike the
+    // other sub-items (Create Account, IP Access, Settings, Agent
+    // Profile — all of which open the shared acctModalBackdrop), this
+    // one is mounted into #spaMount by spa-shell.js's router (same
+    // mechanism TG Reply Threads/Promo Search/Announcements use) — a
+    // large filterable table doesn't fit the shared modal chrome, but
+    // it still swaps into the main content area in place, no real page
+    // navigation. The actual click handling lives in spa-shell.js's
+    // routeForClick(); nothing to wire up here beyond visibility.
     if (canSeeAdminSection("activityLogs")) {
-      document.getElementById("activityLogsCard").style.display = "";
+      document.getElementById("subActivityLogs").style.display = "flex";
     }
 
     const acctToggle = document.getElementById("acctMgmtToggle");

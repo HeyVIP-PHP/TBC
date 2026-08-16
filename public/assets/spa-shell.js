@@ -28,12 +28,13 @@
     threads: { url: "/threads.html", select: ["#attachLightbox", ".threads-shell"], extScripts: ["https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/twemoji.min.js"] },
     announcements: { url: "/announcements.html", select: ".threads-shell" },
     promo: { url: "/promo.html", select: ".promo-shell", styleSelect: "style" },
+    activityLogs: { url: "/activity-logs.html", select: ".threads-shell" },
   };
 
   const htmlCache = new Map(); // route name -> parsed Document
   const scriptTextCache = new Map(); // absolute url -> script text
   const loadedExtScripts = new Set(); // src already present on the page
-  const viewIntervals = { form: [], threads: [], announcements: [], promo: [] };
+  const viewIntervals = { form: [], threads: [], announcements: [], promo: [], activityLogs: [] };
   let currentView = "home";
   let capturingFor = null;
 
@@ -225,6 +226,7 @@
     if (target.closest("#threadsCard")) return { view: "threads" };
     if (target.closest("#promoCard")) return { view: "promo" };
     if (target.closest("#announcementCard")) return { view: "announcements" };
+    if (target.closest("#subActivityLogs")) return { view: "activityLogs" };
     return null;
   }
 
