@@ -86,7 +86,7 @@
 * { scrollbar-width: thin; scrollbar-color: var(--accent-glow) transparent; }
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--accent-glow); border-radius: 20px; border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb { background: var(--accent-glow); border-radius: 20px; border: 2px solid transparent; background-clip: padding-box; min-height: 60px; }
 ::-webkit-scrollbar-thumb:hover { background: rgba(124, 108, 240, 0.75); background-clip: padding-box; }
 ::-webkit-scrollbar-corner { background: transparent; }
 
