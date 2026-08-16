@@ -53,10 +53,11 @@ import {
   updateRootText, updateThreadDetails, markRootRecalled, editMessageInThread, removeMessageFromThread,
   logDeletion,
 } from "../../_shared/threads.js";
-import { verifyRequest, canSeeBrand } from "../../_shared/accounts.js";
+import { verifyRequest, canSeeBrand, requestIP } from "../../_shared/accounts.js";
 import { BRANDS, MODULE_META, MESSAGE_TEMPLATE, PROMOTION_MESSAGE_TEMPLATE } from "../../_shared/routing.js";
 import { updateRowByColumns } from "../../_shared/googleSheets.js";
 import { buildTicketMessage, buildTitleAndSummary, resolveColumnValues } from "../../_shared/messageBuilders.js";
+import { logActivity } from "../../_shared/activityLog.js";
 
 export async function onRequestGet({ request, env, params }) {
   if (!env.THREADS_KV) return json({ ok: false, error: "THREADS_KV is not bound yet." }, 500);
@@ -83,10 +84,12 @@ export async function onRequestPost(context) {
   }
 }
 
-async function handleThreadAction({ request, env, params }) {
+async function handleThreadAction({ request, env, params, waitUntil }) {
   if (!env.THREADS_KV) return json({ ok: false, error: "THREADS_KV is not bound yet." }, 500);
   const account = await verifyRequest(request, env);
   if (!account) return json({ ok: false, error: "Login required." }, 401);
+  const ip = requestIP(request) || "unknown";
+  const log = (entry) => { const p = logActivity(env, { category: "Thread", agent: account.username, ip, ...entry }); if (waitUntil) waitUntil(p); else p.catch(() => {}); };
 
   let body;
   try {
@@ -108,6 +111,7 @@ async function handleThreadAction({ request, env, params }) {
   if (action === "solve" || action === "unsolve") {
     const thread = await setSolved(env, id, action === "solve");
     if (!thread) return json({ ok: false, error: "Not found." }, 404);
+    log({ action: action === "solve" ? "Ticket Solved" : "Ticket Reopened", detail: `Marked "${thread.title}" as ${action === "solve" ? "solved" : "unsolved"}` });
     return json({ ok: true, thread });
   }
 
@@ -123,6 +127,7 @@ async function handleThreadAction({ request, env, params }) {
       content: `Ticket + ${thread.messages?.length || 0} message(s) untracked (Telegram/Sheet untouched)`,
       by: account.username,
     });
+    log({ action: "Ticket Deleted", detail: `Deleted ticket "${before?.title || thread.title}"` });
     return json({ ok: true });
   }
 
@@ -188,6 +193,7 @@ async function handleThreadAction({ request, env, params }) {
       messageIds,
       replyToMessageId: replyToMessageId || null,
     });
+    log({ action: "Ticket Replied", detail: `Replied to "${thread.title}"` });
     return json({ ok: true, thread: updated });
   }
 
@@ -207,6 +213,7 @@ async function handleThreadAction({ request, env, params }) {
     if (!tg.ok) return json({ ok: false, error: telegramEditError(tg) }, 502);
 
     const updated = await updateRootText(env, id, text);
+    log({ action: "Root Edited", detail: `"${thread.title}" original text: "${thread.rootText || ""}" → "${text}"` });
     return json({ ok: true, thread: updated });
   }
 
@@ -273,6 +280,11 @@ async function handleThreadAction({ request, env, params }) {
 
     const { title, summary } = buildTitleAndSummary({ meta, brand, fieldMap, fields });
     const updated = await updateThreadDetails(env, id, { fieldMap, rootText: text, title, summary });
+    const oldFieldMap = thread.fieldMap || {};
+    const changedFields = fields
+      .filter((f) => (oldFieldMap[f.key] ?? "") !== (fieldMap[f.key] ?? ""))
+      .map((f) => `${f.label}: "${oldFieldMap[f.key] ?? ""}" → "${fieldMap[f.key] ?? ""}"`);
+    log({ action: "Details Edited", detail: `"${thread.title}" fields updated — ${changedFields.length ? changedFields.join("; ") : "no field values actually changed"}` });
     return json({ ok: true, thread: updated, sheetHasRef: !!thread.sheetRef, sheetSynced, sheetError });
   }
 
@@ -302,6 +314,7 @@ async function handleThreadAction({ request, env, params }) {
       content: thread.rootText || "(no text)",
       by: account.username,
     });
+    log({ action: "Root Recalled", detail: `Recalled original message of "${thread.title}" — was: "${thread.rootText || "(no text)"}"` });
     return json({ ok: true, thread: updated });
   }
 
@@ -326,6 +339,7 @@ async function handleThreadAction({ request, env, params }) {
     if (!tg.ok) return json({ ok: false, error: telegramEditError(tg) }, 502);
 
     const updated = await editMessageInThread(env, id, messageId, text);
+    log({ action: "Reply Edited", detail: `"${existingThread.title}" reply: "${editingMsg?.text || ""}" → "${text}"` });
     return json({ ok: true, thread: updated });
   }
 
@@ -355,6 +369,7 @@ async function handleThreadAction({ request, env, params }) {
       content: recalledMsg?.text || "(no text)",
       by: account.username,
     });
+    log({ action: "Reply Recalled", detail: `Recalled a reply on "${thread.title}" — was: "${recalledMsg?.text || "(no text)"}"` });
     return json({ ok: true, thread: updated });
   }
 

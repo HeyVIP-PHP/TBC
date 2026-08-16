@@ -25,8 +25,9 @@
  * Account Management Access section) — this is a bulk KV-writing admin
  * action, not something every agent should be able to trigger.
  */
-import { authenticateStaff, ROLE_RANK, canEditAdminSection } from "../../_shared/accounts.js";
+import { authenticateStaff, ROLE_RANK, canEditAdminSection, requestIP } from "../../_shared/accounts.js";
 import { backfillMentionCandidatesPage } from "../../_shared/threads.js";
+import { logActivity } from "../../_shared/activityLog.js";
 
 export async function onRequestPost(context) {
   try {
@@ -36,7 +37,7 @@ export async function onRequestPost(context) {
   }
 }
 
-async function handlePost({ request, env }) {
+async function handlePost({ request, env, waitUntil }) {
   if (!env.THREADS_KV) return json({ ok: false, error: "THREADS_KV is not bound yet." }, 500);
   const auth = await authenticateStaff(request, env, ROLE_RANK.senior);
   if (!auth.ok) return json({ ok: false, error: "Not authorized." }, 401);
@@ -44,6 +45,13 @@ async function handlePost({ request, env }) {
 
   const body = await request.json().catch(() => ({}));
   const result = await backfillMentionCandidatesPage(env, body.cursor || undefined);
+  // The frontend loops this call page-by-page (see this file's header) —
+  // only log once, on the final page, so a large backfill doesn't write
+  // one activity-log entry per 100-thread page.
+  if (result.done) {
+    const logCall = logActivity(env, { category: "Config", agent: auth.account ? auth.account.username : "bootstrap", action: "Mention Backfill Run", detail: "Ran @tag username backfill across all threads", ip: requestIP(request) || "unknown" });
+    if (waitUntil) waitUntil(logCall); else logCall.catch(() => {});
+  }
   return json({ ok: true, ...result });
 }
 

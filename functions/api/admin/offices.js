@@ -33,7 +33,8 @@
  * See _shared/accounts.js authenticateStaff() for the two ways in (real
  * login at the required rank, or the one-time bootstrap password).
  */
-import { listOffices, saveOffice, deleteOffice, authenticateStaff, ROLE_RANK, rankOf, canSeeAdminSection, canEditAdminSection } from "../../_shared/accounts.js";
+import { listOffices, saveOffice, deleteOffice, authenticateStaff, ROLE_RANK, rankOf, canSeeAdminSection, canEditAdminSection, requestIP } from "../../_shared/accounts.js";
+import { logActivity } from "../../_shared/activityLog.js";
 
 export async function onRequestGet(context) {
   try {
@@ -85,7 +86,7 @@ export async function onRequestPost(context) {
   }
 }
 
-async function handlePost({ request, env }) {
+async function handlePost({ request, env, waitUntil }) {
   if (!env.THREADS_KV) return json({ ok: false, error: "THREADS_KV is not bound yet." }, 500);
   // Editing IPs now requires Can-Edit on "whitelistIp" (see
   // canEditAdminSection() in _shared/accounts.js) — this COMPLETELY
@@ -103,6 +104,7 @@ async function handlePost({ request, env }) {
   const auth = await authenticateStaff(request, env, ROLE_RANK.senior);
   if (!auth.ok) return json({ ok: false, error: "Not authorized." }, 401);
   if (!canEditAdminSection(auth.account, "whitelistIp")) return json({ ok: false, error: "You don't have Can-Edit access to IP Access." }, 403);
+  const log = (entry) => { const p = logActivity(env, { category: "Config", agent: auth.account?.username || "bootstrap-setup", ip: requestIP(request) || "unknown", ...entry }); if (waitUntil) waitUntil(p); else p.catch(() => {}); };
 
   let body;
   try {
@@ -113,13 +115,16 @@ async function handlePost({ request, env }) {
 
   if (body.action === "save") {
     if (!body.name) return json({ ok: false, error: "Office name is required." }, 400);
+    const isNew = !body.id;
     const office = await saveOffice(env, { id: body.id, name: body.name, allowedIPs: body.allowedIPs || [] });
+    log({ action: "Office IP Updated", detail: `${isNew ? "Created" : "Updated"} office "${office.name}" — IPs: ${(office.allowedIPs || []).join(", ") || "none"}` });
     return json({ ok: true, office });
   }
 
   if (body.action === "delete") {
     if (!body.id) return json({ ok: false, error: "Missing office id." }, 400);
     await deleteOffice(env, body.id);
+    log({ action: "Office Deleted", detail: `Deleted office (${body.id})` });
     return json({ ok: true });
   }
 

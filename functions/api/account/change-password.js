@@ -16,7 +16,8 @@
  *      desk from silently taking over the account by changing its
  *      password out from under the real owner.
  */
-import { verifyRequest, getAccount, verifyPassword, saveAccount, issueToken } from "../../_shared/accounts.js";
+import { verifyRequest, getAccount, verifyPassword, saveAccount, issueToken, requestIP } from "../../_shared/accounts.js";
+import { logActivity } from "../../_shared/activityLog.js";
 
 export async function onRequestPost(context) {
   try {
@@ -26,7 +27,7 @@ export async function onRequestPost(context) {
   }
 }
 
-async function handleChangePassword({ request, env }) {
+async function handleChangePassword({ request, env, waitUntil }) {
   if (!env.THREADS_KV) return json({ ok: false, error: "THREADS_KV is not bound yet." }, 500);
   const authed = await verifyRequest(request, env);
   if (!authed) return json({ ok: false, error: "Login required." }, 401);
@@ -68,6 +69,8 @@ async function handleChangePassword({ request, env }) {
   // issue a fresh one immediately so the browser doesn't get logged out
   // right after successfully proving who it is.
   const token = await issueToken(env, updated);
+  const logCall = logActivity(env, { category: "Account", action: "Password Changed", agent: full.username, detail: `${full.username} changed own password`, ip: requestIP(request) || "unknown" });
+  if (waitUntil) waitUntil(logCall); else await logCall;
   return json({ ok: true, token });
 }
 

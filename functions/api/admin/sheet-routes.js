@@ -62,12 +62,13 @@
  * ever needs per-promotion sheet targets, this'll need a finer key than
  * sheet:<brandId>:promotion_request; not needed today.
  */
-import { authenticateStaff, ROLE_RANK, canSeeAdminSection } from "../../_shared/accounts.js";
+import { authenticateStaff, ROLE_RANK, canSeeAdminSection, requestIP } from "../../_shared/accounts.js";
 import {
   getAllSheetOverrides, saveSheetOverride, deleteSheetOverride,
   getPromoCodeSheetOverride, savePromoCodeSheetOverride, deletePromoCodeSheetOverride,
 } from "../../_shared/sheetRoutes.js";
 import { BRANDS, MODULE_META, SHEET_LAYOUT, PROMOTION_SHEET_CONFIG } from "../../_shared/routing.js";
+import { logActivity } from "../../_shared/activityLog.js";
 
 // Same default sheetId + tab list promo-search.js falls back to when
 // nothing's been saved through this page yet — kept in sync manually
@@ -171,10 +172,11 @@ export async function onRequestPost(context) {
   }
 }
 
-async function handlePost({ request, env }) {
+async function handlePost({ request, env, waitUntil }) {
   if (!env.THREADS_KV) return json({ ok: false, error: "THREADS_KV is not bound yet." }, 500);
   const auth = await authenticateStaff(request, env, ROLE_RANK.senior);
   if (!auth.ok) return json({ ok: false, error: "Not authorized." }, 401);
+  const log = (entry) => { const p = logActivity(env, { category: "Config", agent: auth.account?.username || "bootstrap-setup", ip: requestIP(request) || "unknown", ...entry }); if (waitUntil) waitUntil(p); else p.catch(() => {}); };
 
   let body;
   try {
@@ -194,6 +196,7 @@ async function handlePost({ request, env }) {
   if (body.action === "savePromoCode") {
     try {
       const saved = await savePromoCodeSheetOverride(env, { sheetId: body.sheetId, tabs: body.tabs });
+      log({ action: "Sheet Route Changed", detail: `Promo Code sheet updated → ${saved.sheetId}` });
       return json({ ok: true, promoCode: { ...saved, isOverride: true } });
     } catch (e) {
       return json({ ok: false, error: String(e.message || e) }, 400);
@@ -202,16 +205,19 @@ async function handlePost({ request, env }) {
 
   if (body.action === "resetPromoCode") {
     await deletePromoCodeSheetOverride(env);
+    log({ action: "Sheet Route Reset", detail: "Promo Code sheet reverted to default" });
     return json({ ok: true, promoCode: { sheetId: PROMO_CODE_DEFAULT_SHEET_ID, tabs: PROMO_CODE_DEFAULT_TABS, isOverride: false } });
   }
 
   const { brandId, moduleId } = body || {};
   if (!BRANDS[brandId]) return json({ ok: false, error: `Unknown brand "${brandId}".` }, 400);
   if (!ISSUE_MODULES.includes(moduleId)) return json({ ok: false, error: `Unknown module "${moduleId}".` }, 400);
+  const label = `${BRANDS[brandId].name} / ${MODULE_META[moduleId]?.name || moduleId}`;
 
   if (body.action === "save") {
     try {
       const saved = await saveSheetOverride(env, brandId, moduleId, { sheetId: body.sheetId, tab: body.tab });
+      log({ action: "Sheet Route Changed", detail: `${label} sheet updated → ${saved.sheetId} (tab: ${saved.tab})` });
       return json({ ok: true, sheet: { ...saved, isOverride: true } });
     } catch (e) {
       return json({ ok: false, error: String(e.message || e) }, 400);
@@ -220,6 +226,7 @@ async function handlePost({ request, env }) {
 
   if (body.action === "reset") {
     await deleteSheetOverride(env, brandId, moduleId);
+    log({ action: "Sheet Route Reset", detail: `${label} sheet reverted to default` });
     const fallback = defaultFor(brandId, moduleId);
     return json({ ok: true, sheet: { sheetId: fallback.sheetId, tab: fallback.tab, isOverride: false } });
   }

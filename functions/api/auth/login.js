@@ -87,6 +87,7 @@ import { getAccount, verifyPassword, officeIpCheckPasses, getOffice, requestIP, 
 import { sendTelegramMessage } from "../../_shared/telegram.js";
 import { getRouteOverride } from "../../_shared/routes.js";
 import { isIpBlocked, recordPendingIpAttempt } from "../../_shared/ipAccess.js";
+import { logActivity } from "../../_shared/activityLog.js";
 
 // Reserved pseudo brand/module id pair — NOT a real brand — used so the
 // "TG Group / Channel" admin page (functions/api/admin/routes.js) can
@@ -153,9 +154,11 @@ async function handleLogin({ request, env, waitUntil }) {
   if (!passwordOk) {
     const ip = requestIP(request) || "unknown";
     if (waitUntil) waitUntil(notifyLoginFailure(env, { account, ip, request, reasonTitle: "Wrong Password" }));
+    if (waitUntil) waitUntil(logActivity(env, { category: "Auth", action: "Login", agent: account.username, detail: "Login failed — wrong password", ip }));
     const { locked, count } = await recordLoginFailure(env, account.username, { kind: "wrong password" });
     if (locked && waitUntil) {
       waitUntil(notifyAccountLocked(env, { account, reason: `${count} failed login attempts within the last hour` }));
+      waitUntil(logActivity(env, { category: "Auth", action: "Account Locked", agent: account.username, detail: `Auto-locked after ${count} failed attempts within the last hour`, ip }));
     }
     return badCreds();
   }
@@ -174,6 +177,7 @@ async function handleLogin({ request, env, waitUntil }) {
   if (!account.officeId && account.role !== "owner") {
     const ip = requestIP(request) || "unknown";
     if (waitUntil) waitUntil(notifyLoginFailure(env, { account, ip, request, reasonTitle: "No Office Assigned" }));
+    if (waitUntil) waitUntil(logActivity(env, { category: "Auth", action: "Login", agent: account.username, detail: "Login failed — no office assigned", ip }));
     return json({ ok: false, error: `Your account has no office assigned, so it can't log in from anywhere. Ask an admin to assign you an office (your current IP: ${ip}).` }, 401);
   }
 
@@ -203,9 +207,12 @@ async function handleLogin({ request, env, waitUntil }) {
       }));
     }
 
+    if (waitUntil) waitUntil(logActivity(env, { category: "Auth", action: "Login", agent: account.username, detail: `Login failed — unrecognized IP (${ip})`, ip }));
+
     const { locked, count } = await recordLoginFailure(env, account.username, { kind: "unrecognized IP", ip });
     if (locked && waitUntil) {
       waitUntil(notifyAccountLocked(env, { account, reason: `${count} failed login attempts within the last hour` }));
+      waitUntil(logActivity(env, { category: "Auth", action: "Account Locked", agent: account.username, detail: `Auto-locked after ${count} failed attempts within the last hour`, ip }));
     }
 
     const office = await getOffice(env, account.officeId);
@@ -217,6 +224,8 @@ async function handleLogin({ request, env, waitUntil }) {
   // whatever failed-attempt history existed before this is over; don't
   // let it carry forward toward a future lockout.
   await clearLoginFailures(env, account.username);
+
+  if (waitUntil) waitUntil(logActivity(env, { category: "Auth", action: "Login", agent: account.username, detail: "Logged in successfully", ip: requestIP(request) || "unknown" }));
 
   const token = await issueToken(env, account);
   return json({

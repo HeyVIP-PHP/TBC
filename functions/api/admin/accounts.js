@@ -62,13 +62,60 @@
  *     ("agentProfile") AND outranks the target — same replacement as
  *     role/office/brands/modules above.
  */
-import { listAccounts, saveAccount, deleteAccount, getAccount, authenticateStaff, anySuperAdminExists, setAccountLocked, ROLE_RANK, rankOf, canSeeAdminSection, canEditAdminSection, canManageOthersAdminAccess } from "../../_shared/accounts.js";
+import { listAccounts, saveAccount, deleteAccount, getAccount, authenticateStaff, anySuperAdminExists, setAccountLocked, ROLE_RANK, rankOf, canSeeAdminSection, canEditAdminSection, canManageOthersAdminAccess, requestIP } from "../../_shared/accounts.js";
+import { logActivity } from "../../_shared/activityLog.js";
 
 // actor can only ever touch a STRICTLY lower rank — same rank can't
 // manage same rank (two SuperAdmins can't touch each other; only Owner
 // outranks SuperAdmin). See OWNER_ROLE_SETUP.md for the full reasoning.
 function canManage(actorRank, targetRank) {
   return actorRank > targetRank;
+}
+
+// Builds a human-readable "what changed" string for the activity log.
+// `existingTarget` is undefined for a brand-new account (handled as its
+// own simple case). For an edit, only fields actually present in `body`
+// AND actually different from the current value are mentioned — same
+// diff logic the permission checks above already compute inline, kept
+// separate here so this file doesn't have to thread those local consts
+// out of the if/else block they're scoped to.
+function fmtVal(v) {
+  if (v === undefined || v === null) return "none";
+  if (Array.isArray(v)) return v.length ? v.join(", ") : "none";
+  return String(v);
+}
+function describeAccountChange(existingTarget, body) {
+  if (!existingTarget) {
+    return { action: "Account Created", detail: `Created ${body.role || "agent"} account (${body.username})` };
+  }
+  const parts = [];
+  if (body.role !== undefined && body.role !== existingTarget.role) parts.push(`role: ${existingTarget.role} → ${body.role}`);
+  if (body.officeId !== undefined && (body.officeId || null) !== (existingTarget.officeId || null)) parts.push(`office reassigned`);
+  if (body.allowedBrands !== undefined && JSON.stringify(body.allowedBrands) !== JSON.stringify(existingTarget.allowedBrands ?? [])) {
+    parts.push(`brands: ${fmtVal(existingTarget.allowedBrands)} → ${fmtVal(body.allowedBrands)}`);
+  }
+  if (body.allowedModules !== undefined && JSON.stringify(body.allowedModules) !== JSON.stringify(existingTarget.allowedModules ?? "all")) {
+    parts.push(`modules: ${fmtVal(existingTarget.allowedModules)} → ${fmtVal(body.allowedModules)}`);
+  }
+  if (body.allowedAdminSections !== undefined && JSON.stringify(body.allowedAdminSections) !== JSON.stringify(existingTarget.allowedAdminSections ?? [])) {
+    parts.push(`admin access: ${fmtVal(existingTarget.allowedAdminSections)} → ${fmtVal(body.allowedAdminSections)}`);
+  }
+  if (body.adminSectionEditAccess !== undefined && JSON.stringify(body.adminSectionEditAccess) !== JSON.stringify(existingTarget.adminSectionEditAccess ?? [])) {
+    parts.push(`admin edit-access: ${fmtVal(existingTarget.adminSectionEditAccess)} → ${fmtVal(body.adminSectionEditAccess)}`);
+  }
+  if (body.canManageAdminAccess !== undefined && !!body.canManageAdminAccess !== !!existingTarget.canManageAdminAccess) {
+    parts.push(`can-manage-admin-access: ${!!existingTarget.canManageAdminAccess} → ${!!body.canManageAdminAccess}`);
+  }
+  if (body.password) parts.push("password reset");
+  if (body.fullName !== undefined && body.fullName !== (existingTarget.fullName || "")) parts.push(`full name updated`);
+  if (body.pid !== undefined && body.pid !== (existingTarget.pid || "")) parts.push(`PID updated`);
+
+  if (!parts.length) return null; // nothing actually changed — don't log a no-op save
+
+  const onlyRole = parts.length === 1 && parts[0].startsWith("role:");
+  const onlyPassword = parts.length === 1 && parts[0] === "password reset";
+  const action = onlyRole ? "Role Changed" : onlyPassword ? "Password Reset" : "Permissions Changed";
+  return { action, detail: `${body.username}: ${parts.join("; ")}` };
 }
 
 // Owner accounts don't exist as far as anyone below Owner is concerned —
@@ -106,10 +153,12 @@ export async function onRequestPost(context) {
   }
 }
 
-async function handlePost({ request, env }) {
+async function handlePost({ request, env, waitUntil }) {
   if (!env.THREADS_KV) return json({ ok: false, error: "THREADS_KV is not bound yet." }, 500);
   const auth = await authenticateStaff(request, env, ROLE_RANK.senior);
   if (!auth.ok) return json({ ok: false, error: "Not authorized." }, 401);
+  const ip = requestIP(request) || "unknown";
+  const log = (entry) => { const p = logActivity(env, { ip, ...entry }); if (waitUntil) waitUntil(p); else p.catch(() => {}); };
 
   let body;
   try {
@@ -274,6 +323,8 @@ async function handlePost({ request, env }) {
         fullName: body.fullName !== undefined ? body.fullName : undefined,
         pid: body.pid !== undefined ? body.pid : undefined,
       });
+      const change = describeAccountChange(existingTarget, body);
+      if (change) log({ category: "Account", agent: actorUsername || "bootstrap-setup", action: change.action, detail: change.detail });
       return json({ ok: true, account });
     } catch (e) {
       return json({ ok: false, error: String(e.message || e) }, 400);
@@ -289,6 +340,7 @@ async function handlePost({ request, env }) {
       return json({ ok: false, error: "You can only delete accounts ranked below your own." }, 403);
     }
     await deleteAccount(env, body.username);
+    log({ category: "Account", agent: actorUsername, action: "Account Deleted", detail: `Deleted account (${body.username})` });
     return json({ ok: true });
   }
 
@@ -311,6 +363,7 @@ async function handlePost({ request, env }) {
     }
     const locked = body.action === "lock";
     const account = await setAccountLocked(env, body.username, locked, locked ? (body.reason || `Manually locked by ${actorUsername}`) : null);
+    log({ category: "Account", agent: actorUsername, action: locked ? "Account Locked" : "Account Unlocked", detail: `Manually ${locked ? "locked" : "unlocked"} ${body.username} account${locked && body.reason ? ` (${body.reason})` : ""}` });
     return json({ ok: true, account });
   }
 

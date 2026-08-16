@@ -24,7 +24,8 @@
  * in the codebase. Their old logo files are still sitting in
  * public/assets/img/brands/ (harmless, just unreferenced now).
  */
-import { verifyRequest } from "../_shared/accounts.js";
+import { verifyRequest, requestIP } from "../_shared/accounts.js";
+import { logActivity } from "../_shared/activityLog.js";
 
 const DEFAULT_LOGOS = {
   betjili: "/assets/img/brands/betjili.png",
@@ -49,7 +50,7 @@ export async function onRequestPost(context) {
   }
 }
 
-async function handlePost({ request, env }) {
+async function handlePost({ request, env, waitUntil }) {
   const bucket = env.SCREENSHOTS_BUCKET;
   if (!bucket) return json({ ok: false, error: "Server is missing the SCREENSHOTS_BUCKET R2 binding." }, 500);
 
@@ -72,6 +73,9 @@ async function handlePost({ request, env }) {
 
   config[brand] = entry;
   await bucket.put("brand-config.json", JSON.stringify(config), { httpMetadata: { contentType: "application/json" } });
+
+  const logCall = logActivity(env, { category: "Config", agent: account.username, action: "Brand Link Edited", detail: `Updated ${brand} brand link${link ? ` → ${link}` : " (cleared)"}`, ip: requestIP(request) || "unknown" });
+  if (waitUntil) waitUntil(logCall); else logCall.catch(() => {});
 
   return json({ ok: true, config });
 }

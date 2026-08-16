@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Activity Logs</title>
+<link rel="stylesheet" href="/assets/style.css" />
+<script src="/assets/theme.js"></script>
+<script src="/assets/starfield.js" defer></script>
+<script src="/assets/authguard.js"></script>
+<script src="/assets/presence-heartbeat.js"></script>
+<script src="/assets/toast.js"></script>
+</head>
+<body class="announcements-page">
+  <header class="topbar">
+    <div class="topbar-left">
+      <img src="/assets/img/logo.webp" alt="HeyVIP" class="logo-img" />
+      <span class="wordmark">PHP CS TEAM - TBC</span>
+    </div>
+    <div class="topbar-right">
+      <span class="clock" id="liveClock"></span>
+      <button class="theme-pill" id="themeToggle"></button>
+      <span class="agent-whoami" id="agentWhoami"></span>
+    </div>
+  </header>
+
+  <div class="threads-shell">
+    <div class="threads-right-col" style="width:100%;">
+      <div class="threads-topline">
+        <a href="/" class="back-pill">&larr; Back to Home</a>
+      </div>
+      <main class="ann-main" data-transition-root>
+        <div class="form-card page-morph-in" id="actlogCard" style="max-width:1180px; margin:0 auto;">
+          <div class="form-header"><span class="icon">🔎</span><span>Activity Logs</span></div>
+          <p class="subtitle" style="margin:-8px 0 20px;">Who did what, when, and from where. Kept for 90 days.</p>
+
+          <div id="actlogFilterRow" style="display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-bottom:16px;">
+            <select id="actlogCategory" class="acct-role-filter">
+              <option value="">All categories</option>
+              <option value="Auth">🔐 Auth</option>
+              <option value="Account">👤 Account</option>
+              <option value="Thread">🎫 Thread</option>
+              <option value="Config">⚙️ Config</option>
+            </select>
+            <input type="text" id="actlogAgentFilter" class="acct-profile-search" placeholder="Filter by agent…" autocomplete="off" style="width:160px;" />
+            <div class="threads-search" style="flex:1; min-width:200px; margin:0;">
+              <span>🔍</span>
+              <input type="text" id="actlogSearch" placeholder="Search action, detail, IP…" autocomplete="off" />
+            </div>
+            <button type="button" class="btn-secondary" id="actlogRefresh">↻ Refresh</button>
+            <span style="font-size:12px; color:var(--ink-soft);" id="actlogCount"></span>
+          </div>
+
+          <div class="agent-profile-table-wrap" style="max-height:70vh;">
+            <table class="agent-profile-table" id="actlogTable">
+              <thead>
+                <tr>
+                  <th style="width:90px;">Date</th>
+                  <th style="width:70px;">Time</th>
+                  <th style="width:110px;">Agent</th>
+                  <th style="width:150px;">Action</th>
+                  <th>Detail</th>
+                  <th style="width:110px;">IP</th>
+                </tr>
+              </thead>
+              <tbody id="actlogTbody"></tbody>
+            </table>
+          </div>
+          <div class="threads-placeholder" id="actlogEmpty" style="display:none; margin:30px auto;">No activity recorded yet.</div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <script src="/assets/page-transition.js"></script>
+  <script>
+    window.initThemeToggle();
+    window.initClock();
+    window.AgentAuth.renderWhoami("agentWhoami");
+    const authFetch = window.AgentAuth.authFetch;
+    const authInfo = window.AgentAuth.getAuth();
+
+    // Mirrors canSeeAdminSection() in functions/_shared/accounts.js
+    // exactly — UI convenience only, the server (GET /api/admin/
+    // activity-logs) independently re-checks on every request regardless
+    // of what this client-side check decides to show.
+    function canSee() {
+      if (!authInfo) return false;
+      if (authInfo.role === "owner") return true;
+      if (authInfo.allowedAdminSections === "all") return true;
+      return Array.isArray(authInfo.allowedAdminSections) && authInfo.allowedAdminSections.includes("activityLogs");
+    }
+
+    if (!canSee()) {
+      document.getElementById("actlogCard").innerHTML =
+        '<div class="threads-placeholder" style="margin:40px auto;">You don\'t have access to Activity Logs.</div>';
+    } else {
+      boot();
+    }
+
+    function esc(s) {
+      return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    }
+
+    const CATEGORY_ICON = { Auth: "🔐", Account: "👤", Thread: "🎫", Config: "⚙️" };
+
+    let allEntries = [];
+
+    async function boot() {
+      await load();
+      document.getElementById("actlogRefresh").addEventListener("click", load);
+      document.getElementById("actlogCategory").addEventListener("change", render);
+      document.getElementById("actlogAgentFilter").addEventListener("input", debounce(render, 150));
+      document.getElementById("actlogSearch").addEventListener("input", debounce(render, 150));
+      // Delegate row clicks to toggle the full detail text (long
+      // edit/recall diffs are line-clamped by default, see .actlog-detail
+      // in style.css below) — no separate modal needed, the full text is
+      // already in the cell, just visually collapsed.
+      document.getElementById("actlogTbody").addEventListener("click", (e) => {
+        const row = e.target.closest("tr[data-detail-row]");
+        if (row) row.querySelector(".actlog-detail")?.classList.toggle("is-expanded");
+      });
+    }
+
+    function debounce(fn, ms) {
+      let t;
+      return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
+    }
+
+    async function load() {
+      const btn = document.getElementById("actlogRefresh");
+      btn.disabled = true;
+      btn.textContent = "…";
+      try {
+        const res = await authFetch("/api/admin/activity-logs", { cache: "no-store" });
+        const data = await res.json();
+        if (!data.ok) {
+          window.showToast ? window.showToast(data.error || "Failed to load.", "error") : alert(data.error || "Failed to load.");
+          return;
+        }
+        allEntries = data.entries || [];
+        render();
+      } catch (e) {
+        window.showToast ? window.showToast(String(e.message || e), "error") : alert(String(e.message || e));
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "↻ Refresh";
+      }
+    }
+
+    function render() {
+      const category = document.getElementById("actlogCategory").value;
+      const agentFilter = document.getElementById("actlogAgentFilter").value.trim().toLowerCase();
+      const q = document.getElementById("actlogSearch").value.trim().toLowerCase();
+
+      const filtered = allEntries.filter((e) => {
+        if (category && e.category !== category) return false;
+        if (agentFilter && !(e.agent || "").toLowerCase().includes(agentFilter)) return false;
+        if (q) {
+          const hay = `${e.action} ${e.detail} ${e.ip}`.toLowerCase();
+          if (!hay.includes(q)) return false;
+        }
+        return true;
+      });
+
+      document.getElementById("actlogCount").textContent = `${filtered.length} of ${allEntries.length}`;
+      document.getElementById("actlogEmpty").style.display = filtered.length ? "none" : "";
+      document.getElementById("actlogTable").style.display = filtered.length ? "" : "none";
+
+      const tbody = document.getElementById("actlogTbody");
+      tbody.innerHTML = filtered.map((e) => {
+        const d = new Date(e.ts);
+        const dateStr = isNaN(d) ? "—" : d.toLocaleDateString(undefined, { year: "numeric", month: "2-digit", day: "2-digit" });
+        const timeStr = isNaN(d) ? "—" : d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+        const icon = CATEGORY_ICON[e.category] || "";
+        return `
+        <tr data-detail-row>
+          <td>${esc(dateStr)}</td>
+          <td>${esc(timeStr)}</td>
+          <td>${esc(e.agent)}</td>
+          <td title="${esc(e.category)}">${icon} ${esc(e.action)}</td>
+          <td><div class="actlog-detail">${esc(e.detail)}</div></td>
+          <td>${esc(e.ip)}</td>
+        </tr>`;
+      }).join("");
+    }
+  </script>
+
+  <style>
+    /* Detail cells are line-clamped to 2 lines by default (edit/recall
+       entries can carry a full old→new text diff, see
+       functions/_shared/activityLog.js) — click the row to expand,
+       matches the design decision to keep the table itself compact
+       while still keeping the full diff one click away, no modal. */
+    .actlog-detail {
+      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+      overflow: hidden; word-break: break-word; cursor: pointer;
+    }
+    .actlog-detail.is-expanded { display: block; -webkit-line-clamp: unset; }
+    #actlogTable tbody tr:hover { background: var(--field-bg); }
+  </style>
+</body>
+</html>

@@ -264,6 +264,11 @@
             <div class="t-desc">Who's online right now, and today's hours</div>
             <div class="t-sub-stat" id="activeAgentsOnlineStat"></div>
           </button>
+          <a href="/activity-logs.html" class="tool-card" id="activityLogsCard" style="--tool-accent:#a855f7;display:none;">
+            <div class="t-icon" style="background:#a855f733;">🔎</div>
+            <div class="t-name">Activity Logs</div>
+            <div class="t-desc">Who did what, when, and from where</div>
+          </a>
         </div>
 
         <div class="hub-stats" id="hubStats"></div>
@@ -719,6 +724,14 @@
     document.getElementById("activeAgentsCard").addEventListener("click", () => {
       if (window.ActiveAgentsPanel) window.ActiveAgentsPanel.open();
     });
+
+    // ---- Activity Logs tool card — shown only to accounts with access
+    // to the "activityLogs" Account Management section. Plain view-only
+    // section, same shape as activeAgents/announcements — no live stat
+    // polling needed, it's a review page, not a live indicator.
+    if (canSeeAdminSection("activityLogs")) {
+      document.getElementById("activityLogsCard").style.display = "";
+    }
 
     const acctToggle = document.getElementById("acctMgmtToggle");
     const acctSubitems = document.getElementById("acctMgmtSubitems");
@@ -1890,6 +1903,7 @@
       { id: "settings", icon: "⚙️", name: "Settings" },
       { id: "announcements", icon: "📢", name: "Announcement" },
       { id: "activeAgents", icon: "👥", name: "Active Agents" },
+      { id: "activityLogs", icon: "🔎", name: "Activity Logs" },
       { id: "integrationPortal", icon: "🔗", name: "Integration Portal" },
       { id: "tgRoutes", icon: "📤", name: "TG Group / Channel" },
       { id: "issueSubmissionSheet", icon: "📋", name: "Issue Submission Gsheet" },

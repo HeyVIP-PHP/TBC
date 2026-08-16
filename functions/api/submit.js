@@ -2,7 +2,7 @@ import { BRANDS, RECORD_TO_SHEET, MODULE_META, SHEET_LAYOUT, MESSAGE_TEMPLATE, S
 import { appendRowToSheet, appendRowByColumns, appendRowByColumnsWithAutoCreate, writeRowForDate } from "../_shared/googleSheets.js";
 import { uploadAttachmentToR2, screenshotUrl } from "../_shared/r2.js";
 import { createThread } from "../_shared/threads.js";
-import { verifyRequest, canSeeBrand, canSeeModule } from "../_shared/accounts.js";
+import { verifyRequest, canSeeBrand, canSeeModule, requestIP } from "../_shared/accounts.js";
 import { getRouteOverride } from "../_shared/routes.js";
 import { resolveSheetTarget } from "../_shared/sheetRoutes.js";
 import { getFeatureStatus, accountCanBypass } from "../_shared/featureStatus.js";
@@ -10,6 +10,7 @@ import {
   resolveColumnValues, resolveSheetLayout, formatDateDDMMYYYY, buildTicketMessage, buildTitleAndSummary,
 } from "../_shared/messageBuilders.js";
 import { ensureUnderTelegramPhotoLimit } from "../_shared/telegramImageCompress.js";
+import { logActivity } from "../_shared/activityLog.js";
 
 // Deposit Request's per-channel pseudo-modules (deposit_copopay etc.,
 // see routing.js) exist only as Telegram routing targets — they must
@@ -32,7 +33,7 @@ export async function onRequestPost(context) {
   }
 }
 
-async function handleSubmit({ request, env }) {
+async function handleSubmit({ request, env, waitUntil }) {
   // The whole hub now requires login (business owner's call — previously
   // only TG Reply Threads did). This is the server-side half of that: the
   // frontend redirect to /login.html is the UX, this is what actually
@@ -294,6 +295,8 @@ async function handleSubmit({ request, env }) {
         sheetRef,
       });
       threadId = thread.id;
+      const logCall = logActivity(env, { category: "Thread", agent: account.username, action: "Ticket Created", detail: `New ${meta.name} ticket "${title}" (${brand.name})`, ip: requestIP(request) || "unknown" });
+      if (waitUntil) waitUntil(logCall); else logCall.catch(() => {});
     } catch {
       // Non-fatal — the Telegram message and sheet row are already the
       // source of truth; the reply-tracking record is a nice-to-have.

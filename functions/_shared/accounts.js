@@ -603,8 +603,17 @@ export function canSeeModule(account, moduleId) {
 // exists for it so it's deliberately NOT in EDITABLE_ADMIN_SECTIONS
 // below (see functions/api/presence/list.js + record.js for the two
 // endpoints it gates).
+// "activityLogs" (🔎 Activity Logs audit trail, added 2026-08) — same
+// view-only shape as "activeAgents": deny-by-default, Owner sees it
+// automatically and can hand it to ANY rank including Agent (explicitly
+// requested — this is NOT auto-granted to SuperAdmin the way the
+// Integration Portal ids are, see INTEGRATION_PORTAL_SECTION_IDS below;
+// it's a plain opt-in section like whitelistIp/announcements). No edit
+// action exists for an audit log, so it's deliberately NOT in
+// EDITABLE_ADMIN_SECTIONS below — see functions/api/admin/activity-logs.js.
 export const ADMIN_SECTIONS = [
   "createAccount", "whitelistIp", "agentProfile", "settings", "announcements", "activeAgents",
+  "activityLogs",
   "integrationPortal", "tgRoutes", "issueSubmissionSheet", "promoCodeSheet",
 ];
 

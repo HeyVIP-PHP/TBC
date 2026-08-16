@@ -14,8 +14,9 @@
  * points (submit.js, threads.js, promo-search.js, and the client-side
  * blocking in index.html/app.js/threads.html/promo.html).
  */
-import { authenticateStaff, ROLE_RANK, canSeeAdminSection, canEditAdminSection } from "../../_shared/accounts.js";
+import { authenticateStaff, ROLE_RANK, canSeeAdminSection, canEditAdminSection, requestIP } from "../../_shared/accounts.js";
 import { FEATURE_STATUS_ITEMS, getAllFeatureStatuses, saveFeatureStatus, resetFeatureStatus } from "../../_shared/featureStatus.js";
+import { logActivity } from "../../_shared/activityLog.js";
 
 export async function onRequestGet(context) {
   try {
@@ -44,11 +45,12 @@ export async function onRequestPost(context) {
   }
 }
 
-async function handlePost({ request, env }) {
+async function handlePost({ request, env, waitUntil }) {
   if (!env.THREADS_KV) return json({ ok: false, error: "THREADS_KV is not bound yet." }, 500);
   const auth = await authenticateStaff(request, env, ROLE_RANK.senior);
   if (!auth.ok) return json({ ok: false, error: "Not authorized." }, 401);
   if (!canEditAdminSection(auth.account, "settings")) return json({ ok: false, error: "You don't have Can-Edit access to Settings." }, 403);
+  const log = (entry) => { const p = logActivity(env, { category: "Config", agent: auth.account ? auth.account.username : "bootstrap", ip: requestIP(request) || "unknown", ...entry }); if (waitUntil) waitUntil(p); else p.catch(() => {}); };
 
   let body;
   try {
@@ -61,10 +63,12 @@ async function handlePost({ request, env }) {
   if (!FEATURE_STATUS_ITEMS.some((i) => i.id === itemId)) {
     return json({ ok: false, error: `Unknown item "${itemId}".` }, 400);
   }
+  const itemName = FEATURE_STATUS_ITEMS.find((i) => i.id === itemId)?.name || itemId;
 
   if (body.action === "save") {
     try {
       const saved = await saveFeatureStatus(env, itemId, { status: body.status, bypassRoles: body.bypassRoles });
+      log({ action: "Maintenance Toggled", detail: `Set ${itemName} to ${body.status}` });
       return json({ ok: true, item: saved });
     } catch (e) {
       return json({ ok: false, error: String(e.message || e) }, 400);
@@ -73,6 +77,7 @@ async function handlePost({ request, env }) {
 
   if (body.action === "reset") {
     await resetFeatureStatus(env, itemId);
+    log({ action: "Maintenance Reset", detail: `Reset ${itemName} to Active` });
     return json({ ok: true, item: { status: "active", bypassRoles: ["superadmin", "owner"] } });
   }
 

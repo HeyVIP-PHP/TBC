@@ -10,8 +10,9 @@
  * the announcements themselves: "manage the announcements" and "manage
  * how the banner behaves" are different concerns.
  */
-import { authenticateStaff, ROLE_RANK, canSeeAdminSection, canEditAdminSection } from "../../_shared/accounts.js";
+import { authenticateStaff, ROLE_RANK, canSeeAdminSection, canEditAdminSection, requestIP } from "../../_shared/accounts.js";
 import { getAnnouncementSettings, saveAnnouncementSettings } from "../../_shared/announcements.js";
+import { logActivity } from "../../_shared/activityLog.js";
 
 export async function onRequestGet(context) {
   try {
@@ -39,7 +40,7 @@ export async function onRequestPost(context) {
   }
 }
 
-async function handlePost({ request, env }) {
+async function handlePost({ request, env, waitUntil }) {
   if (!env.THREADS_KV) return json({ ok: false, error: "THREADS_KV is not bound yet." }, 500);
   const auth = await authenticateStaff(request, env, ROLE_RANK.senior);
   if (!auth.ok) return json({ ok: false, error: "Not authorized." }, 401);
@@ -53,6 +54,8 @@ async function handlePost({ request, env }) {
   }
 
   const saved = await saveAnnouncementSettings(env, { rotateIntervalMs: body.rotateIntervalMs });
+  const logCall = logActivity(env, { category: "Config", agent: auth.account ? auth.account.username : "bootstrap", action: "Announcement Settings Changed", detail: `Rotation interval set to ${saved.rotateIntervalMs}ms`, ip: requestIP(request) || "unknown" });
+  if (waitUntil) waitUntil(logCall); else logCall.catch(() => {});
   return json({ ok: true, ...saved });
 }
 
