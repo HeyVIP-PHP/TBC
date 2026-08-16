@@ -102,6 +102,7 @@
     if (view === "home") {
       mountEl.style.display = "none";
       mountEl.innerHTML = "";
+      mountEl.removeAttribute("data-view");
       homeEl.style.display = "";
       setSidebarActive(null);
       if (pushUrl !== false) history.pushState({ view: "home" }, "", "/");
@@ -111,6 +112,14 @@
 
     homeEl.style.display = "none";
     mountEl.style.display = "flex";
+    // Which exact view is mounted — needed so CSS can single out just
+    // Threads (auto-collapsing the persistent ISSUE SUBMISSION sidebar
+    // on narrower windows well before the general breakpoint kicks in,
+    // see style.css's `body:has(#spaMount[data-view="threads"])` block)
+    // without also catching other routes that don't bring their own
+    // extra 340px ticket-list column and so don't have the same "not
+    // enough width for a 3rd column" problem.
+    mountEl.setAttribute("data-view", view);
     mountEl.innerHTML = '<div class="spa-loading">Loading…</div>';
     setSidebarActive(moduleId || null);
 
