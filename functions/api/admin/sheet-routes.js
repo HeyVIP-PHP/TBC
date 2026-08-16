@@ -1,36 +1,49 @@
 /**
- * /api/admin/sheet-routes   (part of the "Integrations" admin page,
+ * /api/admin/sheet-routes   (part of the Integration Portal admin pages,
  * alongside the existing /api/admin/routes.js which stays untouched)
  *
  * Two independent resources, same request shape as /api/admin/routes.js
- * (mirrors it deliberately — same KV-override pattern, same auth model):
+ * (mirrors it deliberately — same KV-override pattern, same auth model),
+ * but gated by two SEPARATE section ids now (2026-08 split, see
+ * _shared/accounts.js's comment on ADMIN_SECTIONS) since they're two
+ * different screens in the UI (public/index.html's "issuesheet" and
+ * "promosheet" Agent Profile-gated modals) that just happen to share one
+ * endpoint:
  *
  *   GET
- *     -> { ok, brands, modules, sheets, promoCode }
+ *     -> { ok, brands, modules, sheets?, promoCode? }
  *        sheets["<brandId>|<moduleId>"] = { sheetId, tab, isOverride }
  *        promoCode = { sheetId, isOverride }  (not brand-specific)
- *     Gated by the "integrations" Account Management Access section —
- *     SuperAdmin and above see this automatically (see
- *     canSeeAdminSection() in _shared/accounts.js — this is the ONE
- *     section with that rank-based auto-visibility; every other section
- *     stays Owner-opt-in only), and can also be delegated to a specific
- *     lower-ranked account the same way every other section is.
+ *     `sheets` is only included if the caller has "issueSubmissionSheet";
+ *     `promoCode` only if they have "promoCodeSheet" — a caller with just
+ *     one of the two still gets a 200 with only their half populated,
+ *     not a 403; the two frontend loaders (loadIssueSheetRoutes() /
+ *     loadPromoCodeSheet() in index.html) only ever read their own half
+ *     anyway, since each is a stand-alone screen. Only a 403 if NEITHER
+ *     is granted — SuperAdmin and above see both automatically (see
+ *     canSeeAdminSection()'s rank-floor exception in _shared/accounts.js),
+ *     every other rank needs at least one Owner-opt-in.
  *
  *   POST { action:"save", brandId, moduleId, sheetId, tab } -> store an
  *     Issue Submission Gsheet override. Takes effect on the very next
  *     submission/edit/lookup for that brand+module — no redeploy needed.
+ *     Requires "issueSubmissionSheet". No separate View/Edit split on
+ *     this id (see EDITABLE_ADMIN_SECTIONS in _shared/accounts.js) —
+ *     being able to see this screen at all already means being trusted
+ *     to change it, same as GET requires only that one id too.
  *   POST { action:"reset", brandId, moduleId } -> delete that override,
- *     reverting to the hardcoded default.
+ *     reverting to the hardcoded default. Same "issueSubmissionSheet"
+ *     gate as save.
  *   POST { action:"savePromoCode", sheetId, tabs } -> store the Promo Code
  *     Gsheet override (single, no brandId/moduleId — see
  *     _shared/sheetRoutes.js for why this one isn't brand-specific).
  *     `tabs` is an array of team tab names to search across (replaces the
  *     hardcoded 11-tab list in promo-search.js wholesale — see that
- *     file's PROMO_CODE_SHEET.tabs for the default).
+ *     file's PROMO_CODE_SHEET.tabs for the default). Requires
+ *     "promoCodeSheet" — independent of "issueSubmissionSheet" above, an
+ *     account can have either, both, or neither.
  *   POST { action:"resetPromoCode" } -> delete it, reverting to the
- *     hardcoded default in promo-search.js.
- *   All POST actions require Can-Edit on "integrations"
- *   (canEditAdminSection()), same as GET requires View.
+ *     hardcoded default in promo-search.js. Same "promoCodeSheet" gate.
  *
  * SCOPE NOTE: this only ever changes WHICH sheet/tab a topic writes to.
  * Column structure (which field lands in which column) is not editable
@@ -49,7 +62,7 @@
  * ever needs per-promotion sheet targets, this'll need a finer key than
  * sheet:<brandId>:promotion_request; not needed today.
  */
-import { authenticateStaff, ROLE_RANK, canSeeAdminSection, canEditAdminSection } from "../../_shared/accounts.js";
+import { authenticateStaff, ROLE_RANK, canSeeAdminSection } from "../../_shared/accounts.js";
 import {
   getAllSheetOverrides, saveSheetOverride, deleteSheetOverride,
   getPromoCodeSheetOverride, savePromoCodeSheetOverride, deletePromoCodeSheetOverride,
@@ -108,34 +121,46 @@ async function handleGet({ request, env }) {
   if (!env.THREADS_KV) return json({ ok: false, error: "THREADS_KV is not bound yet." }, 500);
   const auth = await authenticateStaff(request, env, ROLE_RANK.senior);
   if (!auth.ok) return json({ ok: false, error: "Not authorized." }, 401);
-  if (!canSeeAdminSection(auth.account, "integrations")) return json({ ok: false, error: "You don't have access to Integrations." }, 403);
+  const canSheets = canSeeAdminSection(auth.account, "issueSubmissionSheet");
+  const canPromo = canSeeAdminSection(auth.account, "promoCodeSheet");
+  if (!canSheets && !canPromo) return json({ ok: false, error: "You don't have access to Issue Submission Gsheet or Promo Code Gsheet." }, 403);
 
   const brandIds = Object.keys(BRANDS);
-  const overrides = await getAllSheetOverrides(env, brandIds, ISSUE_MODULES);
-
   const brands = brandIds.map((id) => ({ id, name: BRANDS[id].name }));
   const modules = ISSUE_MODULES.map((id) => ({ id, name: MODULE_META[id].name, emoji: MODULE_META[id].emoji }));
+  const result = { ok: true, brands, modules };
 
-  const sheets = {};
-  for (const brandId of brandIds) {
-    for (const moduleId of ISSUE_MODULES) {
-      const key = `${brandId}|${moduleId}`;
-      const override = overrides[key];
-      if (override) {
-        sheets[key] = { sheetId: override.sheetId, tab: override.tab, isOverride: true };
-      } else {
-        const fallback = defaultFor(brandId, moduleId);
-        sheets[key] = { sheetId: fallback.sheetId, tab: fallback.tab, isOverride: false };
+  // Each half is only computed and attached if this caller actually has
+  // that specific id — a caller with only "promoCodeSheet" (say) never
+  // even triggers the sheets KV reads, and never sees `sheets` in the
+  // response at all (not just an empty object) — see the file header
+  // for why a partial 200 is correct here instead of a 403.
+  if (canSheets) {
+    const overrides = await getAllSheetOverrides(env, brandIds, ISSUE_MODULES);
+    const sheets = {};
+    for (const brandId of brandIds) {
+      for (const moduleId of ISSUE_MODULES) {
+        const key = `${brandId}|${moduleId}`;
+        const override = overrides[key];
+        if (override) {
+          sheets[key] = { sheetId: override.sheetId, tab: override.tab, isOverride: true };
+        } else {
+          const fallback = defaultFor(brandId, moduleId);
+          sheets[key] = { sheetId: fallback.sheetId, tab: fallback.tab, isOverride: false };
+        }
       }
     }
+    result.sheets = sheets;
   }
 
-  const promoOverride = await getPromoCodeSheetOverride(env);
-  const promoCode = promoOverride
-    ? { sheetId: promoOverride.sheetId, tabs: promoOverride.tabs, isOverride: true }
-    : { sheetId: PROMO_CODE_DEFAULT_SHEET_ID, tabs: PROMO_CODE_DEFAULT_TABS, isOverride: false };
+  if (canPromo) {
+    const promoOverride = await getPromoCodeSheetOverride(env);
+    result.promoCode = promoOverride
+      ? { sheetId: promoOverride.sheetId, tabs: promoOverride.tabs, isOverride: true }
+      : { sheetId: PROMO_CODE_DEFAULT_SHEET_ID, tabs: PROMO_CODE_DEFAULT_TABS, isOverride: false };
+  }
 
-  return json({ ok: true, brands, modules, sheets, promoCode });
+  return json(result);
 }
 
 export async function onRequestPost(context) {
@@ -150,13 +175,20 @@ async function handlePost({ request, env }) {
   if (!env.THREADS_KV) return json({ ok: false, error: "THREADS_KV is not bound yet." }, 500);
   const auth = await authenticateStaff(request, env, ROLE_RANK.senior);
   if (!auth.ok) return json({ ok: false, error: "Not authorized." }, 401);
-  if (!canEditAdminSection(auth.account, "integrations")) return json({ ok: false, error: "You don't have Can-Edit access to Integrations." }, 403);
 
   let body;
   try {
     body = await request.json();
   } catch {
     return json({ ok: false, error: "Invalid JSON body." }, 400);
+  }
+
+  if (body.action === "savePromoCode" || body.action === "resetPromoCode") {
+    if (!canSeeAdminSection(auth.account, "promoCodeSheet")) return json({ ok: false, error: "You don't have access to Promo Code Gsheet." }, 403);
+  } else if (body.action === "save" || body.action === "reset") {
+    if (!canSeeAdminSection(auth.account, "issueSubmissionSheet")) return json({ ok: false, error: "You don't have access to Issue Submission Gsheet." }, 403);
+  } else {
+    return json({ ok: false, error: `Unknown action "${body.action}".` }, 400);
   }
 
   if (body.action === "savePromoCode") {

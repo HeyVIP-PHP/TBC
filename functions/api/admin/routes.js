@@ -8,24 +8,24 @@
  *        this page); `false` means it's still showing the hardcoded
  *        default from _shared/routing.js. Also includes `securityAlerts`
  *        (see below) — same shape, but not tied to any brand.
- *     Gated purely by the "integrations" Account Management Access
- *     section (folded in from the old standalone "tgRoutes" id, 2026-08
- *     — TG Group/Channel now lives inside the Integrations sidebar group
- *     alongside Issue Submission Gsheet / Promo Code Gsheet) — rank plays
- *     NO role here anymore (explicit business-owner decision; this used
- *     to be SuperAdmin-only with no view tier at all — now an account of
- *     any rank can be granted View-only via the checkbox alone, see
- *     canSeeAdminSection() in _shared/accounts.js).
+ *     Gated by the "tgRoutes" Account Management Access section (one of
+ *     4 ids split back out of the old combined "integrations" section,
+ *     2026-08 — see _shared/accounts.js's comment on ADMIN_SECTIONS for
+ *     the full writeup). SuperAdmin and above see it automatically
+ *     (canSeeAdminSection()'s rank-floor exception); every other rank is
+ *     Owner-opt-in via the checkbox, same as any other section.
  *
  *   POST { action:"save", brandId, moduleId, chatId, topicId } -> store an
  *     override in THREADS_KV. Takes effect on the very next form
- *     submission for that brand+module — no redeploy needed. Requires
- *     Can-Edit on "tgRoutes" (see canEditAdminSection()) — same
- *     replacement as GET, not a rank floor.
+ *     submission for that brand+module — no redeploy needed. Same
+ *     "tgRoutes" gate as GET — no separate View/Edit split on this id
+ *     (see EDITABLE_ADMIN_SECTIONS in _shared/accounts.js): being able to
+ *     see this screen at all already means being trusted to change it,
+ *     same as "createAccount" has no read-only mode either.
  *
  *   POST { action:"reset", brandId, moduleId } -> delete the override,
  *     reverting that brand+module back to the hardcoded default. Same
- *     Can-Edit gate as save.
+ *     "tgRoutes" gate as save.
  *
  * SECURITY ALERTS ROW — not a real brand/module, just reuses the exact
  * same KV-override machinery (_shared/routes.js) under the reserved
@@ -43,7 +43,7 @@
  * functions/api/submit.js for where the override is actually consulted
  * at submission time.
  */
-import { authenticateStaff, ROLE_RANK, canSeeAdminSection, canEditAdminSection } from "../../_shared/accounts.js";
+import { authenticateStaff, ROLE_RANK, canSeeAdminSection } from "../../_shared/accounts.js";
 import { getAllRouteOverrides, saveRouteOverride, deleteRouteOverride, getRouteOverride } from "../../_shared/routes.js";
 import { BRANDS, MODULE_META } from "../../_shared/routing.js";
 
@@ -60,15 +60,13 @@ export async function onRequestGet(context) {
 
 async function handleGet({ request, env }) {
   if (!env.THREADS_KV) return json({ ok: false, error: "THREADS_KV is not bound yet." }, 500);
-  // Visibility moved from its own "tgRoutes" checkbox to the shared
-  // "integrations" section (2026-08) — TG Group/Channel now lives inside
-  // the Integrations sidebar group alongside Issue Submission Gsheet and
-  // Promo Code Gsheet, so it shares that section's SuperAdmin-auto-visible
-  // rule instead of being individually Owner-opt-in. See
-  // canSeeAdminSection() in _shared/accounts.js.
+  // Visibility moved from the old combined "integrations" section
+  // (2026-08 split, see _shared/accounts.js) to its own standalone
+  // "tgRoutes" id — SuperAdmin+ still see it automatically via that id's
+  // rank-floor exception, everyone else needs the Owner's checkbox.
   const auth = await authenticateStaff(request, env, ROLE_RANK.senior);
   if (!auth.ok) return json({ ok: false, error: "Not authorized." }, 401);
-  if (!canSeeAdminSection(auth.account, "integrations")) return json({ ok: false, error: "You don't have access to Integrations." }, 403);
+  if (!canSeeAdminSection(auth.account, "tgRoutes")) return json({ ok: false, error: "You don't have access to TG Group / Channel." }, 403);
 
   const brandIds = Object.keys(BRANDS);
   // "deposit_request" itself is never a routing target — a Deposit
@@ -115,10 +113,12 @@ export async function onRequestPost(context) {
 
 async function handlePost({ request, env }) {
   if (!env.THREADS_KV) return json({ ok: false, error: "THREADS_KV is not bound yet." }, 500);
-  // Same "integrations" gate as GET above — see that comment.
+  // Same "tgRoutes" gate as GET above — see that comment. No separate
+  // Can-Edit check here anymore: access = edit for this id (see
+  // EDITABLE_ADMIN_SECTIONS in _shared/accounts.js).
   const auth = await authenticateStaff(request, env, ROLE_RANK.senior);
   if (!auth.ok) return json({ ok: false, error: "Not authorized." }, 401);
-  if (!canEditAdminSection(auth.account, "integrations")) return json({ ok: false, error: "You don't have Can-Edit access to Integrations." }, 403);
+  if (!canSeeAdminSection(auth.account, "tgRoutes")) return json({ ok: false, error: "You don't have access to TG Group / Channel." }, 403);
 
   let body;
   try {

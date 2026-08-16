@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>PHP CS Team - TBC</title>
-<link rel="stylesheet" href="/assets/style.css?v=303bfbdc" />
+<link rel="stylesheet" href="/assets/style.css?v=bb568d7b" />
 <script src="/assets/theme.js?v=5b27e630"></script>
 <script src="/assets/starfield.js?v=b6e92821" defer></script>
 <script src="/assets/authguard.js?v=9cc20fef"></script>
@@ -206,20 +206,19 @@
         </div>
       </div>
 
-      <!-- Integrations — TG Group/Channel routing + Google Sheet targets
-           (Issue Submission Gsheet, Promo Code Gsheet). Own group,
-           separate from Account Management, because visibility works
-           differently: SuperAdmin and above see this automatically (no
-           Owner opt-in needed), while every Account Management section
-           stays Owner-opt-in-only for everyone but the Owner — see
-           canSeeAdminSection("integrations") below and the matching
-           server-side rule in _shared/accounts.js. Still delegable to a
-           lower-ranked account the same way as any other section. -->
+      <!-- Integration Portal — TG Group/Channel routing + Google Sheet
+           targets (Issue Submission Gsheet, Promo Code Gsheet). Own
+           group, separate from Account Management, gated by ITS OWN
+           Topic Access checkbox ("integrationPortal", rendered up in
+           #sidebarList's topic checklist, not in this Account
+           Management block) on top of each individual sub-item's own
+           section — see the visibility wiring further down and
+           _shared/accounts.js's INTEGRATION_PORTAL_SECTION_IDS. -->
       <div class="am-group" id="integrationsGroup" style="display:none;">
         <div class="sidebar-item am-toggle expandable" id="integrationsToggle">
           <div class="icon" style="background:#60a5fa33;">🔌</div>
           <div class="text">
-            <div class="name">Integrations</div>
+            <div class="name">Integration Portal</div>
             <div class="desc">Sheets and TG routing</div>
           </div>
           <span class="arrow">&rarr;</span>
@@ -585,34 +584,33 @@
     // corresponding server endpoint (offices.js, routes.js, accounts.js)
     // enforces the same check independently, so hiding the sidebar item
     // is a convenience, not the actual security boundary.
+    const INTEGRATION_PORTAL_SECTION_IDS = ["integrationPortal", "tgRoutes", "issueSubmissionSheet", "promoCodeSheet"];
     function canSeeAdminSection(sectionId) {
       if (!authInfo) return false;
       if (authInfo.role === "owner") return true;
-      // "integrations" is the ONE section with a rank floor baked in on
-      // top of the usual opt-in model — mirrors the server-side rule in
-      // _shared/accounts.js exactly. SuperAdmin+ see it automatically;
-      // every other section stays Owner-opt-in for everyone but the
-      // Owner.
-      if (sectionId === "integrations" && myRank >= ROLE_RANK.superadmin) return true;
+      // The 4 Integration Portal ids keep the old "integrations" rank
+      // floor baked in on top of the usual opt-in model — mirrors the
+      // server-side rule in _shared/accounts.js exactly. SuperAdmin+ see
+      // them automatically; every other section stays Owner-opt-in for
+      // everyone but the Owner.
+      if (INTEGRATION_PORTAL_SECTION_IDS.includes(sectionId) && myRank >= ROLE_RANK.superadmin) return true;
       if (authInfo.allowedAdminSections === "all") return true;
       return Array.isArray(authInfo.allowedAdminSections) && authInfo.allowedAdminSections.includes(sectionId);
     }
-    // View-vs-Edit for whitelistIp / tgRoutes / agentProfile — mirrors
-    // canEditAdminSection() in _shared/accounts.js exactly. This
-    // COMPLETELY REPLACES the old rank-based split (Admin=view,
-    // SuperAdmin=edit for whitelistIp/agentProfile; SuperAdmin-only for
-    // tgRoutes) — explicit business-owner decision. Rank plays no role
-    // here anymore; the Owner's per-account Can-Edit checkbox is the
-    // only gate, for every rank including SuperAdmin. "createAccount"
-    // has no view-only mode (creating an account IS the action), so
-    // there's no equivalent for it.
+    // View-vs-Edit for whitelistIp / agentProfile / settings / announcements
+    // — mirrors canEditAdminSection() in _shared/accounts.js exactly. This
+    // COMPLETELY REPLACES the old rank-based split — explicit
+    // business-owner decision. Rank plays no role here anymore; the
+    // Owner's per-account Can-Edit checkbox is the only gate, for every
+    // rank including SuperAdmin. "createAccount" has no view-only mode
+    // (creating an account IS the action), and neither do the 3
+    // Integration Portal screens or "integrationPortal" itself (seeing
+    // one of those already means being trusted to use it) — so there's
+    // no equivalent for any of those here.
     function canEditAdminSection(sectionId) {
       if (!authInfo) return false;
       if (authInfo.role === "owner") return true;
       if (!canSeeAdminSection(sectionId)) return false;
-      // Same SuperAdmin-auto exception as canSeeAdminSection() above —
-      // see the matching comment there and in _shared/accounts.js.
-      if (sectionId === "integrations" && myRank >= ROLE_RANK.superadmin) return true;
       if (authInfo.adminSectionEditAccess === "all") return true;
       return Array.isArray(authInfo.adminSectionEditAccess) && authInfo.adminSectionEditAccess.includes(sectionId);
     }
@@ -628,11 +626,21 @@
     document.getElementById("subWhitelistIp").style.display = canSeeAdminSection("whitelistIp") ? "flex" : "none";
     document.getElementById("subSettings").style.display = canSeeAdminSection("settings") ? "flex" : "none";
     document.getElementById("subAgentProfile").style.display = canSeeAdminSection("agentProfile") ? "flex" : "none";
-    // Integrations is one group, one permission check — all 3 subitems
-    // (TG Group/Channel, Issue Submission Gsheet, Promo Code Gsheet)
-    // show or hide together, unlike Account Management's per-item checks
-    // above, since they share the same "integrations" section.
-    document.getElementById("integrationsGroup").style.display = canSeeAdminSection("integrations") ? "" : "none";
+    // Integration Portal — master visibility switch ("integrationPortal",
+    // now a Topic Access checkbox, see integrationPortalCheckHtml further
+    // down) gates the whole group; each of the 3 sub-items ALSO needs its
+    // own individual section granted (unlike the old single-"integrations"
+    // gate where all 3 always showed or hid together). The group itself
+    // only renders if at least one sub-item actually ends up visible —
+    // an expandable menu with nothing inside it is worse than no menu.
+    const canSeeIntegrationPortal = canSeeAdminSection("integrationPortal");
+    const seeTgRoutes = canSeeIntegrationPortal && canSeeAdminSection("tgRoutes");
+    const seeIssueSheet = canSeeIntegrationPortal && canSeeAdminSection("issueSubmissionSheet");
+    const seePromoSheet = canSeeIntegrationPortal && canSeeAdminSection("promoCodeSheet");
+    document.getElementById("subIntegrationsTg").style.display = seeTgRoutes ? "flex" : "none";
+    document.getElementById("subIntegrationsIssueSheet").style.display = seeIssueSheet ? "flex" : "none";
+    document.getElementById("subIntegrationsPromoSheet").style.display = seePromoSheet ? "flex" : "none";
+    document.getElementById("integrationsGroup").style.display = (seeTgRoutes || seeIssueSheet || seePromoSheet) ? "" : "none";
 
     // ---- Announcement tool card — shown only to accounts with access to
     // the "announcements" Account Management section; icon "breathes"
@@ -1357,8 +1365,11 @@
       if (isSecuritySelected) {
         const r = securityAlerts || { chatId: "", topicId: null, isOverride: false };
         // Can-Edit on "tgRoutes" now decides editability here too — no
-        // more SuperAdmin-only floor (see canEditAdminSection() above).
-        const canEditRoutes = canEditAdminSection("integrations");
+        // more SuperAdmin-only floor (see canSeeAdminSection() above).
+        // No View/Edit split anymore either — seeing this screen at all
+        // (canSeeAdminSection alone) already means being trusted to
+        // change it, same as createAccount.
+        const canEditRoutes = canSeeAdminSection("tgRoutes");
         const roAttr = canEditRoutes ? "" : "disabled";
         acctBody.innerHTML = `
           <div class="tgroute-layout">
@@ -1397,7 +1408,7 @@
         return;
       }
 
-      const canEditRoutes = canEditAdminSection("integrations");
+      const canEditRoutes = canSeeAdminSection("tgRoutes"); // no View/Edit split — see the comment on the security-row branch above
       const roAttr = canEditRoutes ? "" : "disabled";
       const renderModuleRow = (m) => {
         const key = `${acctRoutesSelectedBrand}|${m.id}`;
@@ -1541,7 +1552,7 @@
     function renderIssueSheetRoutes() {
       if (!acctSheetData) return;
       const { brands, modules, sheets } = acctSheetData;
-      const canEditSheets = canEditAdminSection("integrations");
+      const canEditSheets = canSeeAdminSection("issueSubmissionSheet"); // no View/Edit split, access = edit — same as createAccount
       const roAttr = canEditSheets ? "" : "disabled";
 
       const brandListHtml = brands.map((b) => `
@@ -1650,7 +1661,7 @@
     }
 
     function renderPromoCodeSheet(r) {
-      const canEditSheets = canEditAdminSection("integrations");
+      const canEditSheets = canSeeAdminSection("promoCodeSheet"); // no View/Edit split, access = edit — same as createAccount
       const roAttr = canEditSheets ? "" : "disabled";
       // Same DEFAULT-empty-with-generic-placeholder / CUSTOM-shows-real-
       // value logic as Issue Submission Gsheet above — see that comment.
@@ -1845,28 +1856,41 @@
     const AGENT_PROFILE_MODULE_LIST = window.MODULES || [];
     // Must match ADMIN_SECTIONS in functions/_shared/accounts.js exactly —
     // add new ids to both places together if another admin page ever
-    // needs this same per-account gating.
-    // Must match ADMIN_SECTIONS in functions/_shared/accounts.js exactly —
-    // add new ids to both places together if another admin page ever
-    // needs this same per-account gating. "tgRoutes" was folded into
-    // "integrations" (2026-08) — TG Group/Channel, Issue Submission
-    // Gsheet, and Promo Code Gsheet all share this one delegable section
-    // now instead of TG Group/Channel having its own separate checkbox.
+    // needs this same per-account gating. "integrations" was split back
+    // apart (2026-08) into "integrationPortal" (master visibility switch,
+    // rendered under Topic Access instead of this list — see
+    // integrationPortalCheckHtml below, same treatment as "activeAgents")
+    // plus one id per actual admin screen: "tgRoutes", "issueSubmissionSheet",
+    // "promoCodeSheet" — each independently grantable now instead of all
+    // 3 always showing or hiding together.
     const ADMIN_SECTIONS_LIST = [
       { id: "createAccount", icon: "➕", name: "Create Account" },
       { id: "whitelistIp", icon: "🌐", name: "IP Access" }, // id UNCHANGED — see the matching note at acctTitle.textContent = "IP Access" above
-      { id: "integrations", icon: "🔌", name: "Integrations (TG routing, Sheets)" },
       { id: "agentProfile", icon: "🪪", name: "Agent Profile" },
       { id: "settings", icon: "⚙️", name: "Settings" },
       { id: "announcements", icon: "📢", name: "Announcement" },
       { id: "activeAgents", icon: "👥", name: "Active Agents" },
+      { id: "integrationPortal", icon: "🔗", name: "Integration Portal" },
+      { id: "tgRoutes", icon: "📤", name: "TG Group / Channel" },
+      { id: "issueSubmissionSheet", icon: "📋", name: "Issue Submission Gsheet" },
+      { id: "promoCodeSheet", icon: "🎟️", name: "Promo Code Gsheet" },
     ];
+    // The 3 Integration Portal screen ids — rendered in their OWN
+    // collapsible block ("🔗 Integration Portal Access", separate from
+    // Account Management Access), same visual treatment as
+    // ADMIN_SECTIONS_LIST's other entries but its own section below
+    // "integrationPortal" itself. See adminAccessBlockHtml vs
+    // integrationAccessBlockHtml further down.
+    const INTEGRATION_PORTAL_SCREEN_IDS = ["tgRoutes", "issueSubmissionSheet", "promoCodeSheet"];
 
-    // The 5 sections where View vs Edit is a meaningful, separately
+    // The sections where View vs Edit is a meaningful, separately
     // grantable choice — mirrors EDITABLE_ADMIN_SECTIONS in
     // _shared/accounts.js exactly. "createAccount" isn't here: creating
-    // an account IS the action, there's no view-only version of it.
-    const EDITABLE_ADMIN_SECTIONS = ["whitelistIp", "integrations", "agentProfile", "settings", "announcements"];
+    // an account IS the action, there's no view-only version of it —
+    // and neither are the 3 Integration Portal screens or
+    // "integrationPortal" itself, for the same reason (see the comment
+    // on EDITABLE_ADMIN_SECTIONS in _shared/accounts.js).
+    const EDITABLE_ADMIN_SECTIONS = ["whitelistIp", "agentProfile", "settings", "announcements"];
 
     function openAgentProfileModal(username) {
       const a = acctAccounts.find((acc) => acc.username === username);
@@ -1947,17 +1971,36 @@
           <input type="checkbox" class="ap-admin-section-checkbox" value="activeAgents" ${activeAgentsChecked ? "checked" : ""} ${canEditAdminSections ? "" : "disabled"} />
           👥 Active Agents <span class="agent-profile-locked-note">(owner-granted)</span>
         </label>` : "";
+      // "Integration Portal" — same treatment as Active Agents just
+      // above: a plain owner-granted visibility switch that lives under
+      // Topic Access rather than inside either collapsible admin-access
+      // block, but is still an `.ap-admin-section-checkbox` gated by the
+      // exact same `showAdminAccessBlock`/`canEditAdminSections` rule (so
+      // saveAgentProfileModal() keeps collecting it into
+      // `allowedAdminSections` unchanged). This is the MASTER switch for
+      // the whole Integration Portal sidebar group — see the separate
+      // "🔗 Integration Portal Access" block further down for the 3
+      // individual screens underneath it (TG Group/Channel, Issue
+      // Submission Gsheet, Promo Code Gsheet), which an account needs on
+      // top of this one to actually see anything.
+      const integrationPortalChecked = a.allowedAdminSections === "all" ||
+        (Array.isArray(a.allowedAdminSections) && a.allowedAdminSections.includes("integrationPortal"));
+      const integrationPortalCheckHtml = showAdminAccessBlock ? `
+        <label class="agent-profile-module-check">
+          <input type="checkbox" class="ap-admin-section-checkbox" value="integrationPortal" ${integrationPortalChecked ? "checked" : ""} ${canEditAdminSections ? "" : "disabled"} />
+          🔗 Integration Portal <span class="agent-profile-locked-note">(owner-granted)</span>
+        </label>` : "";
       let adminAccessBlockHtml = "";
+      let integrationAccessBlockHtml = "";
       if (showAdminAccessBlock) {
         const allSectionsSelected = a.allowedAdminSections === "all";
         const allEditSelected = a.adminSectionEditAccess === "all";
-        // "activeAgents" is filtered out here — it's rendered separately
-        // above (activeAgentsCheckHtml) and placed under Topic Access
-        // instead, per the business owner's request. Still part of
-        // ADMIN_SECTIONS_LIST itself (unchanged) since other code —
-        // canSeeAdminSection() on the server, the "all sections" count
-        // below — still needs it counted as one of the 7 sections.
-        const adminSectionChecks = ADMIN_SECTIONS_LIST.filter((s) => s.id !== "activeAgents").map((s) => {
+        // Renders one `.ap-admin-section-checkbox` (+ its View/Edit radio
+        // pair, for sections in EDITABLE_ADMIN_SECTIONS) per id in `list`
+        // — shared by both the Account Management Access block and the
+        // Integration Portal Access block below, so the two stay visually
+        // and behaviorally identical apart from which ids they cover.
+        const renderSectionChecks = (list) => list.map((s) => {
           const isChecked = allSectionsSelected || (Array.isArray(a.allowedAdminSections) && a.allowedAdminSections.includes(s.id));
           const checkboxHtml = `
           <label class="agent-profile-module-check">
@@ -1985,6 +2028,15 @@
             <label><input type="radio" name="apEditLevel_${acctEsc(s.id)}" value="edit" ${isEditChecked ? "checked" : ""} /> Can Edit</label>
           </div>`;
         }).join("");
+        // Account Management Access — "activeAgents" and "integrationPortal"
+        // are filtered out here (rendered separately above, under Topic
+        // Access instead), and the 3 Integration Portal screen ids are
+        // filtered out too (rendered in their own block below). Still
+        // part of ADMIN_SECTIONS_LIST itself (unchanged) since other code
+        // — canSeeAdminSection() on the server, the "all sections" count
+        // below — still needs all 10 counted as one list.
+        const excludedFromAcctMgmt = new Set(["activeAgents", "integrationPortal", ...INTEGRATION_PORTAL_SCREEN_IDS]);
+        const adminSectionChecks = renderSectionChecks(ADMIN_SECTIONS_LIST.filter((s) => !excludedFromAcctMgmt.has(s.id)));
         // The delegation grant itself (canManageAdminAccess) is Owner-only
         // to even see, let alone edit — a delegated manager never sees
         // whether they could re-delegate, because they can't.
@@ -2001,6 +2053,25 @@
             <div class="agent-profile-collapse-body agent-profile-admin-section-list" id="ap_adminList" data-editable="${canEditAdminSections}">
               ${adminSectionChecks}
               ${delegateRowHtml}
+            </div>
+            ${canEditAdminSections ? "" : '<p class="agent-profile-admin-note">You can only edit this for accounts ranked below your own.</p>'}`;
+
+        // Integration Portal Access — the 3 individual screens
+        // (TG Group/Channel, Issue Submission Gsheet, Promo Code Gsheet)
+        // underneath the master "integrationPortal" switch above. Own
+        // collapsible block, same visual style as Account Management
+        // Access, same `canEditAdminSections` gate (it's the same "can
+        // this viewer manage THIS account's permissions at all"
+        // question either way), but no delegation checkbox here — that
+        // grant only ever applies to Account Management Access itself.
+        const integrationSectionChecks = renderSectionChecks(ADMIN_SECTIONS_LIST.filter((s) => INTEGRATION_PORTAL_SCREEN_IDS.includes(s.id)));
+        integrationAccessBlockHtml = `
+            <button type="button" class="agent-profile-collapse-toggle${canEditAdminSections ? "" : " is-restricted"}" id="ap_integrationToggle" aria-expanded="false">
+              <span>🔗 Integration Portal Access</span>
+              <span class="agent-profile-collapse-chevron">▸</span>
+            </button>
+            <div class="agent-profile-collapse-body agent-profile-admin-section-list" id="ap_integrationList" data-editable="${canEditAdminSections}">
+              ${integrationSectionChecks}
             </div>
             ${canEditAdminSections ? "" : '<p class="agent-profile-admin-note">You can only edit this for accounts ranked below your own.</p>'}`;
       }
@@ -2043,9 +2114,10 @@
               <span>Topic access ${canManageAccess ? "" : '<span class="agent-profile-locked-note">(requires Can-Edit on Agent Profile + outranking this account)</span>'}</span>
               <span class="agent-profile-collapse-chevron">▸</span>
             </button>
-            <div class="agent-profile-collapse-body agent-profile-module-list" id="ap_topicList">${moduleChecks}${activeAgentsCheckHtml}</div>
+            <div class="agent-profile-collapse-body agent-profile-module-list" id="ap_topicList">${moduleChecks}${activeAgentsCheckHtml}${integrationPortalCheckHtml}</div>
 
             ${adminAccessBlockHtml}
+            ${integrationAccessBlockHtml}
           </div>
 
           <div class="edit-details-status" id="agentProfileStatus"></div>
@@ -2058,6 +2130,7 @@
 
       wireCollapse("ap_topicToggle", "ap_topicList");
       if (showAdminAccessBlock) wireCollapse("ap_adminToggle", "ap_adminList");
+      if (showAdminAccessBlock) wireCollapse("ap_integrationToggle", "ap_integrationList");
       if (showAdminAccessBlock) wireAdminSectionEditToggles();
 
       if (canManageAccess) wireAgentProfileBrandPicker();
@@ -2182,16 +2255,36 @@
       // block was actually rendered editable (data-editable="true", set
       // in openAgentProfileModal() based on the SAME rank rule the
       // server enforces).
+      //
+      // NOTE: there are now TWO ".agent-profile-admin-section-list"
+      // blocks in the modal — #ap_adminList (Account Management Access)
+      // and #ap_integrationList (Integration Portal Access) — but this
+      // querySelector() only grabs the first (#ap_adminList). That's
+      // fine: both are rendered from the exact same `canEditAdminSections`
+      // value in the exact same `if (showAdminAccessBlock)` branch (see
+      // openAgentProfileModal()), so their data-editable is always
+      // identical — reading either one gives the right answer. The
+      // View/Edit radio lookup a few lines down (`adminSectionList.
+      // querySelector(...apEditLevel_...)`) is scoped to this same first
+      // block too, which is also fine: EDITABLE_ADMIN_SECTIONS
+      // (whitelistIp/agentProfile/settings/announcements) never overlaps
+      // with the 3 Integration Portal ids, so none of those radios ever
+      // render inside #ap_integrationList to begin with — there's
+      // nothing there this lookup would need to reach.
       const adminSectionList = document.querySelector(".agent-profile-admin-section-list");
       if (adminSectionList && adminSectionList.dataset.editable === "true") {
         // NOTE: queried against the whole modal, not scoped to
-        // adminSectionList — "Active Agents" now renders under Topic
-        // Access (#ap_topicList, see activeAgentsCheckHtml above), outside
-        // this container, but is still an .ap-admin-section-checkbox and
-        // still belongs in allowedAdminSections. adminSectionList's own
-        // data-editable="true" guard above still gates the whole block
-        // (both locations share the exact same canEditAdminSections
-        // condition at render time, so they're always in sync). Still
+        // adminSectionList — "Active Agents" and "Integration Portal" now
+        // render under Topic Access (#ap_topicList, see
+        // activeAgentsCheckHtml/integrationPortalCheckHtml above), and the
+        // 3 Integration Portal screens render in the SEPARATE
+        // #ap_integrationList block — none of these are inside
+        // adminSectionList's own DOM subtree, but all are still
+        // .ap-admin-section-checkbox and still belong in
+        // allowedAdminSections. adminSectionList's own data-editable="true"
+        // guard above still gates all of them together (every location
+        // shares the exact same canEditAdminSections condition at render
+        // time, so they're always in sync — see the NOTE above). Still
         // scoped to .ap-admin-section-checkbox specifically, not a bare
         // "input[type=checkbox]" selector — the admin list also contains
         // the Owner-only delegation checkbox (#ap_canManageAdminAccess),

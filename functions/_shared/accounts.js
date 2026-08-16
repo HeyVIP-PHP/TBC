@@ -576,51 +576,78 @@ export function canSeeModule(account, moduleId) {
 // not one that ships pre-granted. `account` may be `null` in bootstrap
 // mode (see authenticateStaff()) — treated as fully trusted, same as
 // every other check bootstrap mode bypasses.
-// "tgRoutes" was folded into "integrations" (2026-08) — TG Group/Channel
-// is now gated by the same section as Issue Submission Gsheet/Promo Code
-// Gsheet, not its own standalone id. If any account still has "tgRoutes"
-// sitting in its allowedAdminSections from before this change, it's now
-// inert (matches nothing) — that account needs "integrations" granted
-// instead (or is already covered automatically if it's SuperAdmin+).
+// "integrations" (2026-08) split back apart into 4 ids, mirroring the
+// PKR build's Integration Portal Access design:
+//   - "integrationPortal": the master visibility switch for the whole
+//     Integration Portal sidebar group, same shape/treatment as
+//     "activeAgents" below (plain view-only checkbox, rendered under
+//     Topic Access rather than this list — see index.html's
+//     integrationPortalCheckHtml) — an account needs THIS checked, on
+//     top of whichever individual section below it wants, or the group
+//     doesn't render at all even if it has some individual sections
+//     granted.
+//   - "tgRoutes" / "issueSubmissionSheet" / "promoCodeSheet": one id per
+//     actual admin screen (TG Group/Channel routing, Issue Submission
+//     Gsheet targets, Promo Code Gsheet target — see routes.js and
+//     sheet-routes.js), each independently grantable. No View-vs-Edit
+//     split on any of these 3 (see EDITABLE_ADMIN_SECTIONS below) —
+//     same reasoning as "createAccount" has none: seeing one of these
+//     screens at all already means being trusted to change it, there's
+//     no meaningful read-only version of "here's where tickets route
+//     to". If any account still has the old "integrations" or "tgRoutes"
+//     id sitting in its allowedAdminSections from before this change,
+//     it's now inert (matches nothing) — re-grant the specific new
+//     id(s) instead (or nothing to do if it's SuperAdmin+, see below).
 // "activeAgents" (Active Agents online-status panel) — view-only, same
 // deny-by-default opt-in as every other section here; no edit action
 // exists for it so it's deliberately NOT in EDITABLE_ADMIN_SECTIONS
 // below (see functions/api/presence/list.js + record.js for the two
 // endpoints it gates).
-export const ADMIN_SECTIONS = ["createAccount", "whitelistIp", "agentProfile", "settings", "announcements", "integrations", "activeAgents"];
+export const ADMIN_SECTIONS = [
+  "createAccount", "whitelistIp", "agentProfile", "settings", "announcements", "activeAgents",
+  "integrationPortal", "tgRoutes", "issueSubmissionSheet", "promoCodeSheet",
+];
+
+// The 4 ids that keep the old "integrations" SuperAdmin-auto-visibility
+// exception (see canSeeAdminSection below) — SuperAdmin and above see
+// the whole Integration Portal group and everything under it
+// automatically, no Owner action needed, same standing capability the
+// single "integrations" id used to grant. The normal allowedAdminSections
+// opt-in below STILL applies on top of this — an Owner can still hand
+// any of these to a lower-ranked account individually (e.g. a trusted
+// Admin) without promoting them to SuperAdmin.
+const INTEGRATION_PORTAL_SECTION_IDS = ["integrationPortal", "tgRoutes", "issueSubmissionSheet", "promoCodeSheet"];
+
 export function canSeeAdminSection(account, sectionId) {
   if (!account) return true; // bootstrap mode
   if (account.role === "owner") return true;
 
-  // "integrations" (TG Group/Channel + Issue submission Gsheet + Promo
-  // code Gsheet) is the ONE section with a rank floor baked in on top of
-  // the usual opt-in model — SuperAdmin and above see it automatically,
-  // no Owner action needed, since this is meant to be a standing
-  // capability for that tier rather than something granted case by case.
-  // The normal allowedAdminSections opt-in below STILL applies on top of
-  // this — an Owner can still hand it to a lower-ranked account
-  // individually (e.g. a trusted Admin) without promoting them to
-  // SuperAdmin. Every other section stays deny-by-default with no rank
-  // shortcut — don't copy this pattern onto new sections without a
-  // specific reason; it's an intentional exception, not the norm.
-  if (sectionId === "integrations" && rankOf(account.role) >= ROLE_RANK.superadmin) return true;
+  // Every other section stays deny-by-default with no rank shortcut —
+  // don't copy this exception onto new sections without a specific
+  // reason; it's intentional here (see INTEGRATION_PORTAL_SECTION_IDS
+  // above), not the norm.
+  if (INTEGRATION_PORTAL_SECTION_IDS.includes(sectionId) && rankOf(account.role) >= ROLE_RANK.superadmin) return true;
 
   if (account.allowedAdminSections === "all") return true;
   return Array.isArray(account.allowedAdminSections) && account.allowedAdminSections.includes(sectionId);
 }
 
-// View-vs-Edit split, for the 3 sections where "seeing it" and "changing
+// View-vs-Edit split, for the sections where "seeing it" and "changing
 // it" are meaningfully different actions (whitelistIp: seeing the IP
-// list vs adding/removing IPs; tgRoutes: seeing routing vs changing
-// where tickets deliver; agentProfile: seeing another account's details
-// vs actually editing role/office/brands/lock state). "createAccount"
-// has no view-only mode — creating an account IS the whole action — so
-// it's deliberately excluded from this list and untouched by
-// canEditAdminSection() below.
+// list vs adding/removing IPs; agentProfile: seeing another account's
+// details vs actually editing role/office/brands/lock state).
+// "createAccount" has no view-only mode — creating an account IS the
+// whole action — so it's deliberately excluded from this list and
+// untouched by canEditAdminSection() below. The 3 Integration Portal
+// screens (tgRoutes/issueSubmissionSheet/promoCodeSheet) are excluded
+// for the exact same reason as createAccount — see the comment on
+// ADMIN_SECTIONS above — and "integrationPortal" itself is excluded
+// because it isn't a screen at all, just a visibility switch (same as
+// "activeAgents").
 //
 // DESIGN DECISION (explicit business-owner call, replacing the earlier
 // rank-based split): this COMPLETELY REPLACES the old "Admin can view,
-// only SuperAdmin can edit" rank floor for these 3 sections — an Admin-
+// only SuperAdmin can edit" rank floor for these sections — an Admin-
 // rank account CAN be granted Can-Edit on e.g. whitelistIp now, and a
 // SuperAdmin CAN be left at View-only if the Owner doesn't grant edit.
 // Rank no longer plays any role in view-vs-edit for these sections; the
@@ -628,26 +655,22 @@ export function canSeeAdminSection(account, sectionId) {
 // the TARGET account" rule for agentProfile edits — e.g. can't edit a
 // fellow SuperAdmin's role — is a different, still-active protection;
 // see functions/api/admin/accounts.js.)
-export const EDITABLE_ADMIN_SECTIONS = ["whitelistIp", "agentProfile", "settings", "announcements", "integrations"];
+export const EDITABLE_ADMIN_SECTIONS = ["whitelistIp", "agentProfile", "settings", "announcements"];
 
 // Whether `account` can EDIT (not just view) a given section. Requires
 // view access first (can't edit something you can't even see), then
 // checks the separate `adminSectionEditAccess` field — same "all" | array
 // | deny-by-default shape as allowedAdminSections, and set only by the
 // Owner or a delegated canManageAdminAccess:true account, exactly like
-// allowedAdminSections (see functions/api/admin/accounts.js).
+// allowedAdminSections (see functions/api/admin/accounts.js). Not called
+// at all for the 3 Integration Portal screens or "integrationPortal"
+// itself (see EDITABLE_ADMIN_SECTIONS above) — those gate GET *and*
+// POST off canSeeAdminSection() directly instead, so there's nothing for
+// this function to add for them.
 export function canEditAdminSection(account, sectionId) {
   if (!account) return true; // bootstrap mode
   if (account.role === "owner") return true;
   if (!canSeeAdminSection(account, sectionId)) return false;
-
-  // Same SuperAdmin-auto exception as canSeeAdminSection() above, and for
-  // the same reason: "integrations" is meant to be a standing SuperAdmin
-  // capability, not something that shows up read-only until an Owner
-  // separately flips a Can-Edit checkbox. A lower-ranked account
-  // delegated View via allowedAdminSections still needs the checkbox
-  // below to actually Save/Reset.
-  if (sectionId === "integrations" && rankOf(account.role) >= ROLE_RANK.superadmin) return true;
 
   if (account.adminSectionEditAccess === "all") return true;
   return Array.isArray(account.adminSectionEditAccess) && account.adminSectionEditAccess.includes(sectionId);
