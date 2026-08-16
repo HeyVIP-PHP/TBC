@@ -2228,6 +2228,11 @@ body.announcements-page .threads-shell { flex: 1; height: auto; min-height: 0; }
      visible instead — a distinct class on <main> (not editing
      .ann-main itself) so announcements.html's own layout is untouched. */
   overflow: visible;
+  /* Breathing room at the very bottom of the scroll — without this the
+     results card's bottom edge lands flush against the browser window
+     when scrolled all the way down, with zero margin below the last
+     row (see the screenshot this fixed). */
+  padding-bottom: 40px;
 }
 .actlog-header-card {
   background: var(--card-bg); border: 1px solid var(--panel-border); border-radius: 12px;
