@@ -2233,11 +2233,16 @@ body.announcements-page .threads-shell { flex: 1; height: auto; min-height: 0; }
      scrollbar at the very bottom of the browser window (caught in a
      screenshot). Only the vertical axis needs releasing; horizontal
      stays clipped like it always was.
-     NOTE: bottom breathing room lives on #actlogCard's own margin
-     (activity-logs.html), NOT as padding-bottom here — a padding on an
-     overflow:visible box has no effect on content that's escaping it,
-     which is exactly why an earlier version of this rule silently did
-     nothing (see the screenshot that caught it). */
+     display:block OVERRIDE — .ann-main is display:flex with
+     justify-content:center (horizontal row), which was laying the
+     bottom spacer div (see activity-logs.html, right after #actlogCard)
+     out SIDE BY SIDE with the card as a second flex item instead of
+     stacking it below — so it contributed zero vertical space no
+     matter how tall it was. This page doesn't need flex-row centering
+     at all; #actlogCard already centers itself via margin:0 auto, so
+     plain block stacking is both simpler and actually lets the spacer
+     do its job. */
+  display: block;
   overflow-y: visible;
   overflow-x: hidden;
 }
