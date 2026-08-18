@@ -27,6 +27,16 @@
  * DEFAULT_COLUMNS index documented next to it and the tab is reported
  * back in `headerWarnings` so it's visible instead of silently wrong.
  *
+ * MERGED CELLS (fixed 2026-08-18): some tabs (e.g. "Welcome Call Team")
+ * vertically merge Deposit Range/Wager/Max Withdraw/Expired Day etc.
+ * across a block of brand rows. Google's API only returns a value in a
+ * merged range's top-left cell — every other row it covers reads back
+ * blank. forwardFillMergedCells() below carries the last-seen value down
+ * into those blanks so search results match what's visually on the
+ * sheet, while promo code/bonus code/brand (the columns that identify
+ * which row you're even looking at) are deliberately excluded from this
+ * fill — see that function's own comment for why.
+ *
  * "Start On" has no source column in any tab yet — always returned as
  * "" until one exists; the frontend shows it as a dash.
  */
@@ -137,6 +147,36 @@ function col(map, field, row) {
   const idx = map[field] !== undefined ? map[field] : DEFAULT_COLUMNS[field];
   if (idx === undefined) return "";
   return row[idx] || "";
+}
+
+// FORWARD-FILL FOR MERGED CELLS — some tabs (e.g. "Welcome Call Team")
+// vertically merge cells like Deposit Range/Wager/Max Withdraw/Expired
+// Day across a block of brand rows that all share the same terms. The
+// Sheets values API only returns a value in the TOP-LEFT cell of a
+// merged range — every other cell the merge covers comes back blank, so
+// without this, every row except the merge's anchor row shows "—" for
+// those fields (confirmed against a reference screenshot of that tab).
+// This carries the last-seen non-blank value in each column down into
+// blank cells below it, mirroring what a human sees when the sheet is
+// open. `skipCols` is excluded from fill — used for the identity columns
+// (promo code, and anything else that must legitimately be allowed to
+// distinguish one row from the next) so blank there still means "no row
+// here" rather than silently inheriting the row above's identity.
+function forwardFillMergedCells(rows, headerLength, skipCols) {
+  const width = Math.max(headerLength || 0, 14);
+  const lastSeen = new Array(width).fill(undefined);
+  for (const row of rows) {
+    for (let c = 0; c < width; c++) {
+      if (skipCols.has(c)) continue;
+      const cell = row[c];
+      if (cell === undefined || cell === null || String(cell).trim() === "") {
+        if (lastSeen[c] !== undefined) row[c] = lastSeen[c];
+      } else {
+        lastSeen[c] = cell;
+      }
+    }
+  }
+  return rows;
 }
 
 // Real tab titles rarely change, so cache them for a few minutes per Worker
@@ -260,6 +300,15 @@ async function handleSearch({ request, env }) {
     if (missingFields.length) headerWarnings.push({ tab: real, fields: missingFields });
 
     const promoIdx = colMap.promoCode !== undefined ? colMap.promoCode : DEFAULT_COLUMNS.promoCode;
+    const bonusCodeIdx = colMap.bonusCode !== undefined ? colMap.bonusCode : DEFAULT_COLUMNS.bonusCode;
+    const brandIdx = colMap.brand !== undefined ? colMap.brand : DEFAULT_COLUMNS.brand;
+
+    // Don't forward-fill the columns that identify WHICH row this is —
+    // promo code (used to decide if a row exists at all), bonus code,
+    // and brand. Every other column (deposit range, wager, max withdraw,
+    // expired day, products, excluded, etc) is fair game for inheriting
+    // a merged value from the row above.
+    forwardFillMergedCells(rows, headerRow ? headerRow.length : 0, new Set([promoIdx, bonusCodeIdx, brandIdx]));
 
     const matches = [];
     for (const row of rows) {
