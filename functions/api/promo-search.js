@@ -53,9 +53,16 @@ import { resolvePromoCodeTarget } from "../_shared/sheetRoutes.js";
 // constants, same layering as every other sheet target in this codebase.
 const PROMO_CODE_SHEET = {
   sheetId: "1VYKwdGyoa5qxCScHWyKrYPQYvQPl8igrBzK1mk2RT98",
-  // Starts at row 1 (not 2) on purpose now — row 1 is read as the real
-  // header and used to locate columns by name; see buildColumnMap() below.
-  range: "A1:N1000",
+  // Starts at row 1 (not 2) on purpose — row 1 is read as the real
+  // header and used to locate columns by name; see buildColumnMap()
+  // below. Goes out to Z (not N) on purpose too: some tabs (e.g.
+  // "Retention team (Outsource)") have an extra column earlier on that
+  // shifts every later field one column to the right, which pushed
+  // "Expired On" out to column O — past the old "A1:N1000" cutoff, so
+  // it was never even fetched and silently fell back to a wrong default
+  // index. Reading extra empty columns costs nothing meaningful; missing
+  // a real one silently does, so this errs wide on purpose.
+  range: "A1:Z1000",
   tabs: [
     "Welcome Call Team",
     "Retention team (Outsource)",
@@ -163,7 +170,7 @@ function col(map, field, row) {
 // distinguish one row from the next) so blank there still means "no row
 // here" rather than silently inheriting the row above's identity.
 function forwardFillMergedCells(rows, headerLength, skipCols) {
-  const width = Math.max(headerLength || 0, 14);
+  const width = Math.max(headerLength || 0, 26);
   const lastSeen = new Array(width).fill(undefined);
   for (const row of rows) {
     for (let c = 0; c < width; c++) {
