@@ -147,6 +147,79 @@ function buildColumnMap(headerRow) {
   return map;
 }
 
+// TIGHT patterns (unlike HEADER_PATTERNS above, which is deliberately
+// loose for finding row-1 headers) — used only to recognize a REPEATED
+// header row buried inside the data area. Real data almost never
+// exactly equals one of these short labels on its own, so `^...$`
+// anchoring here is intentional and safe.
+const HEADER_LIKE_EXACT = {
+  brand: /^brands?$/,
+  bonusCode: /^bonus\s*code$/,
+  promoCode: /^promo\s*code$/,
+  depositRange: /^deposit\s*range$/,
+  maxBonus: /^max\s*bonus$/,
+  wager: /^wager$/,
+  maxWithdraw: /^max\s*withdraw$/,
+  expiredDay: /^expired\s*day$/,
+  products: /^products?$/,
+  excluded: /^excluded(\s*products?\s*\/?\s*games?)?$/,
+  groupVip: /(under\s*group|group.*level)/,
+  startOn: /^start\s*on$/,
+  expiredOn: /^expired\s*on$/,
+};
+
+// Some tabs (e.g. "Retention Team (PKR)") repeat the same header row
+// throughout the DATA area — one before each brand's block, not just
+// once at the top of the sheet — as a human-readability aid. Without
+// this check, forwardFillMergedCells() below would treat that repeated
+// header text ("Wager", "Under Group /Affiliate/VIP Level", "START ON"…)
+// as a real value and carry it down into the next real row's blank
+// cells — exactly what showed up in a reference screenshot (Group/VIP
+// and Expired On literally showing header label text as their value).
+// Requiring >=2 matching labels (not just 1) keeps this from ever
+// misfiring on a genuine data row that happens to equal one short label.
+function isHeaderRepeatRow(row, colMap) {
+  let matches = 0;
+  for (const [field, idx] of Object.entries(colMap)) {
+    const pattern = HEADER_LIKE_EXACT[field];
+    if (!pattern || idx === undefined) continue;
+    const val = normalizeHeaderCell(row[idx]);
+    if (val && pattern.test(val)) matches++;
+    if (matches >= 2) return true;
+  }
+  return false;
+}
+
+// Some tabs (e.g. "Retention Team FT & TIRESIAS (BDT)") don't have real
+// column headers in row 1 at all — row 1 is a SECTION title ("OnBoard",
+// blank everywhere else in that row), with the actual column headers
+// (Purpose/Brands/Bonus Code/Promo Code/...) one or more rows further
+// down, and the tab repeats title+header for each of several sections
+// (OnBoard, Churn Risk Prevention, Reactivation, ...). Blindly treating
+// row 1 as the header — the previous assumption — meant this tab's real
+// header was never read, every field fell back to a wrong
+// DEFAULT_COLUMNS guess, and searches on it silently found nothing.
+//
+// Scans the first several rows for the first one that actually LOOKS
+// like a header (recognizes a Promo Code column plus at least a couple
+// other fields) and uses that as the real header, wherever it lands.
+const HEADER_SCAN_LIMIT = 25;
+const HEADER_MIN_FIELDS = 3; // promoCode + at least 2 others, to avoid a false positive on a data row
+
+function findHeaderRow(allRows) {
+  const limit = Math.min(allRows.length, HEADER_SCAN_LIMIT);
+  for (let i = 0; i < limit; i++) {
+    const map = buildColumnMap(allRows[i]);
+    if (map.promoCode !== undefined && Object.keys(map).length >= HEADER_MIN_FIELDS) {
+      return { index: i, colMap: map };
+    }
+  }
+  // Nothing recognizable anywhere in the scan window — fall back to the
+  // old row-1 assumption; DEFAULT_COLUMNS is still there as a last-resort
+  // safety net per-field, same as before this fix.
+  return { index: 0, colMap: buildColumnMap(allRows[0]) };
+}
+
 // col(map, field, row) — reads a field's value out of a data row, using
 // the tab's own detected column index when available, DEFAULT_COLUMNS
 // otherwise.
@@ -300,8 +373,9 @@ async function handleSearch({ request, env }) {
 
   tabsToQuery.forEach(({ real }, i) => {
     const allRows = (valueRanges[i] && valueRanges[i].values) || [];
-    const [headerRow, ...rows] = allRows;
-    const colMap = buildColumnMap(headerRow);
+    const { index: headerIdx, colMap } = findHeaderRow(allRows);
+    const headerRow = allRows[headerIdx];
+    const rows = allRows.slice(headerIdx + 1);
 
     const missingFields = REQUIRED_FIELDS.filter((f) => colMap[f] === undefined);
     if (missingFields.length) headerWarnings.push({ tab: real, fields: missingFields });
@@ -310,15 +384,22 @@ async function handleSearch({ request, env }) {
     const bonusCodeIdx = colMap.bonusCode !== undefined ? colMap.bonusCode : DEFAULT_COLUMNS.bonusCode;
     const brandIdx = colMap.brand !== undefined ? colMap.brand : DEFAULT_COLUMNS.brand;
 
+    // Strip repeated header rows OUT of the data before forward-filling —
+    // if left in, their label text (e.g. "Wager", "START ON") would get
+    // carried down into the next real row's blank merged cells by
+    // forwardFillMergedCells() below. See isHeaderRepeatRow()'s own
+    // comment for why this tab-wide scan is needed.
+    const dataRows = rows.filter((row) => !isHeaderRepeatRow(row, colMap));
+
     // Don't forward-fill the columns that identify WHICH row this is —
     // promo code (used to decide if a row exists at all), bonus code,
     // and brand. Every other column (deposit range, wager, max withdraw,
     // expired day, products, excluded, etc) is fair game for inheriting
     // a merged value from the row above.
-    forwardFillMergedCells(rows, headerRow ? headerRow.length : 0, new Set([promoIdx, bonusCodeIdx, brandIdx]));
+    forwardFillMergedCells(dataRows, headerRow ? headerRow.length : 0, new Set([promoIdx, bonusCodeIdx, brandIdx]));
 
     const matches = [];
-    for (const row of rows) {
+    for (const row of dataRows) {
       const promoCode = (row[promoIdx] || "").trim();
       if (!promoCode) continue;
       const upperCode = promoCode.toUpperCase();
