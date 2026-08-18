@@ -37,7 +37,7 @@
               <div class="actlog-header-icon">🔎</div>
               <div>
                 <p class="actlog-header-title">Activity Logs</p>
-                <p class="actlog-header-sub">Who did what, when, and from where. Kept for 90 days.</p>
+                <p class="actlog-header-sub">Who edited or deleted what, when, and from where. Kept for 90 days.</p>
               </div>
             </div>
             <button type="button" class="icon-btn icon-btn-labeled" id="actlogRefresh"><span class="icon-spin-target">↻</span> Refresh</button>
@@ -130,6 +130,30 @@
 
     const CATEGORY_ICON = { Auth: "🔐", Account: "👤", Thread: "🎫", Config: "⚙️" };
 
+    // Routine ticket-workflow noise — every reply/create/solve toggle logs
+    // an entry, but on a busy day that's the vast majority of the feed and
+    // drowns out the entries an Owner actually needs to review here: edits
+    // and deletions. Filtered out at load time (not just hidden by a UI
+    // filter) so the counts, category dropdown, search, and pagination all
+    // reflect the same "edits & deletes" audit view consistently. These
+    // actions are still written to KV by logActivity() as normal — this is
+    // a display-only exclusion, not a change to what gets recorded.
+    const HIDDEN_ACTIONS = new Set(["Ticket Created", "Ticket Solved", "Ticket Reopened", "Ticket Replied"]);
+
+    // Edit/recall/delete actions are the whole point of this page now —
+    // give them a distinct accent color on top of the category badge so
+    // they're easy to scan at a glance instead of blending in with e.g.
+    // Login/Config entries.
+    const ACTION_ACCENT = {
+      "Ticket Deleted": "danger",
+      "Root Recalled": "danger",
+      "Reply Recalled": "danger",
+      "Root Edited": "edit",
+      "Details Edited": "edit",
+      "Reply Edited": "edit",
+      "Brand Link Edited": "edit",
+    };
+
     let allEntries = [];
     // Same shape as ipaPageState in index.html's IP Access dashboard —
     // single-table version of that per-category state, since this page
@@ -186,7 +210,7 @@
           window.showToast ? window.showToast(data.error || "Failed to load.", "error") : alert(data.error || "Failed to load.");
           return;
         }
-        allEntries = data.entries || [];
+        allEntries = (data.entries || []).filter((e) => !HIDDEN_ACTIONS.has(e.action));
         render();
       } catch (e) {
         window.showToast ? window.showToast(String(e.message || e), "error") : alert(String(e.message || e));
@@ -245,13 +269,15 @@
         const dateStr = isNaN(d) ? "—" : d.toLocaleDateString(undefined, { year: "numeric", month: "2-digit", day: "2-digit" });
         const timeStr = isNaN(d) ? "—" : d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" });
         const icon = CATEGORY_ICON[e.category] || "";
-        const badgeClass = `actlog-badge actlog-badge-${e.category || "Config"}`;
+        const accent = ACTION_ACCENT[e.action];
+        const badgeClass = `actlog-badge actlog-badge-${e.category || "Config"}${accent ? ` actlog-badge-accent-${accent}` : ""}`;
+        const accentIcon = accent === "danger" ? "🗑️ " : accent === "edit" ? "✏️ " : "";
         return `
-        <tr data-detail-row>
+        <tr data-detail-row${accent ? ` class="actlog-row-${accent}"` : ""}>
           <td>${esc(dateStr)}</td>
           <td>${esc(timeStr)}</td>
           <td>${esc(e.agent)}</td>
-          <td><span class="${badgeClass}" title="${esc(e.category)}">${icon} ${esc(e.action)}</span></td>
+          <td><span class="${badgeClass}" title="${esc(e.category)}">${accentIcon || icon + " "}${esc(e.action)}</span></td>
           <td class="actlog-col-detail"><div class="actlog-detail">${esc(e.detail)}</div></td>
           <td>${esc(e.ip)}</td>
         </tr>`;

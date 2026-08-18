@@ -2340,6 +2340,13 @@ body.announcements-page .threads-shell { flex: 1; height: auto; min-height: 0; }
 .actlog-badge-Account { background: #f472b633; }
 .actlog-badge-Thread { background: #38bdf833; }
 .actlog-badge-Config { background: #22c55e33; }
+/* Edit/delete accent — layered on top of the category color so Deleted/
+   Recalled/Edited entries (the whole point of this page) stand out from
+   routine Login/Config rows instead of blending in. */
+.actlog-badge-accent-danger { background: #ef444433; color: #ef4444; }
+.actlog-badge-accent-edit { background: #f59e0b33; color: #f59e0b; }
+tr.actlog-row-danger .actlog-detail { border-left: 2px solid #ef444455; padding-left: 8px; }
+tr.actlog-row-edit .actlog-detail { border-left: 2px solid #f59e0b55; padding-left: 8px; }
 
 /* Active Agents' refresh button reuses the same .icon-btn/.spinning/
    .icon-spin-target mechanism TG Reply Threads' refresh button already
