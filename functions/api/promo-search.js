@@ -11,14 +11,23 @@
  * Requires the sheet to be shared (Viewer is enough) with the service
  * account: reward-form-writer@fifth-trainer-500806-e7.iam.gserviceaccount.com
  *
- * Column layout (same across all tabs below, columns A-N, header in row 1,
- * data starts row 2):
- *   A Brand | B Bonus Code | C Promo Code | D Deposit Range | E Bonus % |
- *   F Per Spin Value | G Max Bonus | H Wager | I Max Withdraw |
- *   J Expired Day | K Products | L Excluded Products/GAMES |
- *   M Under Group/Affiliate/VIP Level | N Expired On
+ * COLUMN MAPPING (fixed 2026-08-18): no longer a hardcoded column-letter
+ * assumption. An earlier version guessed fixed indices (assumed a "Per
+ * Spin Value" column that didn't actually exist), which silently shifted
+ * every field one column to the right (Max Bonus showed Wager's value,
+ * Wager showed Max Withdraw's value, etc) — confirmed against the live
+ * sheet and a reference screenshot.
  *
- * "Start On" has no source column yet in this sheet — always returned as
+ * Instead, row 1 of EACH tab is read as a real header row and matched
+ * by header TEXT (via HEADER_PATTERNS/buildColumnMap() below) to figure
+ * out which column each field actually lives in on that specific tab —
+ * so a column being reordered, inserted, or differing between tabs no
+ * longer silently misaligns the data. If a tab's header doesn't contain
+ * a recognizable label for some field, that field falls back to the
+ * DEFAULT_COLUMNS index documented next to it and the tab is reported
+ * back in `headerWarnings` so it's visible instead of silently wrong.
+ *
+ * "Start On" has no source column in any tab yet — always returned as
  * "" until one exists; the frontend shows it as a dash.
  */
 import { batchGetValues, getSheetTabTitles } from "../_shared/googleSheets.js";
@@ -34,7 +43,9 @@ import { resolvePromoCodeTarget } from "../_shared/sheetRoutes.js";
 // constants, same layering as every other sheet target in this codebase.
 const PROMO_CODE_SHEET = {
   sheetId: "1VYKwdGyoa5qxCScHWyKrYPQYvQPl8igrBzK1mk2RT98",
-  range: "A2:N1000",
+  // Starts at row 1 (not 2) on purpose now — row 1 is read as the real
+  // header and used to locate columns by name; see buildColumnMap() below.
+  range: "A1:N1000",
   tabs: [
     "Welcome Call Team",
     "Retention team (Outsource)",
@@ -52,6 +63,80 @@ const PROMO_CODE_SHEET = {
 
 function sheetEditUrl(sheetId) {
   return `https://docs.google.com/spreadsheets/d/${sheetId}/edit`;
+}
+
+// Fallback indices — only used for a field on a tab whose header row
+// doesn't contain a recognizable label for it (missing/renamed header,
+// blank cell, etc). Matches the real layout as of the 2026-08-18 fix;
+// kept only as a safety net, not the primary source of truth anymore.
+const DEFAULT_COLUMNS = {
+  brand: 0,
+  bonusCode: 1,
+  promoCode: 2,
+  depositRange: 3,
+  maxBonus: 5,
+  wager: 6,
+  maxWithdraw: 7,
+  expiredDay: 8,
+  products: 9,
+  excluded: 10,
+  groupVip: 11,
+  startOn: undefined, // no source column anywhere yet
+  expiredOn: 12,
+};
+
+// Ordered list — first pattern that matches a normalized header cell
+// wins. Order matters: more specific patterns (e.g. "bonuscode") must be
+// checked before looser ones that could also match part of them.
+const HEADER_PATTERNS = [
+  ["promoCode", /promo\s*code/],
+  ["bonusCode", /bonus\s*code/],
+  ["brand", /^brands?$/],
+  ["depositRange", /deposit\s*range/],
+  ["maxBonus", /max\s*bonus/],
+  ["wager", /wager/],
+  ["maxWithdraw", /max\s*withdraw/],
+  ["expiredDay", /expired\s*day/],
+  ["expiredOn", /expired\s*on/],
+  ["startOn", /start\s*on/],
+  ["products", /^products?$/],
+  ["excluded", /excluded/],
+  ["groupVip", /(group|vip|affiliate)/],
+];
+
+function normalizeHeaderCell(s) {
+  return String(s ?? "")
+    .normalize("NFKC")
+    .toLowerCase()
+    .trim();
+}
+
+// Reads one tab's actual header row and returns { field: columnIndex }
+// for every field it recognizes. Fields it can't find a header for are
+// simply absent from the map — callers fall back to DEFAULT_COLUMNS.
+function buildColumnMap(headerRow) {
+  const map = {};
+  (headerRow || []).forEach((cell, i) => {
+    const norm = normalizeHeaderCell(cell);
+    if (!norm) return;
+    for (const [field, pattern] of HEADER_PATTERNS) {
+      if (map[field] !== undefined) continue; // first match per field wins
+      if (pattern.test(norm)) {
+        map[field] = i;
+        break;
+      }
+    }
+  });
+  return map;
+}
+
+// col(map, field, row) — reads a field's value out of a data row, using
+// the tab's own detected column index when available, DEFAULT_COLUMNS
+// otherwise.
+function col(map, field, row) {
+  const idx = map[field] !== undefined ? map[field] : DEFAULT_COLUMNS[field];
+  if (idx === undefined) return "";
+  return row[idx] || "";
 }
 
 // Real tab titles rarely change, so cache them for a few minutes per Worker
@@ -163,11 +248,22 @@ async function handleSearch({ request, env }) {
   }
 
   const groups = [];
+  const headerWarnings = []; // { tab, fields } — fields whose header wasn't found, fell back to default
+  const REQUIRED_FIELDS = Object.keys(DEFAULT_COLUMNS).filter((f) => f !== "startOn");
+
   tabsToQuery.forEach(({ real }, i) => {
-    const rows = (valueRanges[i] && valueRanges[i].values) || [];
+    const allRows = (valueRanges[i] && valueRanges[i].values) || [];
+    const [headerRow, ...rows] = allRows;
+    const colMap = buildColumnMap(headerRow);
+
+    const missingFields = REQUIRED_FIELDS.filter((f) => colMap[f] === undefined);
+    if (missingFields.length) headerWarnings.push({ tab: real, fields: missingFields });
+
+    const promoIdx = colMap.promoCode !== undefined ? colMap.promoCode : DEFAULT_COLUMNS.promoCode;
+
     const matches = [];
     for (const row of rows) {
-      const promoCode = (row[2] || "").trim();
+      const promoCode = (row[promoIdx] || "").trim();
       if (!promoCode) continue;
       const upperCode = promoCode.toUpperCase();
       // Contains match, not exact — e.g. searching "1500" should surface
@@ -175,19 +271,19 @@ async function handleSearch({ request, env }) {
       // substring of the code counts as a hit.
       if (!needles.some((n) => upperCode.includes(n))) continue;
       matches.push({
-        brand: row[0] || "",
-        bonusCode: row[1] || "",
+        brand: col(colMap, "brand", row),
+        bonusCode: col(colMap, "bonusCode", row),
         promoCode,
-        depositRange: row[3] || "",
-        maxBonus: row[6] || "",
-        wager: row[7] || "",
-        maxWithdraw: row[8] || "",
-        expiredDay: row[9] || "",
-        products: row[10] || "",
-        excluded: row[11] || "",
-        groupVip: row[12] || "",
-        startOn: "", // no source column yet — see file header
-        expiredOn: row[13] || "",
+        depositRange: col(colMap, "depositRange", row),
+        maxBonus: col(colMap, "maxBonus", row),
+        wager: col(colMap, "wager", row),
+        maxWithdraw: col(colMap, "maxWithdraw", row),
+        expiredDay: col(colMap, "expiredDay", row),
+        products: col(colMap, "products", row),
+        excluded: col(colMap, "excluded", row),
+        groupVip: col(colMap, "groupVip", row),
+        startOn: col(colMap, "startOn", row), // "" unless a tab ever adds this column
+        expiredOn: col(colMap, "expiredOn", row),
       });
     }
     if (matches.length) groups.push({ tab: real, count: matches.length, matches });
@@ -202,6 +298,11 @@ async function handleSearch({ request, env }) {
     // this see the sheet's real tab names side-by-side with what's
     // configured, without having to open the sheet.
     actualSheetTabs: missingTabs.length ? realTitles : undefined,
+    // Only included when a queried tab's header row didn't have a
+    // recognizable label for one or more fields (that field fell back to
+    // DEFAULT_COLUMNS) — surfaces a silent misalignment instead of
+    // hiding it, without failing the whole search.
+    headerWarnings: headerWarnings.length ? headerWarnings : undefined,
   });
 }
 
