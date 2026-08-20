@@ -148,6 +148,18 @@
     let selectedThread = null;
     let pollTimer = null;
     let listPollTimer = null;
+
+    // Guards against a stale in-flight request (openThread's own fetch, or
+    // a refreshOpenThread() poll tick that was already in-flight) landing
+    // AFTER the agent has since switched to a different thread and
+    // clobbering the detail panel with the wrong thread's data. Every
+    // openThread()/refreshOpenThread() call stamps the request it fires
+    // with the CURRENT value of this counter; when the response comes
+    // back, it's only applied if the counter still matches — i.e. nothing
+    // else has been selected/requested in the meantime. Bumped on every
+    // new openThread() call (a fresh thread selection always wins over
+    // whatever's still in flight for the old one).
+    let detailRequestSeq = 0;
     let searchTimer = null;
 
     // ---- Tabs (Active / Solved / Recall) --------------------------------
@@ -852,10 +864,24 @@
 
     async function openThread(id) {
       selectedId = id;
+      // A brand-new selection always wins over whatever's still in flight
+      // for whichever thread was open before (including a refreshOpenThread()
+      // poll tick that hasn't returned yet) — bumping the sequence number
+      // here means that older request's eventual response gets discarded
+      // below instead of clobbering the panel we're about to show.
+      const mySeq = ++detailRequestSeq;
       renderLists();
       try {
         const res = await authFetch(`/api/threads/${id}`, { cache: "no-store" });
         const data = await res.json();
+        // The agent may have clicked a DIFFERENT thread (or this same one
+        // again) while this request was in flight — if so, a newer
+        // openThread() call already claimed detailRequestSeq, and/or
+        // selectedId has moved on. Applying this response now would show
+        // the wrong thread's details on top of the currently-selected
+        // sidebar row. Silently drop it; whichever call is still current
+        // will render its own response when it lands.
+        if (mySeq !== detailRequestSeq || selectedId !== id) return;
         if (!data.ok) {
           main.innerHTML = `<div class="threads-placeholder">Couldn't load this thread.</div>`;
           return;
@@ -865,6 +891,7 @@
         markSeen(id, selectedThread.messages.length);
         renderLists();
       } catch {
+        if (mySeq !== detailRequestSeq || selectedId !== id) return;
         main.innerHTML = `<div class="threads-placeholder">Couldn't load this thread — check your connection.</div>`;
       }
     }
@@ -874,13 +901,21 @@
     // reply the agent is mid-typing is never interrupted.
     async function refreshOpenThread() {
       if (!selectedId) return;
+      const id = selectedId;
+      // Snapshot, don't bump — this is a refresh of whatever's CURRENTLY
+      // selected, not a new selection. If the agent switches threads (or
+      // re-opens one) before this resolves, openThread() will have bumped
+      // detailRequestSeq itself, and the check below discards this stale
+      // response instead of applying it on top of the newly-opened thread.
+      const mySeq = detailRequestSeq;
       try {
-        const res = await authFetch(`/api/threads/${selectedId}`, { cache: "no-store" });
+        const res = await authFetch(`/api/threads/${id}`, { cache: "no-store" });
         const data = await res.json();
         if (!data.ok) return;
+        if (mySeq !== detailRequestSeq || selectedId !== id) return;
         selectedThread = data.thread;
         updateThreadContent(selectedThread);
-        markSeen(selectedId, selectedThread.messages.length);
+        markSeen(id, selectedThread.messages.length);
         renderLists();
       } catch {
         // Network hiccup — leave the panel as-is, try again next poll.
