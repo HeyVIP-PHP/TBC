@@ -38,6 +38,34 @@
   let currentView = "home";
   let capturingFor = null;
 
+  // ---- BUGFIX (2026-08-22) — concurrent mount() race ----
+  //
+  // mount() is async and awaits a network/cache fetch (getDoc) before it
+  // ever touches the DOM or runs the target view's own <script>. If a
+  // second navigation (another click, popstate, or the DOMContentLoaded
+  // deep-link) happens WHILE an earlier mount() call is still sitting at
+  // that await, both calls end up racing to overwrite #spaMount and to
+  // eval the target view's inline script — whichever call's await
+  // happens to resolve LAST wins the DOM, regardless of which one the
+  // user actually clicked last. Each eval'd script (threads.html,
+  // announcements.html, etc.) also calls setInterval() to poll — if an
+  // earlier, "lost" mount() call reaches that point, its timers still
+  // get registered and keep firing against the shared #threadList /
+  // tab-pill elements, fighting with whichever mount() actually won,
+  // producing exactly the symptom reported: the Active/Solved/Recall
+  // tab state randomly flipping on its own, plus "Cannot read
+  // properties of null" errors when one call's script reads an element
+  // another call has since replaced or removed.
+  //
+  // Fix mirrors the SAME pattern threads.html's own openThread() already
+  // uses for its own request race (see detailRequestSeq there): every
+  // mount() call claims a fresh generation number up front, and after
+  // every await point checks whether it's still the most recent call
+  // before doing anything further. A superseded call quietly bails out
+  // — no DOM writes, no script eval, no timers registered — instead of
+  // finishing its work on top of (or underneath) a newer navigation.
+  let mountGeneration = 0;
+
   const realSetInterval = window.setInterval.bind(window);
   window.setInterval = function (...args) {
     const id = realSetInterval(...args);
@@ -94,6 +122,11 @@
   }
 
   async function mount(view, { moduleId, pushUrl } = {}) {
+    // Claim this call's generation number — see the BUGFIX note above.
+    // Any await below can check `myGeneration !== mountGeneration` to
+    // find out a newer mount() has since started, and bail out cleanly.
+    const myGeneration = ++mountGeneration;
+
     clearViewIntervals(currentView);
     currentView = view;
 
@@ -158,6 +191,17 @@
 
     const doc = await docPromise;
 
+    // A newer mount() call has started while this one was awaiting the
+    // doc — someone navigated again before this fetch/cache-read
+    // finished. Bail out now, before touching history, the DOM, or
+    // running any script: whichever call is still current already has
+    // (or will have) its own fresh doc and will render on top of
+    // whatever's there. Applying this stale one now would either get
+    // immediately overwritten (harmless but wasteful) or, worse, land
+    // AFTER the newer call finishes and clobber it — see the BUGFIX
+    // note above mountGeneration's declaration for the full writeup.
+    if (myGeneration !== mountGeneration) return;
+
     if (pushUrl !== false) {
       // ALWAYS push a "/" URL (never the real /threads.html, /form.html
       // etc.) — Cloudflare Pages serves those paths as their own real,
@@ -205,6 +249,14 @@
     try {
       if (view === "form") {
         const appJsText = await getScriptText("/assets/app.js");
+        // Same check as above, needed again here specifically because
+        // getScriptText() is its own await point — a newer mount() can
+        // have started (and even finished) while this one was fetching
+        // app.js. Skip running it (and the inline scripts below) if so;
+        // running form.html's script now would register its own
+        // setInterval-free logic against a #spaMount that's no longer
+        // showing form.html at all.
+        if (myGeneration !== mountGeneration) return;
         new Function(appJsText)();
       }
       for (const text of inlineScripts) {

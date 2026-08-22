@@ -297,9 +297,27 @@ async function handleSubmit({ request, env, waitUntil }) {
       threadId = thread.id;
       const logCall = logActivity(env, { category: "Thread", agent: account.username, action: "Ticket Created", detail: `New ${meta.name} ticket "${title}" (${brand.name})`, ip: requestIP(request) || "unknown" });
       if (waitUntil) waitUntil(logCall); else logCall.catch(() => {});
-    } catch {
-      // Non-fatal — the Telegram message and sheet row are already the
-      // source of truth; the reply-tracking record is a nice-to-have.
+    } catch (e) {
+      // Non-fatal to the SUBMISSION — the Telegram message and sheet row
+      // are already the source of truth, so the agent still gets back
+      // ok:true and the ticket isn't lost. But until this log call was
+      // added, a failure here was completely invisible: nothing in the
+      // response, nothing in Activity Logs, nothing anywhere — the
+      // ticket would just silently never show up in TG Reply Threads
+      // with zero trail explaining why (see the 2026-08-22 investigation
+      // into a report of exactly this). Logged here, not inside
+      // createThread() itself, because this is the one place that still
+      // has the Telegram message id + brand/module context needed to
+      // actually go find the ticket by hand afterward.
+      const failMsg = String((e && e.message) || e);
+      const logCall = logActivity(env, {
+        category: "Thread",
+        agent: account.username,
+        action: "Thread Record Failed",
+        detail: `${meta.name} ticket for ${brand.name} was sent to Telegram (message ${tgResult.messageId}) but its TG Reply Threads tracking record failed to save: ${failMsg}`,
+        ip: requestIP(request) || "unknown",
+      });
+      if (waitUntil) waitUntil(logCall); else logCall.catch(() => {});
     }
   }
 
