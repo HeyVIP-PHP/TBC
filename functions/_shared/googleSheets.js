@@ -62,7 +62,25 @@ async function getAccessToken(env) {
       assertion: jwt,
     }),
   });
-  const data = await res.json();
+  // Check res.ok BEFORE parsing as JSON — same pattern as every other
+  // fetch in this file. A slow/failing hop to Google's OAuth endpoint
+  // (gateway timeout, etc.) can come back as a plain-text error page
+  // like "error code: 504" instead of JSON; calling res.json() on that
+  // directly throws an opaque "Unexpected token ... is not valid JSON"
+  // that then gets wrapped by submit.js's top-level catch into a
+  // confusing "Unexpected server error: ..." toast for the agent.
+  // Reading as text first and reporting the real status/body gives a
+  // clear, actionable error instead.
+  if (!res.ok) {
+    const bodyText = await res.text();
+    throw new Error(`Google OAuth token request failed (${res.status}): ${bodyText}`);
+  }
+  let data;
+  try {
+    data = await res.json();
+  } catch {
+    throw new Error("Google OAuth token response was not valid JSON.");
+  }
   if (!data.access_token) {
     throw new Error(`Google auth failed: ${JSON.stringify(data)}`);
   }
